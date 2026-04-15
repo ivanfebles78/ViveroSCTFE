@@ -162,7 +162,42 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    return pwd_context.verify(plain_password, password_hash)
+    try:
+        if not password_hash or not str(password_hash).strip():
+            return False
+        return pwd_context.verify(plain_password, password_hash)
+    except Exception:
+        return False
+
+
+@app.post("/auth/login", response_model=LoginResponse)
+def auth_login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(Usuario).filter(Usuario.username == payload.username).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
+    if user.status and str(user.status).lower() != "activo":
+        raise HTTPException(status_code=403, detail="Usuario inactivo")
+
+    password_hash = getattr(user, "password_hash", None)
+
+    if not verify_password(payload.password, password_hash):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
+    access_token = create_access_token({"sub": user.username})
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "rol": user.rol,
+            "status": user.status,
+        },
+    }
 
 
 def get_current_user(
@@ -461,32 +496,6 @@ def ping():
 # =============================
 # AUTH
 # =============================
-@app.post("/auth/login", response_model=LoginResponse)
-def auth_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(Usuario).filter(Usuario.username == payload.username).first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-
-    if user.status and user.status.lower() != "activo":
-        raise HTTPException(status_code=403, detail="Usuario inactivo")
-
-    if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-
-    access_token = create_access_token({"sub": user.username})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "rol": user.rol,
-            "status": user.status,
-        },
-    }
 
 
 @app.get("/auth/me")
