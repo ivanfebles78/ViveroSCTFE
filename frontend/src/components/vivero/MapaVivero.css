@@ -1,0 +1,78 @@
+.vivero-map-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+.vivero-map-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.vivero-map-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.zona-clickable {
+  fill: rgba(0, 128, 255, 0.16);
+  stroke: rgba(0, 102, 204, 0.95);
+  stroke-width: 4;
+  cursor: pointer;
+  transition: fill 0.18s ease, stroke 0.18s ease;
+}
+
+.zona-clickable:hover {
+  fill: rgba(0, 128, 255, 0.28);
+  stroke: rgba(0, 82, 163, 1);
+}
+
+.vivero-page {
+  padding: 24px;
+}
+
+.vivero-title {
+  margin: 0 0 16px;
+}
+
+.mapa-container {
+  position: relative;
+  width: 100%;
+}
+
+.mapa-img {
+  width: 100%;
+}
+
+.zona-click {
+  position: absolute;
+  cursor: pointer;
+  background: rgba(0, 150, 100, 0.2);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.zona-click:hover {
+  background: rgba(0, 150, 100, 0.4);
+}
+
+.zona-modal {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+  max-width: 300px;
+}
+
+.zona-item {
+  margin-bottom: 8px;
+}

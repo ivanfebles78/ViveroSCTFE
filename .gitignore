@@ -1,0 +1,28 @@
+# =========================
+# FRONTEND (React / Vite)
+# =========================
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# =========================
+# BACKEND (Python)
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+venv/
+.env
+.env.*
+
+# =========================
+# GENERAL
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
