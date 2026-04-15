@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 const TOKEN_KEY = "token";
 
 const api = axios.create({
@@ -91,7 +91,7 @@ export const createMovimiento = async (payload) => {
 
 export const getZonaItems = async (zonaId) => {
   try {
-    const res = await fetch(`http://localhost:8000/zonas/${zonaId}/items`);
+    const res = await fetch(`${API_URL}/endpoint`);
     if (!res.ok) throw new Error("Error cargando zona");
     return await res.json();
   } catch (err) {
