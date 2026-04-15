@@ -9,7 +9,7 @@ import Movimientos from "./pages/Movimientos";
 import Pedidos from "./pages/Pedidos";
 import Aprobaciones from "./pages/Aprobaciones";
 import Informes from "./pages/Informes";
-import LoteTracking from "./pages/LoteTracking";
+import LoteTracking from "./pages/Lotetracking";
 import ViveroPage from "./pages/ViveroPage";
 
 
@@ -31,7 +31,7 @@ export default function App() {
             <Route path="/pedidos" element={<Pedidos />} />
             <Route path="/aprobaciones" element={<Aprobaciones />} />
             <Route path="/informes" element={<Informes />} />
-			<Route path="/lotes" element={<LoteTracking />} />
+			<Route path="/lotes" element={<Lotetracking />} />
 			<Route path="/vivero" element={<ViveroPage />} />
           </Route>
         </Route>
