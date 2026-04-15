@@ -9,7 +9,7 @@ import Movimientos from "./pages/Movimientos";
 import Pedidos from "./pages/Pedidos";
 import Aprobaciones from "./pages/Aprobaciones";
 import Informes from "./pages/Informes";
-import LoteTracking from "./pages/Lotetracking";
+import Lotetracking from "./pages/Lotetracking";
 import ViveroPage from "./pages/ViveroPage";
 
 

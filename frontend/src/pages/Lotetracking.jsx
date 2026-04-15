@@ -1,7 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 
-export default function LoteTracking() {
+export default function Lotetracking() {
   const [uuid, setUuid] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
