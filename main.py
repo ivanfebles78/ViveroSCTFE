@@ -11,6 +11,7 @@ from jose import jwt, JWTError
 from sqlalchemy import func, or_
 from db import SessionLocal
 
+from db import engine
 from models import (
     Usuario,
     Producto,
@@ -21,14 +22,18 @@ from models import (
     Pedido,
     PedidoItem,
     CaducidadConfig,
+    Base,
 )
 from schemas import PedidoActionRequest, PedidoOut
+
+
 
 
 # =============================
 # APP
 # =============================
 app = FastAPI()
+Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
