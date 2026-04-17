@@ -97,6 +97,7 @@ class PedidoCreate(BaseModel):
 class MovimientoCreate(BaseModel):
     pedido_id: Optional[int] = None
     pedido_item_id: Optional[int] = None
+    prestamo_referencia_id: Optional[int] = None
     uuid_lote: Optional[str] = None
 
     producto_id: int
@@ -116,12 +117,16 @@ class MovimientoCreate(BaseModel):
     cp_destino: Optional[str] = None
 
     nota: Optional[str] = None
+    observaciones: Optional[str] = None
+    es_prestamo: bool = False
+    es_devolucion: bool = False
 
 
 class MovimientoOut(BaseModel):
     id: int
     pedido_id: Optional[int] = None
     pedido_item_id: Optional[int] = None
+    prestamo_referencia_id: Optional[int] = None
     uuid_lote: Optional[str] = None
     producto_id: int
     cantidad: int
@@ -136,6 +141,11 @@ class MovimientoOut(BaseModel):
     barrio_destino: Optional[str] = None
     direccion_destino: Optional[str] = None
     cp_destino: Optional[str] = None
+    observaciones: Optional[str] = None
+    es_prestamo: bool = False
+    es_devolucion: bool = False
+    devuelto: bool = False
+    fecha_devolucion: Optional[datetime] = None
     created_by: Optional[str] = None
     fecha_movimiento: datetime
     fecha_caducidad: Optional[date] = None
@@ -513,6 +523,7 @@ def get_productos(
         stock_by_size = _stock_por_tamano_producto(db, p.id)
 
         alertas_caducidad = []
+        lotes = []
         inventarios_vivos = (
             db.query(InventarioLote)
             .filter(
@@ -534,17 +545,26 @@ def get_productos(
             if not fecha_cad:
                 continue
 
+            if fecha_cad < today:
+                estado = "caducado"
+            elif fecha_cad <= warning_limit:
+                estado = "proximo_a_caducar"
+            else:
+                estado = "vigente"
+
+            lote_info = {
+                "uuid_lote": inv.uuid_lote,
+                "zona": inv.zona,
+                "tamano": inv.tamano,
+                "cantidad_disponible": int(inv.cantidad_disponible or 0),
+                "fecha_caducidad": fecha_cad.isoformat(),
+                "estado": estado,
+            }
+
+            lotes.append(lote_info)
+
             if fecha_cad <= warning_limit:
-                alertas_caducidad.append(
-                    {
-                        "uuid_lote": inv.uuid_lote,
-                        "zona": inv.zona,
-                        "tamano": inv.tamano,
-                        "cantidad_disponible": int(inv.cantidad_disponible or 0),
-                        "fecha_caducidad": fecha_cad.isoformat(),
-                        "estado": "caducado" if fecha_cad < today else "proximo_a_caducar",
-                    }
-                )
+                alertas_caducidad.append(lote_info)
 
         item = {
             "id": p.id,
@@ -556,6 +576,7 @@ def get_productos(
             "stock": stock_total,
             "stock_by_size": stock_by_size,
             "alertas_caducidad": alertas_caducidad,
+            "lotes": lotes,
         }
 
         if (user.rol or "").strip().lower() != "proveedor":
@@ -834,6 +855,51 @@ def get_lotes_disponibles(
     ]
 
 
+
+
+# =============================
+# PRESTAMOS ACTIVOS
+# =============================
+@app.get("/prestamos-activos")
+def listar_prestamos_activos(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
+):
+    rows = (
+        db.query(Movimiento, Producto)
+        .join(Producto, Producto.id == Movimiento.producto_id)
+        .filter(Movimiento.es_prestamo == True, or_(Movimiento.devuelto == False, Movimiento.devuelto.is_(None)))
+        .order_by(Movimiento.fecha_movimiento.desc(), Movimiento.id.desc())
+        .all()
+    )
+
+    out = []
+    for mov, prod in rows:
+        out.append({
+            "id": mov.id,
+            "prestamo_referencia_id": getattr(mov, "prestamo_referencia_id", None),
+            "producto_id": mov.producto_id,
+            "producto_nombre_cientifico": prod.nombre_cientifico,
+            "producto_nombre_natural": prod.nombre_natural,
+            "producto_nombre": prod.nombre_natural or prod.nombre_cientifico,
+            "cantidad": mov.cantidad,
+            "origen_tipo": mov.origen_tipo,
+            "destino_tipo": mov.destino_tipo,
+            "zona_origen": mov.zona_origen,
+            "zona_destino": mov.zona_destino,
+            "tamano_origen": mov.tamano_origen,
+            "tamano_destino": mov.tamano_destino,
+            "distrito_destino": mov.distrito_destino,
+            "barrio_destino": mov.barrio_destino,
+            "direccion_destino": mov.direccion_destino,
+            "cp_destino": mov.cp_destino,
+            "observaciones": getattr(mov, "observaciones", None),
+            "uuid_lote": getattr(mov, "uuid_lote", None),
+            "fecha_movimiento": mov.fecha_movimiento,
+            "created_by": getattr(mov, "created_by", None),
+        })
+    return out
+
 # =============================
 # CREAR MOVIMIENTO
 # =============================
@@ -930,6 +996,7 @@ def crear_movimiento(
     movimiento = Movimiento(
         pedido_id=payload.pedido_id,
         pedido_item_id=payload.pedido_item_id,
+        prestamo_referencia_id=payload.prestamo_referencia_id,
         uuid_lote=payload.uuid_lote.strip() if payload.uuid_lote else None,
         producto_id=payload.producto_id,
         tipo_movimiento=tipo,
@@ -944,6 +1011,11 @@ def crear_movimiento(
         barrio_destino=payload.barrio_destino,
         direccion_destino=payload.direccion_destino,
         cp_destino=payload.cp_destino,
+        observaciones=payload.observaciones or payload.nota,
+        es_prestamo=payload.es_prestamo,
+        es_devolucion=payload.es_devolucion,
+        devuelto=False,
+        fecha_devolucion=None,
         fecha_movimiento=fecha_base_movimiento,
         fecha_caducidad=fecha_caducidad,
         dias_caducidad_aplicados=dias_caducidad_aplicados,
@@ -952,6 +1024,23 @@ def crear_movimiento(
 
     db.add(movimiento)
     db.flush()
+
+    if payload.prestamo_referencia_id is not None:
+        prestamo_ref = (
+            db.query(Movimiento)
+            .filter(Movimiento.id == payload.prestamo_referencia_id)
+            .first()
+        )
+        if not prestamo_ref:
+            raise HTTPException(status_code=404, detail="Préstamo de referencia no encontrado")
+        if not getattr(prestamo_ref, "es_prestamo", False):
+            raise HTTPException(status_code=400, detail="La referencia seleccionada no corresponde a un préstamo")
+        if getattr(prestamo_ref, "devuelto", False):
+            raise HTTPException(status_code=400, detail="Ese préstamo ya figura como devuelto")
+
+        movimiento.es_devolucion = True
+        prestamo_ref.devuelto = True
+        prestamo_ref.fecha_devolucion = fecha_base_movimiento
 
     uuids_asociados = []
 

@@ -172,6 +172,9 @@ class Movimiento(Base):
 
     tipo_movimiento = Column(String(20), nullable=False)
 
+    # UUID o lista de UUIDs asociados al movimiento.
+    # Si el movimiento sólo afecta a un lote, habrá un único UUID.
+    # Si afecta a varios lotes, se almacenan separados por coma.
     uuid_lote = Column(String(255), nullable=True, index=True)
 
     origen_tipo = Column(String(30), nullable=False)
@@ -189,16 +192,6 @@ class Movimiento(Base):
     barrio_destino = Column(String(100), nullable=True)
     direccion_destino = Column(String(255), nullable=True)
     cp_destino = Column(String(20), nullable=True)
-
-    # EXISTENTE
-    observaciones = Column(Text, nullable=True)
-    es_prestamo = Column(Boolean, default=False)
-    es_devolucion = Column(Boolean, default=False)
-
-    # 🔥 NUEVO
-    prestamo_referencia_id = Column(Integer, ForeignKey("movimientos.id"), nullable=True)
-    devuelto = Column(Boolean, default=False)
-    fecha_devolucion = Column(DateTime, nullable=True)
 
     fecha_movimiento = Column(DateTime, default=datetime.utcnow)
     fecha_caducidad = Column(Date, nullable=True)
