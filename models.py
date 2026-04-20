@@ -47,8 +47,9 @@ class CaducidadConfig(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     categoria = Column(String(100), nullable=False, index=True)
-    subcategoria = Column(String(100), nullable=False, index=True)
-    tamano = Column(String(20), nullable=False, index=True)
+    # subcategoria y tamano pueden ser NULL = comodín (aplica a cualquiera)
+    subcategoria = Column(String(100), nullable=True, index=True)
+    tamano = Column(String(20), nullable=True, index=True)
     dias_caducidad = Column(Integer, nullable=True)
     activo = Column(Boolean, nullable=False, default=True)
 

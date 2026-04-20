@@ -302,17 +302,54 @@ def _buscar_regla_caducidad(
     subcategoria = (subcategoria or "").strip()
     tamano = (tamano or "").strip()
 
-    if not categoria or not subcategoria or not tamano:
+    if not categoria:
         return None
 
-    return (
-        db.query(CaducidadConfig)
-        .filter(CaducidadConfig.activo == True)
-        .filter(CaducidadConfig.categoria.ilike(categoria))
-        .filter(CaducidadConfig.subcategoria.ilike(subcategoria))
-        .filter(CaducidadConfig.tamano.ilike(tamano))
+    base = db.query(CaducidadConfig).filter(CaducidadConfig.activo == True).filter(
+        func.lower(CaducidadConfig.categoria) == categoria.lower()
+    )
+
+    # 1. Exact match (categoria + subcategoria + tamano) — si están todos
+    if subcategoria and tamano:
+        regla = (
+            base
+            .filter(func.lower(CaducidadConfig.subcategoria) == subcategoria.lower())
+            .filter(func.lower(CaducidadConfig.tamano) == tamano.lower())
+            .first()
+        )
+        if regla:
+            return regla
+
+    # 2. categoria + tamano, subcategoria = NULL (comodín)
+    if tamano:
+        regla = (
+            base
+            .filter(CaducidadConfig.subcategoria.is_(None))
+            .filter(func.lower(CaducidadConfig.tamano) == tamano.lower())
+            .first()
+        )
+        if regla:
+            return regla
+
+    # 3. categoria + subcategoria, tamano = NULL
+    if subcategoria:
+        regla = (
+            base
+            .filter(func.lower(CaducidadConfig.subcategoria) == subcategoria.lower())
+            .filter(CaducidadConfig.tamano.is_(None))
+            .first()
+        )
+        if regla:
+            return regla
+
+    # 4. Solo categoria (subcategoria y tamano = NULL)
+    regla = (
+        base
+        .filter(CaducidadConfig.subcategoria.is_(None))
+        .filter(CaducidadConfig.tamano.is_(None))
         .first()
     )
+    return regla
 
 
 def _calcular_fecha_caducidad(
