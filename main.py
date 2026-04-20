@@ -624,6 +624,35 @@ def get_productos(
 
 
 # =============================
+# PRODUCTOS - ES_INTERNO
+# =============================
+class ProductoInternoUpdate(BaseModel):
+    es_interno: bool
+
+
+@app.patch("/productos/{producto_id}/es-interno")
+def actualizar_producto_interno(
+    producto_id: int,
+    payload: ProductoInternoUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+):
+    producto = db.query(Producto).filter(Producto.id == producto_id).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    producto.es_interno = bool(payload.es_interno)
+    db.commit()
+    db.refresh(producto)
+
+    return {
+        "id": producto.id,
+        "nombre_cientifico": producto.nombre_cientifico,
+        "es_interno": bool(producto.es_interno),
+    }
+
+
+# =============================
 # PEDIDOS
 # =============================
 @app.get("/pedidos")

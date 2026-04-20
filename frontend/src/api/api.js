@@ -68,6 +68,13 @@ export const getProductos = async () => {
   return data;
 };
 
+export const updateProductoInterno = async (productoId, esInterno) => {
+  const { data } = await api.patch(`/productos/${productoId}/es-interno`, {
+    es_interno: !!esInterno,
+  });
+  return data;
+};
+
 // ---------------- MOVIMIENTOS ----------------
 
 export const getMovimientos = async () => {

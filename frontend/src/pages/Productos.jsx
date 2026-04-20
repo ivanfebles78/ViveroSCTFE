@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getProductos, createPedidoReposicion } from "../api/api";
+import { getProductos, createPedidoReposicion, updateProductoInterno } from "../api/api";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -308,6 +308,24 @@ export default function Productos() {
   const rol = me?.rol || me?.role;
   const esEmpresaExterna = rol === "empresa_externa";
   const puedePedirMas = rol && rol !== "empresa_externa";
+  const puedeMarcarInterno = rol === "admin" || rol === "manager";
+
+  const toggleEsInterno = async (producto) => {
+    const nuevoValor = !producto.es_interno;
+    setProductos((prev) =>
+      prev.map((p) => (p.id === producto.id ? { ...p, es_interno: nuevoValor } : p))
+    );
+    try {
+      await updateProductoInterno(producto.id, nuevoValor);
+      setMsg(`Producto ${nuevoValor ? "marcado como interno" : "hecho visible a todos"}.`);
+      setTimeout(() => setMsg(""), 2500);
+    } catch (e) {
+      setProductos((prev) =>
+        prev.map((p) => (p.id === producto.id ? { ...p, es_interno: !nuevoValor } : p))
+      );
+      setError(fmtErr(e));
+    }
+  };
 
   const handleCrearReposicion = async ({ producto_id, tamano, cantidad, nota }) => {
     setSaving(true);
@@ -456,13 +474,21 @@ export default function Productos() {
                 <th>Subcategoría</th>
                 <th style={{ textAlign: "center" }}>Stock</th>
                 {!esEmpresaExterna && <th style={{ textAlign: "center" }}>Stock mínimo</th>}
+                {puedeMarcarInterno && <th style={{ textAlign: "center" }}>Interno</th>}
                 {puedePedirMas && <th style={{ textAlign: "center" }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
               {productosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={esEmpresaExterna ? 4 : puedePedirMas ? 6 : 5} style={{ textAlign: "center" }}>
+                  <td
+                    colSpan={
+                      esEmpresaExterna
+                        ? 4
+                        : 4 + (puedeMarcarInterno ? 1 : 0) + (puedePedirMas ? 1 : 0) + 1
+                    }
+                    style={{ textAlign: "center" }}
+                  >
                     No hay resultados con esos filtros.
                   </td>
                 </tr>
@@ -486,6 +512,33 @@ export default function Productos() {
                       <td style={{ textAlign: "center", fontWeight: 800 }}>{stock}</td>
                       {!esEmpresaExterna && (
                         <td style={{ textAlign: "center" }}>{p.stock_minimo ?? "-"}</td>
+                      )}
+                      {puedeMarcarInterno && (
+                        <td style={{ textAlign: "center" }}>
+                          <label
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              cursor: "pointer",
+                              fontWeight: 700,
+                              color: p.es_interno ? "#92400e" : "#475569",
+                            }}
+                            title={
+                              p.es_interno
+                                ? "Interno: oculto para Empresa Externa"
+                                : "Visible para todos los roles"
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!p.es_interno}
+                              onChange={() => toggleEsInterno(p)}
+                              style={{ width: 16, height: 16, cursor: "pointer" }}
+                            />
+                            {p.es_interno ? "Sí" : "No"}
+                          </label>
+                        </td>
                       )}
                       {puedePedirMas && (
                         <td style={{ textAlign: "center" }}>
