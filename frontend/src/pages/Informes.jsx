@@ -277,10 +277,12 @@ function getCaducidadEstado(fechaCaducidad) {
   return { estado: "Vigente", diasRestantes };
 }
 
-function buildCaducidadKey({ producto, id, loteUuid, zona, tamano, fechaCaducidad, cantidad, estado }) {
+function buildCaducidadKey({ producto, loteUuid, zona, tamano, fechaCaducidad, cantidad, estado }) {
+  // Dedup por lote/zona/tamaño/fecha/cantidad/estado. Ignoramos `id` y `source`
+  // para que la misma entrada de inventario no se cuente dos veces (una por venir
+  // en `alertas_caducidad` y otra en `lotes`).
   return [
     producto?.id ?? "sin-producto",
-    id !== undefined && id !== null && String(id).trim() !== "" ? String(id) : "sin-id",
     loteUuid || "sin-lote",
     zona || "sin-zona",
     tamano || "sin-tamano",
@@ -300,8 +302,6 @@ function buildCaducidadItems(productos) {
 
     const dedupeKey = buildCaducidadKey({
       producto,
-      source,
-      id,
       loteUuid,
       zona,
       tamano,
