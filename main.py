@@ -129,6 +129,7 @@ class MovimientoCreate(BaseModel):
     observaciones: Optional[str] = None
     es_prestamo: bool = False
     es_devolucion: bool = False
+    prestamo_referencia_id: Optional[int] = None
     fecha_disponibilidad: Optional[date] = None
 
 class MovimientoOut(BaseModel):
@@ -1067,6 +1068,7 @@ def crear_movimiento(
         observaciones=payload.observaciones or payload.nota,
         es_prestamo=payload.es_prestamo,
         es_devolucion=payload.es_devolucion,
+        prestamo_referencia_id=payload.prestamo_referencia_id,
 
         fecha_movimiento=fecha_base_movimiento,
         fecha_caducidad=fecha_caducidad,

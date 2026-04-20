@@ -1,0 +1,215 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+
+    <!-- Persona icon -->
+    <symbol id="user" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="48" fill="url(#circleGrad)" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="50" cy="38" r="14" fill="#ffffff"/>
+      <path d="M 22 82 Q 22 60 50 60 Q 78 60 78 82 Z" fill="#ffffff"/>
+    </symbol>
+
+    <radialGradient id="circleGrad" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </radialGradient>
+
+    <radialGradient id="circleGradAdmin" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </radialGradient>
+
+    <radialGradient id="circleGradManager" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </radialGradient>
+
+    <radialGradient id="circleGradGestor" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#5b21b6"/>
+    </radialGradient>
+
+    <radialGradient id="circleGradTecnico" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </radialGradient>
+
+    <radialGradient id="circleGradExterna" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#f472b6"/>
+      <stop offset="100%" stop-color="#9d174d"/>
+    </radialGradient>
+
+    <symbol id="personaBase" viewBox="0 0 100 100">
+      <circle cx="50" cy="38" r="14" fill="#ffffff"/>
+      <path d="M 22 82 Q 22 60 50 60 Q 78 60 78 82 Z" fill="#ffffff"/>
+    </symbol>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+
+  <!-- Subtle pattern -->
+  <g opacity="0.04">
+    <circle cx="200" cy="200" r="180" fill="#06b6d4"/>
+    <circle cx="1720" cy="900" r="220" fill="#10b981"/>
+    <circle cx="1700" cy="150" r="120" fill="#38bdf8"/>
+  </g>
+
+  <!-- Header -->
+  <text x="960" y="90" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="58" font-weight="900" fill="#ffffff">
+    Usuarios del Vivero
+  </text>
+  <text x="960" y="130" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#94a3b8">
+    Agrupados por rol en ViverApp
+  </text>
+  <line x1="760" y1="150" x2="1160" y2="150" stroke="url(#accent)" stroke-width="3"/>
+
+  <!-- ============ ROW 1: ADMIN / MANAGER ============ -->
+
+  <!-- ADMIN block -->
+  <g transform="translate(120, 210)">
+    <rect x="0" y="0" width="360" height="360" rx="24" fill="#ffffff" opacity="0.04" stroke="#fbbf24" stroke-width="2" stroke-opacity="0.35"/>
+    <text x="180" y="50" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#fbbf24">
+      ADMIN
+    </text>
+    <text x="180" y="78" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#fcd34d" opacity="0.8">
+      Acceso total al sistema
+    </text>
+
+    <!-- ivan -->
+    <g transform="translate(130, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradAdmin)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="180" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff">ivan</text>
+    <text x="180" y="298" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#94a3b8">1 usuario</text>
+  </g>
+
+  <!-- MANAGER block -->
+  <g transform="translate(520, 210)">
+    <rect x="0" y="0" width="680" height="360" rx="24" fill="#ffffff" opacity="0.04" stroke="#34d399" stroke-width="2" stroke-opacity="0.35"/>
+    <text x="340" y="50" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#34d399">
+      MANAGER
+    </text>
+    <text x="340" y="78" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#6ee7b7" opacity="0.8">
+      Aprueban pedidos y supervisan
+    </text>
+
+    <!-- miriam -->
+    <g transform="translate(90, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradManager)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="140" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">miriam</text>
+
+    <!-- maria -->
+    <g transform="translate(290, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradManager)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="340" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">maria</text>
+
+    <!-- desi -->
+    <g transform="translate(490, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradManager)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="540" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">desi</text>
+
+    <text x="340" y="322" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#94a3b8">3 usuarios</text>
+  </g>
+
+  <!-- GESTOR DE VIVERO block -->
+  <g transform="translate(1240, 210)">
+    <rect x="0" y="0" width="560" height="360" rx="24" fill="#ffffff" opacity="0.04" stroke="#a78bfa" stroke-width="2" stroke-opacity="0.35"/>
+    <text x="280" y="50" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#a78bfa">
+      GESTOR DE VIVERO
+    </text>
+    <text x="280" y="78" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#c4b5fd" opacity="0.8">
+      Coordina operativa del vivero
+    </text>
+
+    <!-- francis -->
+    <g transform="translate(230, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradGestor)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="280" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff">francis</text>
+    <text x="280" y="298" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#94a3b8">1 usuario</text>
+  </g>
+
+  <!-- ============ ROW 2: TÉCNICO / EMPRESA EXTERNA ============ -->
+
+  <!-- TÉCNICO block -->
+  <g transform="translate(120, 620)">
+    <rect x="0" y="0" width="920" height="360" rx="24" fill="#ffffff" opacity="0.04" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.35"/>
+    <text x="460" y="50" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#38bdf8">
+      TÉCNICO
+    </text>
+    <text x="460" y="78" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#7dd3fc" opacity="0.8">
+      Registran movimientos y tareas en planta
+    </text>
+
+    <!-- elisa -->
+    <g transform="translate(90, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradTecnico)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="140" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">elisa</text>
+
+    <!-- susana -->
+    <g transform="translate(290, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradTecnico)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="340" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">susana</text>
+
+    <!-- medina -->
+    <g transform="translate(490, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradTecnico)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="540" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">medina</text>
+
+    <!-- roberto -->
+    <g transform="translate(690, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradTecnico)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="740" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">roberto</text>
+
+    <text x="460" y="322" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#94a3b8">4 usuarios</text>
+  </g>
+
+  <!-- EMPRESA EXTERNA block -->
+  <g transform="translate(1080, 620)">
+    <rect x="0" y="0" width="720" height="360" rx="24" fill="#ffffff" opacity="0.04" stroke="#f472b6" stroke-width="2" stroke-opacity="0.35"/>
+    <text x="360" y="50" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#f472b6">
+      EMPRESA EXTERNA
+    </text>
+    <text x="360" y="78" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#f9a8d4" opacity="0.8">
+      Acceso limitado a catálogo y pedidos propios
+    </text>
+
+    <!-- ute -->
+    <g transform="translate(310, 120)">
+      <circle cx="50" cy="50" r="50" fill="url(#circleGradExterna)" stroke="#ffffff" stroke-width="3"/>
+      <use href="#personaBase" x="0" y="0" width="100" height="100"/>
+    </g>
+    <text x="360" y="270" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff">ute</text>
+    <text x="360" y="298" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#94a3b8">1 usuario</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="960" y="1040" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#64748b">
+    ViverApp · 10 usuarios activos · 5 roles
+  </text>
+</svg>

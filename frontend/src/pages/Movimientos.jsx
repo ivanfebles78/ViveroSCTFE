@@ -693,11 +693,13 @@ function MovimientoModal({
     observaciones: "",
     prestamo: false,
     fecha_disponibilidad: "",
+    prestamo_referencia_id: null,
   });
 
   const [errors, setErrors] = useState([]);
   const [showPedidoModal, setShowPedidoModal] = useState(false);
   const [selectedPedidoLineKey, setSelectedPedidoLineKey] = useState("");
+  const [showPrestamoModal, setShowPrestamoModal] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -719,10 +721,12 @@ function MovimientoModal({
         observaciones: "",
         prestamo: false,
         fecha_disponibilidad: "",
+        prestamo_referencia_id: null,
       });
       setErrors([]);
       setSelectedPedidoLineKey("");
       setShowPedidoModal(false);
+      setShowPrestamoModal(false);
     }
   }, [open]);
 
@@ -862,6 +866,73 @@ function MovimientoModal({
     return getMovimientoTipo(form);
   }, [form]);
 
+  const prestamosActivos = useMemo(() => {
+    const arr = safeArray(movimientos);
+    const devolucionesPorRef = new Map();
+    for (const m of arr) {
+      if (m?.es_devolucion && m?.prestamo_referencia_id) {
+        const k = Number(m.prestamo_referencia_id);
+        devolucionesPorRef.set(k, (devolucionesPorRef.get(k) || 0) + Number(m.cantidad || 0));
+      }
+    }
+
+    return arr
+      .filter((m) => !!m?.es_prestamo)
+      .map((m) => {
+        const devuelto = Number(devolucionesPorRef.get(Number(m.id)) || 0);
+        const prestado = Number(m.cantidad || 0);
+        const pendiente = Math.max(prestado - devuelto, 0);
+        return {
+          ...m,
+          _prestado: prestado,
+          _devuelto: devuelto,
+          _pendiente: pendiente,
+        };
+      })
+      .filter((m) => m._pendiente > 0)
+      .sort((a, b) => new Date(b.fecha_movimiento || 0) - new Date(a.fecha_movimiento || 0));
+  }, [movimientos]);
+
+  const handleSeleccionPrestamo = (prestamo) => {
+    const origenSugerido = prestamo?.destino_tipo || "Empresa";
+    const tamanoOriginal = prestamo?.tamano_origen || prestamo?.tamano_destino || "";
+    const destinoInfo = [
+      prestamo?.distrito_destino,
+      prestamo?.barrio_destino,
+      prestamo?.direccion_destino,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const notaBase = `Devolución del préstamo #${prestamo.id}${
+      destinoInfo ? ` (${destinoInfo})` : ""
+    }`;
+
+    setForm((prev) => ({
+      ...prev,
+      pedido_id: prestamo?.pedido_id ? String(prestamo.pedido_id) : "",
+      pedido_item_id: "",
+      producto_id: String(prestamo.producto_id),
+      cantidad: String(prestamo._pendiente),
+      origen_tipo: origenSugerido,
+      destino_tipo: "Vivero",
+      zona_origen: "",
+      tamano_origen: "",
+      zona_destino: "",
+      tamano_destino: tamanoOriginal,
+      distrito_destino: "",
+      barrio_destino: "",
+      direccion_destino: "",
+      cp_destino: "",
+      observaciones: prev.observaciones || notaBase,
+      prestamo: false,
+      fecha_disponibilidad: "",
+      prestamo_referencia_id: prestamo.id,
+    }));
+    setErrors([]);
+    setShowPrestamoModal(false);
+  };
+
   const handleSeleccionPedido = (pedido) => {
     const esReposicion = (pedido?.tipo || "salida") === "reposicion";
     const destinoSugerido = esReposicion
@@ -968,6 +1039,7 @@ function MovimientoModal({
       nota: form.observaciones || null,
       es_prestamo: form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? !!form.prestamo : false,
       es_devolucion: esDevolucion,
+      prestamo_referencia_id: esDevolucion && form.prestamo_referencia_id ? Number(form.prestamo_referencia_id) : null,
       fecha_disponibilidad:
         form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad
           ? form.fecha_disponibilidad
@@ -1169,6 +1241,61 @@ function MovimientoModal({
                 </div>
               )}
             </div>
+
+            {prestamosActivos.length > 0 ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 16,
+                  borderRadius: 18,
+                  background: "rgba(255,255,255,0.92)",
+                  border: "1px solid rgba(245,158,11,0.30)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 18 }}>
+                      Préstamos activos ({prestamosActivos.length})
+                    </div>
+                    <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700 }}>
+                      Hay préstamos pendientes de devolución. Puedes seleccionar uno para crear el movimiento de devolución.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPrestamoModal(true)}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 14,
+                      border: "1px solid rgba(245,158,11,0.35)",
+                      background: "rgba(245,158,11,0.10)",
+                      color: "#92400e",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Ver préstamos activos
+                  </button>
+                </div>
+
+                {form.prestamo_referencia_id ? (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 14,
+                      background: "#fffbeb",
+                      border: "1px solid rgba(245,158,11,0.25)",
+                      color: "#92400e",
+                      fontWeight: 800,
+                    }}
+                  >
+                    Devolución asociada al préstamo #{form.prestamo_referencia_id}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div
               style={{
@@ -1669,7 +1796,208 @@ function MovimientoModal({
         onClose={() => setShowPedidoModal(false)}
         onSelect={handleSeleccionPedido}
       />
+
+      <PrestamoSelectorModal
+        open={showPrestamoModal}
+        prestamos={prestamosActivos}
+        productos={productos}
+        onClose={() => setShowPrestamoModal(false)}
+        onSelect={handleSeleccionPrestamo}
+      />
     </>
+  );
+}
+
+function PrestamoSelectorModal({ open, prestamos, productos, onClose, onSelect }) {
+  const [texto, setTexto] = useState("");
+
+  const prestamosFiltrados = useMemo(() => {
+    const t = texto.trim().toLowerCase();
+    return safeArray(prestamos).filter((p) => {
+      if (!t) return true;
+      const prod = productos.find((x) => String(x.id) === String(p.producto_id));
+      const base = [
+        p?.id,
+        p?.destino_tipo,
+        p?.distrito_destino,
+        p?.barrio_destino,
+        p?.direccion_destino,
+        p?.producto_nombre_cientifico,
+        getProductDisplayName(prod),
+        p?.created_by,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return base.includes(t);
+    });
+  }, [prestamos, productos, texto]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.45)",
+        backdropFilter: "blur(3px)",
+        zIndex: 1300,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: "min(980px, 95vw)",
+          maxHeight: "88vh",
+          overflow: "hidden",
+          background: "white",
+          borderRadius: 24,
+          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+          border: "1px solid rgba(15,23,42,0.10)",
+          display: "grid",
+          gridTemplateRows: "auto auto 1fr",
+        }}
+      >
+        <div
+          style={{
+            padding: "20px 22px 10px",
+            display: "flex",
+            alignItems: "start",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: "#0f172a" }}>
+              Préstamos activos
+            </div>
+            <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
+              Selecciona un préstamo pendiente para registrar la devolución. Se rellenará el formulario automáticamente.
+            </div>
+          </div>
+
+          <button onClick={onClose} style={closeButtonStyle()}>
+            Cerrar
+          </button>
+        </div>
+
+        <div style={{ padding: "0 22px 14px" }}>
+          <input
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder="Buscar por ID, producto, destino, dirección..."
+            style={inputStyle()}
+          />
+        </div>
+
+        <div style={{ padding: "0 22px 22px", overflow: "auto" }}>
+          {prestamosFiltrados.length === 0 ? (
+            <div
+              style={{
+                border: "1px solid rgba(15,23,42,0.08)",
+                borderRadius: 16,
+                padding: 18,
+                color: "#64748b",
+                fontWeight: 800,
+              }}
+            >
+              No hay préstamos activos que coincidan con la búsqueda.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              {prestamosFiltrados.map((p) => {
+                const prod = productos.find((x) => String(x.id) === String(p.producto_id));
+                const destinoTxt =
+                  [p.distrito_destino, p.barrio_destino, p.direccion_destino].filter(Boolean).join(" · ") ||
+                  p.destino_tipo ||
+                  "—";
+                const tamano = p.tamano_origen || p.tamano_destino || "—";
+
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      border: "1px solid rgba(245,158,11,0.28)",
+                      borderRadius: 18,
+                      padding: 16,
+                      background: "#fffbeb",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 12,
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
+                          Préstamo #{p.id} · {p.producto_nombre_cientifico || getProductDisplayName(prod)}
+                        </div>
+                        <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700 }}>
+                          {fmtFechaES(p.fecha_movimiento)} · Destinatario: {p.destino_tipo || "—"}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => onSelect(p)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 14,
+                          border: "1px solid rgba(245,158,11,0.35)",
+                          background: "linear-gradient(90deg, #f59e0b 0%, #f97316 100%)",
+                          color: "white",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Usar para devolución
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 10, color: "#475569", fontWeight: 700 }}>
+                      Destino del préstamo: {destinoTxt}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 12,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ padding: "8px 10px", borderRadius: 10, background: "white", border: "1px solid rgba(15,23,42,0.06)" }}>
+                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Tamaño</div>
+                        <div style={{ fontWeight: 900, color: "#0f172a" }}>{tamano}</div>
+                      </div>
+                      <div style={{ padding: "8px 10px", borderRadius: 10, background: "white", border: "1px solid rgba(15,23,42,0.06)" }}>
+                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Prestado</div>
+                        <div style={{ fontWeight: 900, color: "#0f172a" }}>{p._prestado}</div>
+                      </div>
+                      <div style={{ padding: "8px 10px", borderRadius: 10, background: "white", border: "1px solid rgba(16,185,129,0.18)" }}>
+                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Devuelto</div>
+                        <div style={{ fontWeight: 900, color: "#065f46" }}>{p._devuelto}</div>
+                      </div>
+                      <div style={{ padding: "8px 10px", borderRadius: 10, background: "white", border: "1px solid rgba(245,158,11,0.25)" }}>
+                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Pendiente</div>
+                        <div style={{ fontWeight: 900, color: "#92400e" }}>{p._pendiente}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
