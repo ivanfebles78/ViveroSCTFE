@@ -5,8 +5,7 @@ import os
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    # fallback SOLO para local (docker)
-    DATABASE_URL = "postgresql+psycopg://vivero:vivero123@db:5432/vivero"
+    raise RuntimeError("DATABASE_URL no está definida")
 
 engine = create_engine(
     DATABASE_URL,

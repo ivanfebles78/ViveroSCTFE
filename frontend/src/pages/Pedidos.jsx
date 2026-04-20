@@ -1376,7 +1376,7 @@ export default function Pedidos() {
   const [expandedRows, setExpandedRows] = useState({});
 
   const role = me?.rol || me?.role;
-  const isReadOnly = role === "tecnico";
+  const isReadOnly = role === "tecnico" || role === "gestor_vivero";
   const isAdmin = role === "admin";
 
   const clearMsgTimer = () => {
@@ -1489,7 +1489,7 @@ export default function Pedidos() {
 
     const solicitante = solicitanteFromPedido(p);
     const soyYo = solicitante && me?.username && solicitante === me.username;
-    return role === "proveedor" && estado === "RESERVA" && soyYo;
+    return role === "empresa_externa" && estado === "RESERVA" && soyYo;
   };
 
   const onCancelar = async (p) => {
@@ -1737,6 +1737,7 @@ export default function Pedidos() {
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
                   <th style={thStyle()}>ID</th>
+                  <th style={thStyle()}>Tipo</th>
                   <th style={thStyle()}>Fecha</th>
                   <th style={thStyle()}>Solicitante</th>
                   <th style={thStyle()}>Destino</th>
@@ -1771,6 +1772,23 @@ export default function Pedidos() {
                         }}
                       >
                         #{p.id}
+                      </td>
+
+                      <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            padding: "4px 10px",
+                            borderRadius: 999,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: (p.tipo === "reposicion") ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
+                            color: (p.tipo === "reposicion") ? "#92400e" : "#1e3a8a",
+                            border: "1px solid rgba(15,23,42,0.08)",
+                          }}
+                        >
+                          {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                        </span>
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>

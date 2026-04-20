@@ -36,7 +36,13 @@ function getVisibleNavItems(role) {
     );
   }
 
-  if (role === "proveedor") {
+  if (role === "gestor_vivero") {
+    return NAV_ITEMS.filter((i) =>
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/informes"].includes(i.to)
+    );
+  }
+
+  if (role === "empresa_externa") {
     return NAV_ITEMS.filter((i) =>
       ["/productos", "/pedidos"].includes(i.to)
     );
@@ -49,7 +55,8 @@ function getDefaultRouteForRole(role) {
   if (role === "admin") return "/dashboard";
   if (role === "tecnico") return "/dashboard";
   if (role === "manager") return "/dashboard";
-  if (role === "proveedor") return "/productos";
+  if (role === "gestor_vivero") return "/dashboard";
+  if (role === "empresa_externa") return "/productos";
   return "/dashboard";
 }
 
@@ -94,7 +101,19 @@ function isPathAllowedForRole(pathname, role) {
     ].includes(pathname);
   }
 
-  if (role === "proveedor") {
+  if (role === "gestor_vivero") {
+    return [
+      "/dashboard",
+      "/productos",
+      "/movimientos",
+      "/pedidos",
+      "/informes",
+      "/lotes",
+      "/vivero",
+    ].includes(pathname);
+  }
+
+  if (role === "empresa_externa") {
     return ["/productos", "/pedidos"].includes(pathname);
   }
 
@@ -977,7 +996,7 @@ export default function Layout() {
               );
             })}
 
-            {(userRole === "admin" || userRole === "tecnico" || userRole === "manager") && (
+            {(userRole === "admin" || userRole === "tecnico" || userRole === "manager" || userRole === "gestor_vivero") && (
               <button
                 type="button"
                 onClick={() => setMapOpen(true)}

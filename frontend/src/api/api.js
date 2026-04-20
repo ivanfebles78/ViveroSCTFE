@@ -90,14 +90,8 @@ export const createMovimiento = async (payload) => {
 // ---------------- ZONAS ----------------
 
 export const getZonaItems = async (zonaId) => {
-  try {
-    const res = await fetch(`${API_URL}/endpoint`);
-    if (!res.ok) throw new Error("Error cargando zona");
-    return await res.json();
-  } catch (err) {
-    console.error("Error getZonaItems:", err);
-    return null;
-  }
+  const { data } = await api.get(`/zonas/${encodeURIComponent(zonaId)}/items`);
+  return data;
 };
 
 // ---------------- PEDIDOS ----------------
@@ -109,6 +103,15 @@ export const getPedidos = async () => {
 
 export const createPedido = async (payload) => {
   const { data } = await api.post("/pedidos", payload);
+  return data;
+};
+
+export const createPedidoReposicion = async ({ producto_id, tamano, cantidad, nota }) => {
+  const { data } = await api.post("/pedidos", {
+    tipo: "reposicion",
+    items: [{ producto_id, tamano, cantidad }],
+    nota: nota || null,
+  });
   return data;
 };
 

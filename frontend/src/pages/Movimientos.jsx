@@ -14,7 +14,7 @@ const ZONAS = [
 const TAMANOS = ["Semillero", "M12", "M20", "M30"];
 
 const ORIGENES = [
-  "Proveedor",
+  "Empresa Externa",
   "Otro",
   "Vivero",
   "Palmetum",
@@ -239,7 +239,7 @@ function prestamoTextStyle(kind) {
 function getDestinoOptions(origenTipo) {
   if (!origenTipo) return [];
 
-  if (origenTipo === "Proveedor") return ["Vivero"];
+  if (origenTipo === "Empresa Externa") return ["Vivero"];
   if (origenTipo === "Otro") return ["Vivero"];
   if (origenTipo === "Palmetum") return ["Vivero"];
   if (origenTipo === "Empresa") return ["Vivero"];
@@ -335,7 +335,7 @@ function getFormErrors(form) {
   }
 
   if (
-    ["Proveedor", "Otro", "Palmetum", "Empresa", "Organismo oficial", "Colegio"].includes(form.origen_tipo) &&
+    ["Empresa Externa", "Otro", "Palmetum", "Empresa", "Organismo oficial", "Colegio"].includes(form.origen_tipo) &&
     form.destino_tipo !== "Vivero"
   ) {
     errs.push(`${form.origen_tipo} solo puede mover hacia Vivero.`);
@@ -1533,7 +1533,7 @@ function MovimientoModal({
                   <div>• Puedes cargar un movimiento desde un pedido aprobado.</div>
                   <div>• Al seleccionar una línea del pedido se precargan producto, cantidad y tamaño.</div>
                   <div>• Si una línea ya fue usada en un movimiento anterior, aparece bloqueada para evitar duplicados.</div>
-                  <div>• Proveedor, Otro, Empresa, Organismo oficial, Colegio y Palmetum solo pueden entrar al vivero.</div>
+                  <div>• Empresa Externa, Otro, Empresa, Organismo oficial, Colegio y Palmetum solo pueden entrar al vivero.</div>
                   <div>• Si el origen es Vivero y el destino es externo, puedes marcarlo como préstamo.</div>
                   <div>• Si el destino es Vivero y el origen es Empresa, Organismo oficial, Colegio u Otro, se registra como devolución.</div>
                 </div>

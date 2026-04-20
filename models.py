@@ -107,6 +107,7 @@ class Pedido(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     estado = Column(String(30), nullable=False, default="RESERVA", index=True)
+    tipo = Column(String(20), nullable=False, default="salida", index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     created_by = Column(String(150), nullable=True)

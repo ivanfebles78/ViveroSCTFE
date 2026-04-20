@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getProductos } from "../api/api";
+import { getProductos, createPedidoReposicion } from "../api/api";
+
+const TAMANOS = ["Semillero", "M12", "M20", "M30"];
 
 function fmtErr(e) {
   const status = e?.response?.status;
@@ -15,6 +17,211 @@ function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
 
+function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
+  const [tamano, setTamano] = useState("M12");
+  const [cantidad, setCantidad] = useState(1);
+  const [nota, setNota] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setTamano("M12");
+      setCantidad(1);
+      setNota("");
+      setErr("");
+    }
+  }, [open, producto?.id]);
+
+  if (!open || !producto) return null;
+
+  const submit = async () => {
+    setErr("");
+    const q = Number(cantidad);
+    if (!q || q <= 0) {
+      setErr("La cantidad debe ser mayor que 0.");
+      return;
+    }
+    if (!tamano) {
+      setErr("Selecciona un tamaño.");
+      return;
+    }
+    try {
+      await onSubmit({
+        producto_id: producto.id,
+        tamano,
+        cantidad: q,
+        nota,
+      });
+    } catch (e) {
+      setErr(fmtErr(e));
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.52)",
+        backdropFilter: "blur(4px)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: "min(520px, 96vw)",
+          background: "white",
+          borderRadius: 22,
+          padding: 24,
+          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+        }}
+      >
+        <div style={{ fontSize: 24, fontWeight: 900, color: "#0f172a" }}>
+          Pedir más producto
+        </div>
+        <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
+          Se generará un pedido interno de reposición que deberá aprobar un responsable (manager o admin).
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 12,
+            background: "#f8fafc",
+            border: "1px solid rgba(15,23,42,0.08)",
+          }}
+        >
+          <div style={{ fontWeight: 900, color: "#0f172a" }}>
+            {producto.nombre_cientifico || producto.nombre_natural || `Producto #${producto.id}`}
+          </div>
+          <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 13 }}>
+            {(producto.categoria || "—") + " · " + (producto.subcategoria || "—")}
+          </div>
+          <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 13 }}>
+            Origen: Empresa Externa · Destino: Vivero
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+              Tamaño
+            </div>
+            <select
+              value={tamano}
+              onChange={(e) => setTamano(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.12)",
+                fontWeight: 700,
+              }}
+            >
+              {TAMANOS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+              Cantidad
+            </div>
+            <input
+              type="number"
+              min={1}
+              value={cantidad}
+              onChange={(e) => setCantidad(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.12)",
+                fontWeight: 700,
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+            Nota (opcional)
+          </div>
+          <textarea
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            placeholder="Motivo de la reposición..."
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,0.12)",
+              fontWeight: 700,
+              minHeight: 80,
+              resize: "vertical",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              borderRadius: 10,
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.20)",
+              color: "#991b1b",
+              fontWeight: 800,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 16, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,0.10)",
+              background: "white",
+              color: "#0f172a",
+              fontWeight: 900,
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submit}
+            disabled={saving}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(16,185,129,0.28)",
+              background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
+              color: "white",
+              fontWeight: 900,
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            {saving ? "Enviando..." : "Crear pedido de reposición"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Productos() {
   const { me } = useOutletContext();
   const [productos, setProductos] = useState([]);
@@ -24,6 +231,10 @@ export default function Productos() {
   const [q, setQ] = useState("");
   const [categoriaSel, setCategoriaSel] = useState("ALL");
   const [subcategoriaSel, setSubcategoriaSel] = useState("ALL");
+
+  const [pedirProducto, setPedirProducto] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -94,7 +305,23 @@ export default function Productos() {
     });
   }, [productos, q, categoriaSel, subcategoriaSel]);
 
-  const esProveedor = me?.rol === "proveedor";
+  const rol = me?.rol || me?.role;
+  const esEmpresaExterna = rol === "empresa_externa";
+  const puedePedirMas = rol && rol !== "empresa_externa";
+
+  const handleCrearReposicion = async ({ producto_id, tamano, cantidad, nota }) => {
+    setSaving(true);
+    try {
+      await createPedidoReposicion({ producto_id, tamano, cantidad, nota });
+      setPedirProducto(null);
+      setMsg("Pedido de reposición creado. Pendiente de aprobación.");
+      setTimeout(() => setMsg(""), 3500);
+    } catch (e) {
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div>
@@ -102,6 +329,22 @@ export default function Productos() {
 
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
       {loading && <p>Cargando...</p>}
+
+      {msg && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "10px 14px",
+            borderRadius: 12,
+            background: "rgba(16,185,129,0.10)",
+            border: "1px solid rgba(16,185,129,0.22)",
+            color: "#065f46",
+            fontWeight: 800,
+          }}
+        >
+          {msg}
+        </div>
+      )}
 
       {!loading && (
         <div
@@ -212,13 +455,14 @@ export default function Productos() {
                 <th>Categoría</th>
                 <th>Subcategoría</th>
                 <th style={{ textAlign: "center" }}>Stock</th>
-                {!esProveedor && <th style={{ textAlign: "center" }}>Stock mínimo</th>}
+                {!esEmpresaExterna && <th style={{ textAlign: "center" }}>Stock mínimo</th>}
+                {puedePedirMas && <th style={{ textAlign: "center" }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
               {productosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={esProveedor ? 4 : 5} style={{ textAlign: "center" }}>
+                  <td colSpan={esEmpresaExterna ? 4 : puedePedirMas ? 6 : 5} style={{ textAlign: "center" }}>
                     No hay resultados con esos filtros.
                   </td>
                 </tr>
@@ -228,7 +472,7 @@ export default function Productos() {
                   const min = p.stock_minimo;
 
                   const low =
-                    !esProveedor &&
+                    !esEmpresaExterna &&
                     min !== null &&
                     min !== undefined &&
                     Number.isFinite(Number(min)) &&
@@ -240,8 +484,28 @@ export default function Productos() {
                       <td>{p.categoria ?? "-"}</td>
                       <td>{p.subcategoria ?? "-"}</td>
                       <td style={{ textAlign: "center", fontWeight: 800 }}>{stock}</td>
-                      {!esProveedor && (
+                      {!esEmpresaExterna && (
                         <td style={{ textAlign: "center" }}>{p.stock_minimo ?? "-"}</td>
+                      )}
+                      {puedePedirMas && (
+                        <td style={{ textAlign: "center" }}>
+                          <button
+                            onClick={() => setPedirProducto(p)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 10,
+                              border: "1px solid rgba(16,185,129,0.28)",
+                              background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
+                              color: "white",
+                              fontWeight: 900,
+                              cursor: "pointer",
+                              fontSize: 13,
+                            }}
+                            title="Crear pedido de reposición desde Empresa Externa"
+                          >
+                            Pedir más
+                          </button>
+                        </td>
                       )}
                     </tr>
                   );
@@ -259,6 +523,14 @@ export default function Productos() {
           </button>
         </div>
       )}
+
+      <PedirMasModal
+        open={!!pedirProducto}
+        producto={pedirProducto}
+        onClose={() => setPedirProducto(null)}
+        onSubmit={handleCrearReposicion}
+        saving={saving}
+      />
     </div>
   );
 }

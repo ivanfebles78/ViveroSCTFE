@@ -395,6 +395,7 @@ export default function Aprobaciones() {
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
                   <th style={thStyle()}>ID</th>
+                  <th style={thStyle()}>Tipo</th>
                   <th style={thStyle()}>Fecha</th>
                   <th style={thStyle()}>Solicitante</th>
                   <th style={thStyle()}>Estado</th>
@@ -425,6 +426,23 @@ export default function Aprobaciones() {
                         }}
                       >
                         #{p.id}
+                      </td>
+
+                      <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            padding: "4px 10px",
+                            borderRadius: 999,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: (p.tipo === "reposicion") ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
+                            color: (p.tipo === "reposicion") ? "#92400e" : "#1e3a8a",
+                            border: "1px solid rgba(15,23,42,0.08)",
+                          }}
+                        >
+                          {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                        </span>
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>

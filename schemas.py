@@ -4,11 +4,11 @@ from pydantic import BaseModel, Field, EmailStr
 
 TamanoType = Literal["semillero", "M12", "M20", "M30"]
 MovimientoTipo = Literal["entrada", "salida", "traslado_interno"]
-OrigenTipo = Literal["Proveedor", "Vivero", "Palmetum"]
+OrigenTipo = Literal["Empresa Externa", "Vivero", "Palmetum"]
 DestinoTipo = Literal["Vivero", "Externo", "Baja Vivero", "Palmetum"]
 
 UserStatus = Literal["activo", "inactivo", "bloqueado"]
-UserRole = Literal["admin", "tecnico", "manager", "proveedor"]
+UserRole = Literal["admin", "tecnico", "manager", "empresa_externa", "gestor_vivero"]
 
 
 class ProductoCreate(BaseModel):
@@ -173,6 +173,7 @@ class PedidoItemCreate(BaseModel):
 class PedidoCreate(BaseModel):
     items: List[PedidoItemCreate]
     nota: Optional[str] = None
+    tipo: Optional[Literal["salida", "reposicion"]] = "salida"
 
 class PedidoActionRequest(BaseModel):
     motivo: Optional[str] = None
@@ -193,6 +194,7 @@ class PedidoItemOut(BaseModel):
 class PedidoOut(BaseModel):
     id: int
     estado: str
+    tipo: Optional[str] = "salida"
     created_at: datetime
     solicitante_username: Optional[str] = None
     served_at: Optional[datetime] = None

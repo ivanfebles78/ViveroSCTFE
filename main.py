@@ -96,6 +96,7 @@ class PedidoCreate(BaseModel):
     distrito_destino: Optional[str] = None
     barrio_destino: Optional[str] = None
     direccion_destino: Optional[str] = None
+    tipo: Optional[str] = "salida"
 
 
 # =============================
@@ -427,6 +428,7 @@ def _pedido_to_dict(pedido: Pedido) -> dict:
     return {
         "id": getattr(pedido, "id", None),
         "estado": getattr(pedido, "estado", None),
+        "tipo": getattr(pedido, "tipo", "salida") or "salida",
         "solicitante_username": getattr(pedido, "solicitante_username", None),
         "nota": getattr(pedido, "nota", None),
         "distrito_destino": getattr(pedido, "distrito_destino", None),
@@ -520,7 +522,7 @@ def auth_me(current_user: Usuario = Depends(get_current_user)):
 @app.get("/productos")
 def get_productos(
     db: Session = Depends(get_db),
-    user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "proveedor"])),
+    user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     productos = db.query(Producto).order_by(Producto.nombre_cientifico.asc()).all()
 
@@ -589,7 +591,7 @@ def get_productos(
             "lotes": lotes,
         }
 
-        if (user.rol or "").strip().lower() != "proveedor":
+        if (user.rol or "").strip().lower() != "empresa_externa":
             item["stock_minimo"] = p.stock_minimo
 
         out.append(item)
@@ -603,7 +605,7 @@ def get_productos(
 @app.get("/pedidos")
 def get_pedidos(
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     pedidos = db.query(Pedido).order_by(Pedido.id.desc()).all()
     return [_pedido_to_dict(p) for p in pedidos]
@@ -613,13 +615,18 @@ def get_pedidos(
 def create_pedido(
     payload: PedidoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     if not payload.items or len(payload.items) == 0:
         raise HTTPException(status_code=400, detail="Debes añadir al menos una línea al pedido")
 
-    if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
-        raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
+    tipo_pedido = (payload.tipo or "salida").strip().lower()
+    if tipo_pedido not in ("salida", "reposicion"):
+        raise HTTPException(status_code=400, detail="Tipo de pedido inválido")
+
+    if tipo_pedido == "salida":
+        if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
+            raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
 
     for item in payload.items:
         if item.cantidad <= 0:
@@ -632,24 +639,26 @@ def create_pedido(
         if not producto:
             raise HTTPException(status_code=404, detail=f"Producto no encontrado: {item.producto_id}")
 
-        stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
+        if tipo_pedido == "salida":
+            stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
 
-        if item.cantidad > stock_total:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Stock insuficiente para {producto.nombre_cientifico} "
-                    f"en tamaño {item.tamano}. Disponible={stock_total}, solicitado={item.cantidad}"
-                ),
-            )
+            if item.cantidad > stock_total:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Stock insuficiente para {producto.nombre_cientifico} "
+                        f"en tamaño {item.tamano}. Disponible={stock_total}, solicitado={item.cantidad}"
+                    ),
+                )
 
     pedido = Pedido(
         solicitante_username=current_user.username,
         estado="RESERVA",
+        tipo=tipo_pedido,
         nota=payload.nota,
-        distrito_destino=payload.distrito_destino,
-        barrio_destino=payload.barrio_destino,
-        direccion_destino=payload.direccion_destino,
+        distrito_destino=payload.distrito_destino if tipo_pedido == "salida" else None,
+        barrio_destino=payload.barrio_destino if tipo_pedido == "salida" else None,
+        direccion_destino=payload.direccion_destino if tipo_pedido == "salida" else None,
     )
     db.add(pedido)
     db.flush()
@@ -675,7 +684,7 @@ def update_pedido(
     pedido_id: int,
     payload: PedidoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
@@ -688,8 +697,11 @@ def update_pedido(
     if not payload.items or len(payload.items) == 0:
         raise HTTPException(status_code=400, detail="Debes añadir al menos una línea al pedido")
 
-    if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
-        raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
+    tipo_pedido = (getattr(pedido, "tipo", "salida") or "salida").strip().lower()
+
+    if tipo_pedido == "salida":
+        if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
+            raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
 
     for item in payload.items:
         if item.cantidad <= 0:
@@ -702,21 +714,23 @@ def update_pedido(
         if not producto:
             raise HTTPException(status_code=404, detail=f"Producto no encontrado: {item.producto_id}")
 
-        stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
+        if tipo_pedido == "salida":
+            stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
 
-        if item.cantidad > stock_total:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Stock insuficiente para {producto.nombre_cientifico} "
-                    f"en tamaño {item.tamano}. Disponible={stock_total}, solicitado={item.cantidad}"
-                ),
-            )
+            if item.cantidad > stock_total:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Stock insuficiente para {producto.nombre_cientifico} "
+                        f"en tamaño {item.tamano}. Disponible={stock_total}, solicitado={item.cantidad}"
+                    ),
+                )
 
     pedido.nota = payload.nota
-    pedido.distrito_destino = payload.distrito_destino
-    pedido.barrio_destino = payload.barrio_destino
-    pedido.direccion_destino = payload.direccion_destino
+    if tipo_pedido == "salida":
+        pedido.distrito_destino = payload.distrito_destino
+        pedido.barrio_destino = payload.barrio_destino
+        pedido.direccion_destino = payload.direccion_destino
 
     for existing in list(pedido.items):
         db.delete(existing)
@@ -743,7 +757,7 @@ def update_pedido(
 def cancelar_pedido_endpoint(
     pedido_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
@@ -841,7 +855,7 @@ def denegar_pedido(
 def get_lotes_disponibles(
     producto_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     rows = (
         db.query(InventarioLote, Lote)
@@ -872,7 +886,7 @@ def get_lotes_disponibles(
 def crear_movimiento(
     payload: MovimientoCreate,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
+    user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero"])),
 ):
     if payload.cantidad <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor que 0")
@@ -923,7 +937,11 @@ def crear_movimiento(
                 detail="El producto del movimiento no coincide con la línea del pedido",
             )
 
-        if (pedido_item.tamano or "") != (payload.tamano_origen or ""):
+        pedido_tipo = (getattr(pedido, "tipo", "salida") or "salida").strip().lower()
+        tamano_comparar = (
+            payload.tamano_destino if pedido_tipo == "reposicion" else payload.tamano_origen
+        )
+        if (pedido_item.tamano or "") != (tamano_comparar or ""):
             raise HTTPException(
                 status_code=400,
                 detail="El tamaño del movimiento no coincide con el tamaño de la línea del pedido",
@@ -1111,7 +1129,17 @@ def crear_movimiento(
 
     movimiento.uuid_lote = _join_uuid_lotes(uuids_asociados) or movimiento.uuid_lote
 
-    if pedido and pedido_item and origen == "vivero" and destino != "vivero":
+    pedido_tipo = (getattr(pedido, "tipo", "salida") or "salida").strip().lower() if pedido else "salida"
+    es_servicio_pedido = (
+        pedido
+        and pedido_item
+        and (
+            (pedido_tipo == "salida" and origen == "vivero" and destino != "vivero")
+            or (pedido_tipo == "reposicion" and origen != "vivero" and destino == "vivero")
+        )
+    )
+
+    if es_servicio_pedido:
         pedido_item.cantidad_servida = int(pedido_item.cantidad_servida or 0) + int(payload.cantidad)
 
         if int(pedido_item.cantidad_servida or 0) > int(pedido_item.cantidad or 0):
@@ -1141,7 +1169,7 @@ def crear_movimiento(
 @app.get("/movimientos")
 def listar_movimientos(
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "tecnico", "manager", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "tecnico", "manager", "empresa_externa", "gestor_vivero"])),
 ):
     rows = (
         db.query(Movimiento, Producto)
@@ -1200,7 +1228,7 @@ def listar_movimientos(
 def get_lote(
     uuid_lote: str,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "tecnico", "manager", "proveedor"])),
+    current_user: Usuario = Depends(require_roles(["admin", "tecnico", "manager", "empresa_externa", "gestor_vivero"])),
 ):
     lote = db.query(Lote).filter(Lote.uuid_lote == uuid_lote).first()
 
