@@ -129,6 +129,7 @@ class MovimientoCreate(BaseModel):
     observaciones: Optional[str] = None
     es_prestamo: bool = False
     es_devolucion: bool = False
+    fecha_disponibilidad: Optional[date] = None
 
 class MovimientoOut(BaseModel):
     id: int
@@ -152,6 +153,7 @@ class MovimientoOut(BaseModel):
     fecha_movimiento: datetime
     fecha_caducidad: Optional[date] = None
     dias_caducidad_aplicados: Optional[int] = None
+    fecha_disponibilidad: Optional[date] = None
 
     class Config:
         from_attributes = True
@@ -358,10 +360,19 @@ def _get_fecha_caducidad_actual_lote(
     return getattr(row, "fecha_caducidad", None) if row else None
 
 
+def _disponible_filter():
+    hoy = datetime.utcnow().date()
+    return or_(
+        InventarioLote.fecha_disponibilidad.is_(None),
+        InventarioLote.fecha_disponibilidad <= hoy,
+    )
+
+
 def _stock_total_producto(db: Session, producto_id: int) -> int:
     rows = (
         db.query(InventarioLote)
         .filter(InventarioLote.producto_id == producto_id)
+        .filter(_disponible_filter())
         .all()
     )
     return sum(int(r.cantidad_disponible or 0) for r in rows)
@@ -385,6 +396,7 @@ def _stock_en_zona_tamano(
     else:
         q = q.filter(InventarioLote.tamano == tamano)
 
+    q = q.filter(_disponible_filter())
     rows = q.all()
     return sum(int(r.cantidad_disponible or 0) for r in rows)
 
@@ -396,6 +408,7 @@ def _stock_por_tamano_producto(db: Session, producto_id: int) -> dict:
             InventarioLote.producto_id == producto_id,
             InventarioLote.cantidad_disponible > 0,
         )
+        .filter(_disponible_filter())
         .all()
     )
 
@@ -417,6 +430,7 @@ def _stock_total_producto_tamano(db: Session, producto_id: int, tamano: str) -> 
             InventarioLote.tamano == tamano,
             InventarioLote.cantidad_disponible > 0,
         )
+        .filter(_disponible_filter())
         .all()
     )
     return sum(int(r.cantidad_disponible or 0) for r in rows)
@@ -570,6 +584,7 @@ def get_productos(
                 "tamano": inv.tamano,
                 "cantidad_disponible": int(inv.cantidad_disponible or 0),
                 "fecha_caducidad": fecha_cad.isoformat(),
+                "fecha_disponibilidad": inv.fecha_disponibilidad.isoformat() if getattr(inv, "fecha_disponibilidad", None) else None,
                 "estado": estado,
             }
 
@@ -864,6 +879,7 @@ def get_lotes_disponibles(
             InventarioLote.producto_id == producto_id,
             InventarioLote.cantidad_disponible > 0,
         )
+        .filter(_disponible_filter())
         .order_by(Lote.id.asc(), InventarioLote.id.asc())
         .all()
     )
@@ -976,6 +992,18 @@ def crear_movimiento(
         fecha_base=fecha_base_movimiento,
     )
 
+    fecha_disp = payload.fecha_disponibilidad
+    if fecha_disp is not None:
+        if destino != "vivero":
+            raise HTTPException(status_code=400, detail="La fecha de disponibilidad solo aplica a movimientos con destino Vivero")
+        if (payload.tamano_destino or "").strip().upper() != "M35":
+            raise HTTPException(status_code=400, detail="La fecha de disponibilidad solo aplica al tamaño M35")
+        hoy = fecha_base_movimiento.date()
+        if fecha_disp <= hoy:
+            raise HTTPException(status_code=400, detail="La fecha de disponibilidad debe ser futura")
+        if fecha_caducidad is not None and fecha_disp > fecha_caducidad:
+            raise HTTPException(status_code=400, detail="La fecha de disponibilidad no puede ser posterior a la fecha de caducidad")
+
     movimiento = Movimiento(
         pedido_id=payload.pedido_id,
         pedido_item_id=payload.pedido_item_id,
@@ -1002,6 +1030,7 @@ def crear_movimiento(
         fecha_movimiento=fecha_base_movimiento,
         fecha_caducidad=fecha_caducidad,
         dias_caducidad_aplicados=dias_caducidad_aplicados,
+        fecha_disponibilidad=fecha_disp,
         created_by=user.username,
     )
 
@@ -1032,6 +1061,7 @@ def crear_movimiento(
             zona=payload.zona_destino,
             tamano=payload.tamano_destino,
             cantidad_disponible=payload.cantidad,
+            fecha_disponibilidad=fecha_disp,
         )
         db.add(inventario)
 
@@ -1058,6 +1088,7 @@ def crear_movimiento(
                 InventarioLote.tamano == payload.tamano_origen,
                 InventarioLote.cantidad_disponible > 0,
             )
+            .filter(_disponible_filter())
             .order_by(InventarioLote.id.asc())
             .all()
         )
@@ -1098,6 +1129,8 @@ def crear_movimiento(
 
                 if destino_inv:
                     destino_inv.cantidad_disponible += usar
+                    if fecha_disp is not None:
+                        destino_inv.fecha_disponibilidad = fecha_disp
                 else:
                     db.add(
                         InventarioLote(
@@ -1106,6 +1139,7 @@ def crear_movimiento(
                             zona=payload.zona_destino,
                             tamano=payload.tamano_destino,
                             cantidad_disponible=usar,
+                            fecha_disponibilidad=fecha_disp,
                         )
                     )
 
@@ -1626,12 +1660,21 @@ def _normalize_zona_id(value: str | None) -> str:
 def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
     zona_norm = _normalize_zona_id(zona_id)
 
-    inventarios = (
+    q = (
         db.query(InventarioLote, Producto)
         .join(Producto, Producto.id == InventarioLote.producto_id)
         .filter(InventarioLote.cantidad_disponible > 0)
-        .all()
     )
+
+    if zona_norm:
+        q = q.filter(
+            or_(
+                func.lower(InventarioLote.zona) == zona_norm,
+                InventarioLote.zona.ilike(f"%{zona_norm}%"),
+            )
+        )
+
+    inventarios = q.all()
 
     productos: dict[int, dict] = {}
 

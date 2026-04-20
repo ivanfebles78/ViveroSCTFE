@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { getProductos, createPedidoReposicion } from "../api/api";
 
-const TAMANOS = ["Semillero", "M12", "M20", "M30"];
+const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
 function fmtErr(e) {
   const status = e?.response?.status;

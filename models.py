@@ -95,6 +95,7 @@ class InventarioLote(Base):
     tamano = Column(String(20), nullable=True)
 
     cantidad_disponible = Column(Integer, nullable=False)
+    fecha_disponibilidad = Column(Date, nullable=True)
 
     producto = relationship("Producto")
 
@@ -204,6 +205,7 @@ class Movimiento(Base):
     fecha_movimiento = Column(DateTime, default=datetime.utcnow)
     fecha_caducidad = Column(Date, nullable=True)
     dias_caducidad_aplicados = Column(Integer, nullable=True)
+    fecha_disponibilidad = Column(Date, nullable=True)
     created_by = Column(String(50), nullable=True)
 
     producto = relationship("Producto")

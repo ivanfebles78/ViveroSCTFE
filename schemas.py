@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, Literal, List
 from pydantic import BaseModel, Field, EmailStr
 
-TamanoType = Literal["semillero", "M12", "M20", "M30"]
+TamanoType = Literal["semillero", "M12", "M20", "M35"]
 MovimientoTipo = Literal["entrada", "salida", "traslado_interno"]
 OrigenTipo = Literal["Empresa Externa", "Vivero", "Palmetum"]
 DestinoTipo = Literal["Vivero", "Externo", "Baja Vivero", "Palmetum"]

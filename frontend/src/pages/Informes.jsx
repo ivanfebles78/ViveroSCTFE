@@ -19,6 +19,7 @@ const REPORTS = [
   { key: "caducidad", label: "Caducidad" },
   { key: "externos", label: "Movimientos externos" },
   { key: "prestamos", label: "Préstamos" },
+  { key: "abastecimiento", label: "Abastecimiento" },
 ];
 
 const DISTRICTS = [
@@ -452,6 +453,72 @@ function CaducidadBadge({ estado }) {
 }
 
 
+function AbastecimientoBadge({ estado }) {
+  const e = String(estado || "").toUpperCase();
+  let bg = "rgba(148,163,184,0.18)";
+  let color = "#334155";
+  let border = "rgba(15,23,42,0.08)";
+
+  if (e === "APROBADO") { bg = "rgba(16,185,129,0.12)"; color = "#065f46"; border = "rgba(16,185,129,0.20)"; }
+  else if (e === "RESERVA") { bg = "rgba(245,158,11,0.12)"; color = "#92400e"; border = "rgba(245,158,11,0.20)"; }
+  else if (e === "SERVIDO") { bg = "rgba(59,130,246,0.12)"; color = "#1e3a8a"; border = "rgba(59,130,246,0.20)"; }
+  else if (e === "DENEGADO") { bg = "rgba(239,68,68,0.10)"; color = "#991b1b"; border = "rgba(239,68,68,0.20)"; }
+
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900,
+      border: `1px solid ${border}`, color, background: bg, whiteSpace: "nowrap",
+    }}>
+      {e || "—"}
+    </span>
+  );
+}
+
+function buildAbastecimientoItems(pedidos) {
+  return safeArray(pedidos)
+    .filter((p) => String(p?.tipo || "salida").toLowerCase() === "reposicion")
+    .map((p) => {
+      const lineas = safeArray(p.items).map((it, idx) => {
+        const cantidadPedida = safeNumber(it?.cantidad);
+        const cantidadServida = safeNumber(it?.cantidad_servida);
+        const pendiente = Math.max(cantidadPedida - cantidadServida, 0);
+        return {
+          key: `${p.id}-${it?.producto_id || idx}-${idx}`,
+          producto:
+            it?.producto_nombre_cientifico ||
+            it?.nombre_cientifico ||
+            it?.producto_nombre ||
+            it?.producto_nombre_natural ||
+            `Producto #${it?.producto_id || "—"}`,
+          tamano: it?.tamano || "—",
+          cantidadPedida,
+          cantidadServida,
+          pendiente,
+        };
+      });
+      return {
+        id: p.id,
+        fecha: p.created_at,
+        solicitante:
+          p.solicitante_username || p.solicitante || p.created_by || p.usuario || "—",
+        estado: String(p.estado || "RESERVA").toUpperCase(),
+        aprobadoPor: p.aprobado_por || null,
+        servedBy: p.served_by || null,
+        nota: p.nota || "",
+        lineas,
+        totalPedido: lineas.reduce((s, l) => s + l.cantidadPedida, 0),
+        totalServido: lineas.reduce((s, l) => s + l.cantidadServida, 0),
+        totalPendiente: lineas.reduce((s, l) => s + l.pendiente, 0),
+      };
+    })
+    .sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+}
+
+function safeArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
 function PrestamoBadge({ estado }) {
   const isReturned = estado === "Devuelto";
   return (
@@ -832,6 +899,7 @@ async function exportReportToPdf({
   caducidadExportData,
   externosData,
   prestamosExportData,
+  abastecimientoExportData,
 }) {
   const doc = new jsPDF("p", "mm", "a4");
   let y = await addDocHeader(
@@ -846,6 +914,8 @@ async function exportReportToPdf({
       ? "Reporte de caducidad"
       : activeReport === "prestamos"
       ? "Reporte de préstamos"
+      : activeReport === "abastecimiento"
+      ? "Reporte de abastecimiento"
       : "Reporte de movimientos externos",
     me
   );
@@ -1026,6 +1096,45 @@ async function exportReportToPdf({
   }
 
 
+  if (activeReport === "abastecimiento" && abastecimientoExportData) {
+    autoTable(doc, {
+      startY: y,
+      theme: "grid",
+      head: [["Resumen", "Valor"]],
+      body: [
+        ["Pedidos visibles", fmtNum(abastecimientoExportData.total)],
+        ["En reserva", fmtNum(abastecimientoExportData.reserva)],
+        ["Aprobados", fmtNum(abastecimientoExportData.aprobados)],
+        ["Servidos", fmtNum(abastecimientoExportData.servidos)],
+        ["Denegados", fmtNum(abastecimientoExportData.denegados)],
+        ["Cancelados", fmtNum(abastecimientoExportData.cancelados)],
+        ["Total pedido", fmtNum(abastecimientoExportData.totalPedido)],
+        ["Total servido", fmtNum(abastecimientoExportData.totalServido)],
+        ["Total pendiente", fmtNum(abastecimientoExportData.totalPendiente)],
+      ],
+      styles: { fontSize: 10, cellPadding: 2.5 },
+      headStyles: { fillColor: [14, 165, 233] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      theme: "grid",
+      head: [["Pedido", "Fecha", "Solicitante", "Estado", "Líneas", "Pedido", "Servido", "Pendiente"]],
+      body: (abastecimientoExportData.items || []).map((item) => [
+        `#${item.id}`,
+        fmtFecha(item.fecha),
+        item.solicitante,
+        item.estado,
+        item.lineas.map((l) => `${l.producto} · ${l.tamano} · ${fmtNum(l.cantidadPedida)}`).join("\n"),
+        fmtNum(item.totalPedido),
+        fmtNum(item.totalServido),
+        fmtNum(item.totalPendiente),
+      ]),
+      styles: { fontSize: 8.5, cellPadding: 2, overflow: "linebreak" },
+      headStyles: { fillColor: [245, 158, 11] },
+    });
+  }
+
   if (activeReport === "prestamos" && prestamosExportData) {
     autoTable(doc, {
       startY: y,
@@ -1069,6 +1178,10 @@ async function exportReportToPdf({
       ? "reporte_existencias"
       : activeReport === "caducidad"
       ? "reporte_caducidad"
+      : activeReport === "abastecimiento"
+      ? "reporte_abastecimiento"
+      : activeReport === "prestamos"
+      ? "reporte_prestamos"
       : "reporte_movimientos_externos"
   )}_${new Date().toISOString().slice(0, 10)}.pdf`;
 
@@ -1181,6 +1294,12 @@ export default function Informes() {
   const [prestamoEstadoFilter, setPrestamoEstadoFilter] = useState("");
   const [prestamoFechaDesde, setPrestamoFechaDesde] = useState("");
   const [prestamoFechaHasta, setPrestamoFechaHasta] = useState("");
+
+  const [abastEstadoFilter, setAbastEstadoFilter] = useState("");
+  const [abastSolicitanteFilter, setAbastSolicitanteFilter] = useState("");
+  const [abastProductoFilter, setAbastProductoFilter] = useState("");
+  const [abastFechaDesde, setAbastFechaDesde] = useState("");
+  const [abastFechaHasta, setAbastFechaHasta] = useState("");
 
   const productoSearchRef = useRef(null);
 
@@ -1467,6 +1586,61 @@ export default function Informes() {
     };
   }, [prestamosItems, prestamosSummary]);
 
+  const abastecimientoItems = useMemo(() => {
+    const base = buildAbastecimientoItems(pedidos);
+    const prodTerm = abastProductoFilter.trim().toLowerCase();
+    const solTerm = abastSolicitanteFilter.trim().toLowerCase();
+    const desde = abastFechaDesde ? new Date(`${abastFechaDesde}T00:00:00`) : null;
+    const hasta = abastFechaHasta ? new Date(`${abastFechaHasta}T23:59:59`) : null;
+
+    return base.filter((item) => {
+      const estadoMatch = !abastEstadoFilter || item.estado === abastEstadoFilter;
+      const prodMatch =
+        !prodTerm || item.lineas.some((l) => l.producto.toLowerCase().includes(prodTerm));
+      const solMatch = !solTerm || String(item.solicitante).toLowerCase().includes(solTerm);
+
+      const f = item.fecha ? new Date(item.fecha) : null;
+      const desdeOk = !desde || (f && f >= desde);
+      const hastaOk = !hasta || (f && f <= hasta);
+
+      return estadoMatch && prodMatch && solMatch && desdeOk && hastaOk;
+    });
+  }, [
+    pedidos,
+    abastEstadoFilter,
+    abastSolicitanteFilter,
+    abastProductoFilter,
+    abastFechaDesde,
+    abastFechaHasta,
+  ]);
+
+  const abastecimientoSummary = useMemo(() => {
+    return {
+      total: abastecimientoItems.length,
+      reserva: abastecimientoItems.filter((x) => x.estado === "RESERVA").length,
+      aprobados: abastecimientoItems.filter((x) => x.estado === "APROBADO").length,
+      servidos: abastecimientoItems.filter((x) => x.estado === "SERVIDO").length,
+      denegados: abastecimientoItems.filter((x) => x.estado === "DENEGADO").length,
+      cancelados: abastecimientoItems.filter((x) => x.estado === "CANCELADO").length,
+      totalPedido: abastecimientoItems.reduce((s, x) => s + x.totalPedido, 0),
+      totalServido: abastecimientoItems.reduce((s, x) => s + x.totalServido, 0),
+      totalPendiente: abastecimientoItems.reduce((s, x) => s + x.totalPendiente, 0),
+    };
+  }, [abastecimientoItems]);
+
+  const abastecimientoExportData = useMemo(() => ({
+    items: abastecimientoItems,
+    ...abastecimientoSummary,
+  }), [abastecimientoItems, abastecimientoSummary]);
+
+  const onLimpiarAbastecimiento = () => {
+    setAbastEstadoFilter("");
+    setAbastSolicitanteFilter("");
+    setAbastProductoFilter("");
+    setAbastFechaDesde("");
+    setAbastFechaHasta("");
+  };
+
   const onActualizarPrestamos = async () => {
     await loadProductos(true);
   };
@@ -1486,6 +1660,7 @@ export default function Informes() {
     if (activeReport === "caducidad") return caducidadItems.length > 0;
     if (activeReport === "externos") return externosSearched;
     if (activeReport === "prestamos") return prestamosItems.length > 0;
+    if (activeReport === "abastecimiento") return abastecimientoItems.length > 0;
     return false;
   }, [
     activeReport,
@@ -1495,6 +1670,7 @@ export default function Informes() {
     caducidadItems,
     externosSearched,
     prestamosItems,
+    abastecimientoItems,
   ]);
 
   const handleExportPdf = async () => {
@@ -1510,6 +1686,7 @@ export default function Informes() {
         caducidadExportData,
         externosData,
         prestamosExportData,
+        abastecimientoExportData,
       });
       showTimedMessage("PDF exportado correctamente.", "success");
     } catch (e) {
@@ -2434,6 +2611,156 @@ Productos con fecha de caducidad
                           <td style={tdStyle()}>{fmtNum(item.totalDevuelto)}</td>
                           <td style={tdStyle()}>{fmtNum(item.totalPendiente)}</td>
                           <td style={tdStyle()}><PrestamoBadge estado={item.estado} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeReport === "abastecimiento" && (
+          <>
+            <div
+              style={{
+                marginTop: 22,
+                display: "grid",
+                gridTemplateColumns: "minmax(200px, 1fr) minmax(200px, 1fr) minmax(160px, 180px) minmax(160px, 1fr) minmax(160px, 1fr) auto",
+                gap: 18,
+                alignItems: "end",
+              }}
+            >
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Producto</div>
+                <input
+                  value={abastProductoFilter}
+                  onChange={(e) => setAbastProductoFilter(e.target.value)}
+                  placeholder="Buscar por producto"
+                  style={softInputStyle()}
+                />
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Solicitante</div>
+                <input
+                  value={abastSolicitanteFilter}
+                  onChange={(e) => setAbastSolicitanteFilter(e.target.value)}
+                  placeholder="Solicitante"
+                  style={softInputStyle()}
+                />
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Estado</div>
+                <select
+                  value={abastEstadoFilter}
+                  onChange={(e) => setAbastEstadoFilter(e.target.value)}
+                  style={softInputStyle()}
+                >
+                  <option value="">Todos</option>
+                  <option value="RESERVA">Reserva</option>
+                  <option value="APROBADO">Aprobado</option>
+                  <option value="SERVIDO">Servido</option>
+                  <option value="DENEGADO">Denegado</option>
+                  <option value="CANCELADO">Cancelado</option>
+                </select>
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Fecha desde</div>
+                <input type="date" value={abastFechaDesde} onChange={(e) => setAbastFechaDesde(e.target.value)} style={softInputStyle()} />
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Fecha hasta</div>
+                <input type="date" value={abastFechaHasta} onChange={(e) => setAbastFechaHasta(e.target.value)} style={softInputStyle()} />
+              </div>
+
+              <button onClick={onLimpiarAbastecimiento} style={secondaryBtnStyle()}>
+                Limpiar filtros
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 20,
+                display: "grid",
+                gridTemplateColumns: "repeat(6, minmax(150px, 1fr))",
+                gap: 16,
+              }}
+            >
+              <div style={{ ...cardStyle(), padding: 16 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Pedidos visibles</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#0f172a", marginTop: 6 }}>{fmtNum(abastecimientoSummary.total)}</div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 16 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Reserva</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#92400e", marginTop: 6 }}>{fmtNum(abastecimientoSummary.reserva)}</div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 16 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Aprobados</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#065f46", marginTop: 6 }}>{fmtNum(abastecimientoSummary.aprobados)}</div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 16 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Servidos</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#1e3a8a", marginTop: 6 }}>{fmtNum(abastecimientoSummary.servidos)}</div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 16 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Total pedido</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#0f172a", marginTop: 6 }}>{fmtNum(abastecimientoSummary.totalPedido)}</div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 16 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Pendiente</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: "#b91c1c", marginTop: 6 }}>{fmtNum(abastecimientoSummary.totalPendiente)}</div>
+              </div>
+            </div>
+
+            {abastecimientoItems.length === 0 ? (
+              <EmptyState text="No hay pedidos de abastecimiento que coincidan con los filtros." />
+            ) : (
+              <div style={{ ...cardStyle(), marginTop: 20, padding: 18 }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>
+                  Pedidos de abastecimiento
+                </div>
+
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle()}>Pedido</th>
+                        <th style={thStyle()}>Fecha</th>
+                        <th style={thStyle()}>Solicitante</th>
+                        <th style={thStyle()}>Estado</th>
+                        <th style={thStyle()}>Líneas</th>
+                        <th style={thStyle()}>Pedido</th>
+                        <th style={thStyle()}>Servido</th>
+                        <th style={thStyle()}>Pendiente</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {abastecimientoItems.map((item) => (
+                        <tr key={item.id}>
+                          <td style={tdStyle()}>#{item.id}</td>
+                          <td style={tdStyle()}>{fmtFecha(item.fecha)}</td>
+                          <td style={tdStyle()}>{item.solicitante}</td>
+                          <td style={tdStyle()}><AbastecimientoBadge estado={item.estado} /></td>
+                          <td style={tdStyle()}>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {item.lineas.map((l) => (
+                                <div key={l.key}>
+                                  <div style={{ fontWeight: 900, color: "#0f172a" }}>{l.producto}</div>
+                                  <div style={{ color: "#64748b", fontWeight: 700, marginTop: 2, fontSize: 12 }}>
+                                    Tamaño: {l.tamano} · Pedido: {fmtNum(l.cantidadPedida)} · Servido: {fmtNum(l.cantidadServida)} · Pendiente: {fmtNum(l.pendiente)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                          <td style={tdStyle()}>{fmtNum(item.totalPedido)}</td>
+                          <td style={tdStyle()}>{fmtNum(item.totalServido)}</td>
+                          <td style={tdStyle()}>{fmtNum(item.totalPendiente)}</td>
                         </tr>
                       ))}
                     </tbody>

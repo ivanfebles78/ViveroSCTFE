@@ -11,7 +11,7 @@ const ZONAS = [
   "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11",
 ];
 
-const TAMANOS = ["Semillero", "M12", "M20", "M30"];
+const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
 const ORIGENES = [
   "Empresa Externa",
@@ -166,7 +166,7 @@ function normalizeTamanoForStock(value) {
   if (raw === "semillero") return "Semillero";
   if (raw == "m12") return "M12";
   if (raw == "m20") return "M20";
-  if (raw == "m30") return "M30";
+  if (raw == "m30") return "M35";
   return String(value || "").trim();
 }
 
@@ -372,6 +372,19 @@ function getFormErrors(form) {
     form.tamano_origen === form.tamano_destino
   ) {
     errs.push("El traslado interno debe cambiar de zona o de tamaño.");
+  }
+
+  if (form.fecha_disponibilidad) {
+    if (form.destino_tipo !== "Vivero" || form.tamano_destino !== "M35") {
+      errs.push("La fecha de disponibilidad solo aplica a movimientos a Vivero con tamaño M35.");
+    } else {
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const f = new Date(`${form.fecha_disponibilidad}T00:00:00`);
+      if (Number.isNaN(f.getTime()) || f <= hoy) {
+        errs.push("La fecha de disponibilidad debe ser futura.");
+      }
+    }
   }
 
   return errs;
@@ -679,6 +692,7 @@ function MovimientoModal({
     cp_destino: "",
     observaciones: "",
     prestamo: false,
+    fecha_disponibilidad: "",
   });
 
   const [errors, setErrors] = useState([]);
@@ -704,6 +718,7 @@ function MovimientoModal({
         cp_destino: "",
         observaciones: "",
         prestamo: false,
+        fecha_disponibilidad: "",
       });
       setErrors([]);
       setSelectedPedidoLineKey("");
@@ -953,6 +968,10 @@ function MovimientoModal({
       nota: form.observaciones || null,
       es_prestamo: form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? !!form.prestamo : false,
       es_devolucion: esDevolucion,
+      fecha_disponibilidad:
+        form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad
+          ? form.fecha_disponibilidad
+          : null,
     });
   };
 
@@ -1413,6 +1432,23 @@ function MovimientoModal({
                     />
                   </div>
                 </>
+              ) : null}
+
+              {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" ? (
+                <div style={{ gridColumn: "span 2" }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                    Fecha de disponibilidad (opcional, tamaño M35)
+                  </div>
+                  <input
+                    type="date"
+                    value={form.fecha_disponibilidad}
+                    onChange={(e) => setForm((prev) => ({ ...prev, fecha_disponibilidad: e.target.value }))}
+                    style={inputStyle()}
+                  />
+                  <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
+                    Si se indica, el producto no estará disponible para movimientos hasta superar esta fecha. Debe ser futura y no posterior a la fecha de caducidad.
+                  </div>
+                </div>
               ) : null}
 
               {form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? (

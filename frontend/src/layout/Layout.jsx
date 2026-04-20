@@ -522,47 +522,14 @@ function ZonaMapModal({ open, onClose }) {
     setLoading(true);
     setZonaData(null);
 
-    const aliases = getZoneAliases(zone);
-    let emptyResponse = null;
-    let lastError = null;
-
     try {
-      for (const alias of aliases) {
-        try {
-          const data = await getZonaItems(alias);
-          const totalProductos = Number(data?.total_productos ?? 0);
-          const items = Array.isArray(data?.items) ? data.items : [];
-
-          if (totalProductos > 0 || items.length > 0) {
-            setZonaData({
-              ...data,
-              _resolvedZone: alias,
-            });
-            return;
-          }
-
-          if (!emptyResponse) {
-            emptyResponse = {
-              ...data,
-              _resolvedZone: alias,
-            };
-          }
-        } catch (e) {
-          lastError = e;
-        }
-      }
-
-      if (emptyResponse) {
-        setZonaData(emptyResponse);
-        setZonaError("");
-      } else {
-        setZonaData(null);
-        setZonaError(
-          lastError?.response?.data?.detail ||
-            lastError?.message ||
-            "No se pudo cargar el stock de la zona"
-        );
-      }
+      const data = await getZonaItems(zoneId);
+      setZonaData({ ...(data || {}), _resolvedZone: zoneId });
+    } catch (e) {
+      setZonaData(null);
+      setZonaError(
+        e?.response?.data?.detail || e?.message || "No se pudo cargar el stock de la zona"
+      );
     } finally {
       setLoading(false);
     }
