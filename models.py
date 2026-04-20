@@ -39,6 +39,7 @@ class Producto(Base):
     subcategoria = Column(String(100), nullable=False)
 
     stock_minimo = Column(Integer, default=0)
+    es_interno = Column(Boolean, nullable=False, default=False)
 
 
 class CaducidadConfig(Base):

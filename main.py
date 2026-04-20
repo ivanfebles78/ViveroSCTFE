@@ -383,6 +383,7 @@ def _stock_en_zona_tamano(
     producto_id: int,
     zona: Optional[str],
     tamano: Optional[str],
+    include_no_disponibles: bool = False,
 ) -> int:
     q = db.query(InventarioLote).filter(InventarioLote.producto_id == producto_id)
 
@@ -396,7 +397,8 @@ def _stock_en_zona_tamano(
     else:
         q = q.filter(InventarioLote.tamano == tamano)
 
-    q = q.filter(_disponible_filter())
+    if not include_no_disponibles:
+        q = q.filter(_disponible_filter())
     rows = q.all()
     return sum(int(r.cantidad_disponible or 0) for r in rows)
 
@@ -538,7 +540,13 @@ def get_productos(
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
-    productos = db.query(Producto).order_by(Producto.nombre_cientifico.asc()).all()
+    rol_user = (user.rol or "").strip().lower()
+    productos_q = db.query(Producto)
+    if rol_user == "empresa_externa":
+        productos_q = productos_q.filter(
+            or_(Producto.es_interno.is_(None), Producto.es_interno == False)
+        )
+    productos = productos_q.order_by(Producto.nombre_cientifico.asc()).all()
 
     out = []
     today = datetime.utcnow().date()
@@ -606,8 +614,9 @@ def get_productos(
             "lotes": lotes,
         }
 
-        if (user.rol or "").strip().lower() != "empresa_externa":
+        if rol_user != "empresa_externa":
             item["stock_minimo"] = p.stock_minimo
+            item["es_interno"] = bool(getattr(p, "es_interno", False))
 
         out.append(item)
 
@@ -970,12 +979,15 @@ def crear_movimiento(
                 detail=f"La cantidad supera la pendiente de servir de la línea del pedido. Pendiente={pendiente}",
             )
 
+    es_traslado_interno = origen == "vivero" and destino == "vivero"
+
     if origen == "vivero":
         disponible = _stock_en_zona_tamano(
             db,
             payload.producto_id,
             payload.zona_origen,
             payload.tamano_origen,
+            include_no_disponibles=es_traslado_interno,
         )
         if payload.cantidad > disponible:
             raise HTTPException(
@@ -1080,7 +1092,7 @@ def crear_movimiento(
     elif origen == "vivero":
         restante = payload.cantidad
 
-        inventarios = (
+        inventarios_q = (
             db.query(InventarioLote)
             .filter(
                 InventarioLote.producto_id == payload.producto_id,
@@ -1088,10 +1100,10 @@ def crear_movimiento(
                 InventarioLote.tamano == payload.tamano_origen,
                 InventarioLote.cantidad_disponible > 0,
             )
-            .filter(_disponible_filter())
-            .order_by(InventarioLote.id.asc())
-            .all()
         )
+        if not es_traslado_interno:
+            inventarios_q = inventarios_q.filter(_disponible_filter())
+        inventarios = inventarios_q.order_by(InventarioLote.id.asc()).all()
 
         if payload.uuid_lote:
             inventarios = [inv for inv in inventarios if (inv.uuid_lote or "").strip() == payload.uuid_lote.strip()]
@@ -1127,10 +1139,12 @@ def crear_movimiento(
                     .first()
                 )
 
+                fecha_disp_efectiva = fecha_disp if fecha_disp is not None else getattr(inv, "fecha_disponibilidad", None)
+
                 if destino_inv:
                     destino_inv.cantidad_disponible += usar
-                    if fecha_disp is not None:
-                        destino_inv.fecha_disponibilidad = fecha_disp
+                    if fecha_disp_efectiva is not None:
+                        destino_inv.fecha_disponibilidad = fecha_disp_efectiva
                 else:
                     db.add(
                         InventarioLote(
@@ -1139,7 +1153,7 @@ def crear_movimiento(
                             zona=payload.zona_destino,
                             tamano=payload.tamano_destino,
                             cantidad_disponible=usar,
-                            fecha_disponibilidad=fecha_disp,
+                            fecha_disponibilidad=fecha_disp_efectiva,
                         )
                     )
 
