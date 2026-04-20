@@ -1800,11 +1800,15 @@ export default function Pedidos() {
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)", minWidth: 240 }}>
-                        <DestinoResumen
-                          distrito={p?.distrito_destino}
-                          barrio={p?.barrio_destino}
-                          direccion={p?.direccion_destino}
-                        />
+                        {p?.tipo === "reposicion" ? (
+                          <span style={{ fontWeight: 900, color: "#065f46" }}>Vivero</span>
+                        ) : (
+                          <DestinoResumen
+                            distrito={p?.distrito_destino}
+                            barrio={p?.barrio_destino}
+                            direccion={p?.direccion_destino}
+                          />
+                        )}
                       </td>
 
                       <td

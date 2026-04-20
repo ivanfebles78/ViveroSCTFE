@@ -609,7 +609,14 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
                   </div>
 
                   <div style={{ marginTop: 10, color: "#475569", fontWeight: 700 }}>
-                    Destino: {[p.distrito_destino, p.barrio_destino, p.direccion_destino].filter(Boolean).join(" · ") || "—"}
+                    Tipo: <span style={{ color: p.tipo === "reposicion" ? "#92400e" : "#1e3a8a", fontWeight: 900 }}>
+                      {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 6, color: "#475569", fontWeight: 700 }}>
+                    Destino: {p.tipo === "reposicion"
+                      ? "Vivero"
+                      : ([p.distrito_destino, p.barrio_destino, p.direccion_destino].filter(Boolean).join(" · ") || "—")}
                   </div>
 
                   <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
@@ -841,7 +848,11 @@ function MovimientoModal({
   }, [form]);
 
   const handleSeleccionPedido = (pedido) => {
-    const destinoSugerido = DESTINOS_EXTERNOS.includes("Empresa") ? "Empresa" : "Otro";
+    const esReposicion = (pedido?.tipo || "salida") === "reposicion";
+    const destinoSugerido = esReposicion
+      ? "Vivero"
+      : (DESTINOS_EXTERNOS.includes("Empresa") ? "Empresa" : "Otro");
+    const origenSugerido = esReposicion ? "Empresa Externa" : "Vivero";
 
     setForm((prev) => ({
       ...prev,
@@ -849,11 +860,15 @@ function MovimientoModal({
       pedido_item_id: "",
       producto_id: "",
       cantidad: "",
-      origen_tipo: "Vivero",
+      origen_tipo: origenSugerido,
       destino_tipo: destinoSugerido,
-      distrito_destino: pedido.distrito_destino || "",
-      barrio_destino: pedido.barrio_destino || "",
-      direccion_destino: pedido.direccion_destino || "",
+      zona_origen: "",
+      zona_destino: "",
+      tamano_origen: "",
+      tamano_destino: "",
+      distrito_destino: esReposicion ? "" : (pedido.distrito_destino || ""),
+      barrio_destino: esReposicion ? "" : (pedido.barrio_destino || ""),
+      direccion_destino: esReposicion ? "" : (pedido.direccion_destino || ""),
       cp_destino: "",
       observaciones: prev.observaciones || `Movimiento asociado al pedido #${pedido.id}`,
       prestamo: false,
@@ -864,6 +879,31 @@ function MovimientoModal({
 
   const usarLineaPedido = (linea) => {
     if (linea._disabled) return;
+
+    const esReposicion = (selectedPedido?.tipo || "salida") === "reposicion";
+
+    if (esReposicion) {
+      setSelectedPedidoLineKey(linea._key);
+      setForm((prev) => ({
+        ...prev,
+        pedido_item_id: String(linea.id || ""),
+        producto_id: String(linea.producto_id),
+        cantidad: String(linea.cantidad || ""),
+        origen_tipo: "Empresa Externa",
+        destino_tipo: "Vivero",
+        tamano_origen: "",
+        zona_origen: "",
+        tamano_destino: linea.tamano || "",
+        zona_destino: prev.zona_destino || "",
+        distrito_destino: "",
+        barrio_destino: "",
+        direccion_destino: "",
+        observaciones: prev.observaciones || `Movimiento asociado al pedido #${selectedPedido?.id || ""}`,
+        prestamo: false,
+      }));
+      setErrors([]);
+      return;
+    }
 
     const destinoSugerido =
       DESTINOS_EXTERNOS.includes(form.destino_tipo) ? form.destino_tipo : "Empresa";
@@ -1030,9 +1070,14 @@ function MovimientoModal({
                 >
                   <div style={{ fontWeight: 900, color: "#0f172a" }}>
                     Pedido #{selectedPedido.id}
+                    <span style={{ marginLeft: 10, fontSize: 12, color: selectedPedido.tipo === "reposicion" ? "#92400e" : "#1e3a8a" }}>
+                      ({selectedPedido.tipo === "reposicion" ? "Reposición" : "Salida"})
+                    </span>
                   </div>
                   <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
-                    Destino: {[selectedPedido.distrito_destino, selectedPedido.barrio_destino, selectedPedido.direccion_destino].filter(Boolean).join(" · ") || "—"}
+                    Destino: {selectedPedido.tipo === "reposicion"
+                      ? "Vivero"
+                      : ([selectedPedido.distrito_destino, selectedPedido.barrio_destino, selectedPedido.direccion_destino].filter(Boolean).join(" · ") || "—")}
                   </div>
 
                   <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
