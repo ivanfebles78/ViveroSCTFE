@@ -20,6 +20,7 @@ const REPORTS = [
   { key: "externos", label: "Movimientos externos" },
   { key: "prestamos", label: "Préstamos" },
   { key: "abastecimiento", label: "Abastecimiento" },
+  { key: "bajas", label: "Baja vivero" },
 ];
 
 const DISTRICTS = [
@@ -519,6 +520,37 @@ function safeArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function buildBajasItems(movimientos, productos) {
+  const prodMap = new Map();
+  for (const p of safeArray(productos)) prodMap.set(p.id, p);
+
+  return safeArray(movimientos)
+    .filter((m) => String(m?.destino_tipo || "").trim().toLowerCase() === "baja vivero")
+    .map((m) => {
+      const prod = prodMap.get(m?.producto_id) || null;
+      return {
+        id: m?.id,
+        fecha: m?.fecha_movimiento,
+        productoId: m?.producto_id ?? null,
+        producto:
+          m?.producto_nombre_cientifico ||
+          prod?.nombre_cientifico ||
+          prod?.nombre_natural ||
+          `Producto #${m?.producto_id ?? "—"}`,
+        categoria: String(prod?.categoria || m?.producto_categoria || "Sin categoría").trim() || "Sin categoría",
+        subcategoria:
+          String(prod?.subcategoria || m?.producto_subcategoria || "Sin subcategoría").trim() || "Sin subcategoría",
+        zonaOrigen: m?.zona_origen || "—",
+        tamano: m?.tamano_origen || m?.tamano_destino || "—",
+        cantidad: safeNumber(m?.cantidad),
+        uuidLote: m?.uuid_lote || "—",
+        observaciones: m?.observaciones || m?.nota || "",
+        createdBy: m?.created_by || "—",
+      };
+    })
+    .sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+}
+
 function PrestamoBadge({ estado }) {
   const isReturned = estado === "Devuelto";
   return (
@@ -900,6 +932,7 @@ async function exportReportToPdf({
   externosData,
   prestamosExportData,
   abastecimientoExportData,
+  bajasExportData,
 }) {
   const doc = new jsPDF("p", "mm", "a4");
   let y = await addDocHeader(
@@ -916,6 +949,8 @@ async function exportReportToPdf({
       ? "Reporte de préstamos"
       : activeReport === "abastecimiento"
       ? "Reporte de abastecimiento"
+      : activeReport === "bajas"
+      ? "Reporte de Baja vivero"
       : "Reporte de movimientos externos",
     me
   );
@@ -1096,6 +1131,55 @@ async function exportReportToPdf({
   }
 
 
+  if (activeReport === "bajas" && bajasExportData) {
+    autoTable(doc, {
+      startY: y,
+      theme: "grid",
+      head: [["Filtro", "Valor"]],
+      body: [
+        ["Producto", bajasExportData.filtros.producto || "—"],
+        ["Categoría", bajasExportData.filtros.categoria || "Todas"],
+        ["Subcategoría", bajasExportData.filtros.subcategoria || "Todas"],
+        ["Fecha desde", bajasExportData.filtros.fecha_desde || "—"],
+        ["Fecha hasta", bajasExportData.filtros.fecha_hasta || "—"],
+      ],
+      styles: { fontSize: 10, cellPadding: 2.5 },
+      headStyles: { fillColor: [14, 165, 233] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      theme: "grid",
+      head: [["Resumen", "Valor"]],
+      body: [
+        ["Movimientos visibles", fmtNum(bajasExportData.totalMovimientos)],
+        ["Productos únicos", fmtNum(bajasExportData.productosUnicos)],
+        ["Unidades totales", fmtNum(bajasExportData.totalUnidades)],
+      ],
+      styles: { fontSize: 10, cellPadding: 2.5 },
+      headStyles: { fillColor: [220, 38, 38] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      theme: "grid",
+      head: [["Fecha", "Producto", "Categoría", "Subcategoría", "Zona origen", "Tamaño", "Unidades", "UUID lote", "Registrado por"]],
+      body: (bajasExportData.items || []).map((item) => [
+        fmtFecha(item.fecha),
+        item.producto,
+        item.categoria,
+        item.subcategoria,
+        item.zonaOrigen,
+        item.tamano,
+        fmtNum(item.cantidad),
+        item.uuidLote,
+        item.createdBy,
+      ]),
+      styles: { fontSize: 8.5, cellPadding: 2, overflow: "linebreak" },
+      headStyles: { fillColor: [220, 38, 38] },
+    });
+  }
+
   if (activeReport === "abastecimiento" && abastecimientoExportData) {
     autoTable(doc, {
       startY: y,
@@ -1182,6 +1266,8 @@ async function exportReportToPdf({
       ? "reporte_abastecimiento"
       : activeReport === "prestamos"
       ? "reporte_prestamos"
+      : activeReport === "bajas"
+      ? "reporte_baja_vivero"
       : "reporte_movimientos_externos"
   )}_${new Date().toISOString().slice(0, 10)}.pdf`;
 
@@ -1300,6 +1386,12 @@ export default function Informes() {
   const [abastProductoFilter, setAbastProductoFilter] = useState("");
   const [abastFechaDesde, setAbastFechaDesde] = useState("");
   const [abastFechaHasta, setAbastFechaHasta] = useState("");
+
+  const [bajaProductoFilter, setBajaProductoFilter] = useState("");
+  const [bajaCategoriaFilter, setBajaCategoriaFilter] = useState("");
+  const [bajaSubcategoriaFilter, setBajaSubcategoriaFilter] = useState("");
+  const [bajaFechaDesde, setBajaFechaDesde] = useState("");
+  const [bajaFechaHasta, setBajaFechaHasta] = useState("");
 
   const productoSearchRef = useRef(null);
 
@@ -1641,6 +1733,75 @@ export default function Informes() {
     setAbastFechaHasta("");
   };
 
+  const bajasItemsAll = useMemo(
+    () => buildBajasItems(movimientos, productos),
+    [movimientos, productos]
+  );
+
+  const bajasCategoriasDisponibles = useMemo(() => {
+    return [...new Set(bajasItemsAll.map((x) => x.categoria))].sort((a, b) =>
+      a.localeCompare(b, "es")
+    );
+  }, [bajasItemsAll]);
+
+  const bajasSubcategoriasDisponibles = useMemo(() => {
+    const base = bajaCategoriaFilter
+      ? bajasItemsAll.filter((x) => x.categoria === bajaCategoriaFilter)
+      : bajasItemsAll;
+    return [...new Set(base.map((x) => x.subcategoria))].sort((a, b) =>
+      a.localeCompare(b, "es")
+    );
+  }, [bajasItemsAll, bajaCategoriaFilter]);
+
+  const bajasItems = useMemo(() => {
+    const prodTerm = bajaProductoFilter.trim().toLowerCase();
+    const desde = bajaFechaDesde ? new Date(`${bajaFechaDesde}T00:00:00`) : null;
+    const hasta = bajaFechaHasta ? new Date(`${bajaFechaHasta}T23:59:59`) : null;
+
+    return bajasItemsAll.filter((x) => {
+      const prodMatch =
+        !prodTerm ||
+        x.producto.toLowerCase().includes(prodTerm) ||
+        x.uuidLote.toLowerCase().includes(prodTerm);
+      const catMatch = !bajaCategoriaFilter || x.categoria === bajaCategoriaFilter;
+      const subMatch = !bajaSubcategoriaFilter || x.subcategoria === bajaSubcategoriaFilter;
+      const f = x.fecha ? new Date(x.fecha) : null;
+      const desdeOk = !desde || (f && f >= desde);
+      const hastaOk = !hasta || (f && f <= hasta);
+      return prodMatch && catMatch && subMatch && desdeOk && hastaOk;
+    });
+  }, [bajasItemsAll, bajaProductoFilter, bajaCategoriaFilter, bajaSubcategoriaFilter, bajaFechaDesde, bajaFechaHasta]);
+
+  const bajasSummary = useMemo(() => {
+    const totalUnidades = bajasItems.reduce((s, x) => s + x.cantidad, 0);
+    const productosUnicos = new Set(bajasItems.map((x) => x.productoId)).size;
+    return {
+      totalMovimientos: bajasItems.length,
+      totalUnidades,
+      productosUnicos,
+    };
+  }, [bajasItems]);
+
+  const bajasExportData = useMemo(() => ({
+    items: bajasItems,
+    filtros: {
+      producto: bajaProductoFilter,
+      categoria: bajaCategoriaFilter,
+      subcategoria: bajaSubcategoriaFilter,
+      fecha_desde: bajaFechaDesde,
+      fecha_hasta: bajaFechaHasta,
+    },
+    ...bajasSummary,
+  }), [bajasItems, bajasSummary, bajaProductoFilter, bajaCategoriaFilter, bajaSubcategoriaFilter, bajaFechaDesde, bajaFechaHasta]);
+
+  const onLimpiarBajas = () => {
+    setBajaProductoFilter("");
+    setBajaCategoriaFilter("");
+    setBajaSubcategoriaFilter("");
+    setBajaFechaDesde("");
+    setBajaFechaHasta("");
+  };
+
   const onActualizarPrestamos = async () => {
     await loadProductos(true);
   };
@@ -1661,6 +1822,7 @@ export default function Informes() {
     if (activeReport === "externos") return externosSearched;
     if (activeReport === "prestamos") return prestamosItems.length > 0;
     if (activeReport === "abastecimiento") return abastecimientoItems.length > 0;
+    if (activeReport === "bajas") return bajasItems.length > 0;
     return false;
   }, [
     activeReport,
@@ -1671,6 +1833,7 @@ export default function Informes() {
     externosSearched,
     prestamosItems,
     abastecimientoItems,
+    bajasItems,
   ]);
 
   const handleExportPdf = async () => {
@@ -1687,6 +1850,7 @@ export default function Informes() {
         externosData,
         prestamosExportData,
         abastecimientoExportData,
+        bajasExportData,
       });
       showTimedMessage("PDF exportado correctamente.", "success");
     } catch (e) {
@@ -2611,6 +2775,162 @@ Productos con fecha de caducidad
                           <td style={tdStyle()}>{fmtNum(item.totalDevuelto)}</td>
                           <td style={tdStyle()}>{fmtNum(item.totalPendiente)}</td>
                           <td style={tdStyle()}><PrestamoBadge estado={item.estado} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeReport === "bajas" && (
+          <>
+            <div
+              style={{
+                marginTop: 22,
+                display: "grid",
+                gridTemplateColumns: "minmax(220px, 1.3fr) minmax(200px, 1fr) minmax(200px, 1fr) minmax(160px, 180px) minmax(160px, 180px) auto",
+                gap: 18,
+                alignItems: "end",
+              }}
+            >
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Producto</div>
+                <input
+                  value={bajaProductoFilter}
+                  onChange={(e) => setBajaProductoFilter(e.target.value)}
+                  placeholder="Nombre científico o UUID"
+                  style={softInputStyle()}
+                />
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Categoría</div>
+                <select
+                  value={bajaCategoriaFilter}
+                  onChange={(e) => {
+                    setBajaCategoriaFilter(e.target.value);
+                    setBajaSubcategoriaFilter("");
+                  }}
+                  style={softInputStyle()}
+                >
+                  <option value="">Todas</option>
+                  {bajasCategoriasDisponibles.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Subcategoría</div>
+                <select
+                  value={bajaSubcategoriaFilter}
+                  onChange={(e) => setBajaSubcategoriaFilter(e.target.value)}
+                  style={softInputStyle()}
+                >
+                  <option value="">Todas</option>
+                  {bajasSubcategoriasDisponibles.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Fecha desde</div>
+                <input
+                  type="date"
+                  value={bajaFechaDesde}
+                  onChange={(e) => setBajaFechaDesde(e.target.value)}
+                  style={softInputStyle()}
+                />
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Fecha hasta</div>
+                <input
+                  type="date"
+                  value={bajaFechaHasta}
+                  onChange={(e) => setBajaFechaHasta(e.target.value)}
+                  style={softInputStyle()}
+                />
+              </div>
+
+              <button onClick={onLimpiarBajas} style={secondaryBtnStyle()}>
+                Limpiar filtros
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 20,
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(220px, 1fr))",
+                gap: 16,
+              }}
+            >
+              <div style={{ ...cardStyle(), padding: 18 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Bajas visibles</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#b91c1c", marginTop: 6 }}>
+                  {fmtNum(bajasSummary.totalMovimientos)}
+                </div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 18 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Productos distintos</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#0f172a", marginTop: 6 }}>
+                  {fmtNum(bajasSummary.productosUnicos)}
+                </div>
+              </div>
+              <div style={{ ...cardStyle(), padding: 18 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Unidades totales dadas de baja</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#b91c1c", marginTop: 6 }}>
+                  {fmtNum(bajasSummary.totalUnidades)}
+                </div>
+              </div>
+            </div>
+
+            {bajasItems.length === 0 ? (
+              <EmptyState text="No hay bajas registradas con los filtros seleccionados." />
+            ) : (
+              <div style={{ ...cardStyle(), marginTop: 20, padding: 18 }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>
+                  Productos dados de baja
+                </div>
+
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle()}>Fecha</th>
+                        <th style={thStyle()}>Producto</th>
+                        <th style={thStyle()}>Categoría</th>
+                        <th style={thStyle()}>Subcategoría</th>
+                        <th style={thStyle()}>Zona origen</th>
+                        <th style={thStyle()}>Tamaño</th>
+                        <th style={thStyle()}>Unidades</th>
+                        <th style={thStyle()}>UUID lote</th>
+                        <th style={thStyle()}>Registrado por</th>
+                        <th style={thStyle()}>Observaciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bajasItems.map((item) => (
+                        <tr key={item.id}>
+                          <td style={tdStyle()}>{fmtFecha(item.fecha)}</td>
+                          <td style={tdStyle()}>{item.producto}</td>
+                          <td style={tdStyle()}>{item.categoria}</td>
+                          <td style={tdStyle()}>{item.subcategoria}</td>
+                          <td style={tdStyle()}>{item.zonaOrigen}</td>
+                          <td style={tdStyle()}>{item.tamano}</td>
+                          <td style={tdStyle()}>
+                            <span style={{ fontWeight: 900, color: "#b91c1c" }}>{fmtNum(item.cantidad)}</span>
+                          </td>
+                          <td style={{ ...tdStyle(), fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12 }}>
+                            {item.uuidLote}
+                          </td>
+                          <td style={tdStyle()}>{item.createdBy}</td>
+                          <td style={tdStyle()}>{item.observaciones || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
