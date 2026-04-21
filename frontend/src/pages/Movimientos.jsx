@@ -700,6 +700,8 @@ function MovimientoModal({
   const [showPedidoModal, setShowPedidoModal] = useState(false);
   const [selectedPedidoLineKey, setSelectedPedidoLineKey] = useState("");
   const [showPrestamoModal, setShowPrestamoModal] = useState(false);
+  // Distribución origen por zona { zona: cantidad } — se usa cuando origen=Vivero
+  const [distribucion, setDistribucion] = useState({});
 
   useEffect(() => {
     if (!open) {
@@ -727,6 +729,7 @@ function MovimientoModal({
       setSelectedPedidoLineKey("");
       setShowPedidoModal(false);
       setShowPrestamoModal(false);
+      setDistribucion({});
     }
   }, [open]);
 
@@ -823,11 +826,16 @@ function MovimientoModal({
   }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize]);
 
   const availableOriginSizes = useMemo(() => {
-    if (form.origen_tipo !== "Vivero" || !form.producto_id || !form.zona_origen) return TAMANOS;
+    if (form.origen_tipo !== "Vivero" || !form.producto_id) return TAMANOS;
 
+    // Si hay zona seleccionada, filtra tamaños con stock en esa zona concreta.
+    // Si no, muestra tamaños con stock en CUALQUIER zona (para el picker multi-zona).
     return TAMANOS.filter((tamano) => {
-      const key = buildStockKey(form.producto_id, form.zona_origen, tamano);
-      return Number(stockByProductZoneSize.get(key) || 0) > 0;
+      if (form.zona_origen) {
+        const key = buildStockKey(form.producto_id, form.zona_origen, tamano);
+        return Number(stockByProductZoneSize.get(key) || 0) > 0;
+      }
+      return ZONAS.some((z) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, tamano)) || 0) > 0);
     });
   }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize]);
 
@@ -861,6 +869,32 @@ function MovimientoModal({
   const esDevolucion = useMemo(() => {
     return form.destino_tipo === "Vivero" && isDevolucionOrigen(form.origen_tipo);
   }, [form.origen_tipo, form.destino_tipo]);
+
+  // Activa el picker por zonas cuando origen=Vivero + producto + tamaño elegidos
+  const distribucionActiva =
+    form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen;
+
+  // Mapa { zona: cantidadDisponible } para el producto y tamaño seleccionados
+  const distribucionDisponible = useMemo(() => {
+    if (!distribucionActiva) return {};
+    const out = {};
+    for (const z of ZONAS) {
+      const key = buildStockKey(form.producto_id, z, form.tamano_origen);
+      const qty = Number(stockByProductZoneSize.get(key) || 0);
+      if (qty > 0) out[z] = qty;
+    }
+    return out;
+  }, [distribucionActiva, form.producto_id, form.tamano_origen, stockByProductZoneSize]);
+
+  const totalDistribucion = useMemo(
+    () => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0),
+    [distribucion]
+  );
+
+  // Reset distribución cuando cambia producto, tamaño o se sale de modo Vivero
+  useEffect(() => {
+    setDistribucion({});
+  }, [form.producto_id, form.tamano_origen, form.origen_tipo]);
 
   const tipoPreview = useMemo(() => {
     return getMovimientoTipo(form);
@@ -1017,20 +1051,40 @@ function MovimientoModal({
 
   const submit = async () => {
     const foundErrors = getFormErrors(form);
-    setErrors(foundErrors);
-    if (foundErrors.length > 0) return;
 
-    await onSubmit({
+    // Cuando el picker por zonas está activo, ignoramos errores de "zona_origen"
+    // y "cantidad" únicos y validamos la distribución.
+    let filtered = foundErrors;
+    if (distribucionActiva) {
+      filtered = filtered.filter(
+        (e) =>
+          !e.toLowerCase().includes("zona de origen") &&
+          !e.toLowerCase().includes("cantidad debe ser mayor")
+      );
+      const zonasElegidas = Object.entries(distribucion).filter(([, q]) => Number(q) > 0);
+      if (zonasElegidas.length === 0) {
+        filtered.push("Indica al menos una zona con cantidad > 0 en la distribución.");
+      }
+      for (const [z, q] of zonasElegidas) {
+        const disp = Number(distribucionDisponible[z] || 0);
+        if (Number(q) > disp) {
+          filtered.push(`Zona ${z}: solicitado ${q} supera el disponible (${disp}).`);
+        }
+      }
+    }
+    setErrors(filtered);
+    if (filtered.length > 0) return;
+
+    // Construye uno o varios payloads según la distribución
+    const basePayload = {
       pedido_id: form.pedido_id ? Number(form.pedido_id) : null,
       pedido_item_id: form.pedido_item_id ? Number(form.pedido_item_id) : null,
       producto_id: Number(form.producto_id),
-      cantidad: Number(form.cantidad),
       origen_tipo: form.origen_tipo,
       destino_tipo: form.destino_tipo,
-      zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null,
-      zona_destino: form.destino_tipo === "Vivero" ? form.zona_destino || null : null,
       tamano_origen: form.origen_tipo === "Vivero" ? form.tamano_origen || null : null,
       tamano_destino: form.destino_tipo === "Vivero" ? form.tamano_destino || null : null,
+      zona_destino: form.destino_tipo === "Vivero" ? form.zona_destino || null : null,
       distrito_destino: isExternalDestination(form.destino_tipo) ? form.distrito_destino || null : null,
       barrio_destino: isExternalDestination(form.destino_tipo) ? form.barrio_destino || null : null,
       direccion_destino: isExternalDestination(form.destino_tipo) ? form.direccion_destino || null : null,
@@ -1044,7 +1098,29 @@ function MovimientoModal({
         form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad
           ? form.fecha_disponibilidad
           : null,
-    });
+    };
+
+    let payloads;
+    if (distribucionActiva) {
+      // Un movimiento por cada zona con cantidad > 0
+      payloads = Object.entries(distribucion)
+        .filter(([, q]) => Number(q) > 0)
+        .map(([zona, q]) => ({
+          ...basePayload,
+          zona_origen: zona,
+          cantidad: Number(q),
+        }));
+    } else {
+      payloads = [
+        {
+          ...basePayload,
+          zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null,
+          cantidad: Number(form.cantidad),
+        },
+      ];
+    }
+
+    await onSubmit(payloads);
   };
 
   if (!open) return null;
@@ -1387,68 +1463,52 @@ function MovimientoModal({
                 </select>
               </div>
 
+              {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ */}
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Cantidad
+                  Cantidad {distribucionActiva ? "(calculada)" : ""}
                 </div>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.cantidad}
-                  onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                  style={inputStyle()}
-                  placeholder="0"
-                />
+                {distribucionActiva ? (
+                  <div
+                    style={{
+                      ...inputStyle(),
+                      background: "#f1f5f9",
+                      color: "#0f172a",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.cantidad}
+                    onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                    style={inputStyle()}
+                    placeholder="0"
+                  />
+                )}
               </div>
 
               {form.origen_tipo === "Vivero" ? (
                 <>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Zona origen
-                    </div>
-                    <select
-                      value={form.zona_origen}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          zona_origen: e.target.value,
-                          tamano_origen: "",
-                        }))
-                      }
-                      style={inputStyle()}
-                      disabled={!form.producto_id || availableOriginZones.length === 0}
-                    >
-                      <option value="">
-                        {!form.producto_id
-                          ? "Primero selecciona un producto"
-                          : availableOriginZones.length === 0
-                          ? "No hay zonas con stock para este producto"
-                          : "Seleccionar zona"}
-                      </option>
-                      {availableOriginZones.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
+                  {/* Tamaño origen siempre visible */}
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
                       Tamaño origen
                     </div>
                     <select
                       value={form.tamano_origen}
-                      onChange={(e) => setForm((prev) => ({ ...prev, tamano_origen: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
+                      }
                       style={inputStyle()}
-                      disabled={!form.producto_id || !form.zona_origen || availableOriginSizes.length === 0}
+                      disabled={!form.producto_id || availableOriginSizes.length === 0}
                     >
                       <option value="">
                         {!form.producto_id
                           ? "Primero selecciona un producto"
-                          : !form.zona_origen
-                          ? "Primero selecciona una zona"
                           : availableOriginSizes.length === 0
                           ? "No hay tamaños disponibles"
                           : "Seleccionar tamaño"}
@@ -1460,7 +1520,129 @@ function MovimientoModal({
                       ))}
                     </select>
                   </div>
+
+                  {/* Zona origen SOLO se muestra si no está el picker */}
+                  {!distribucionActiva ? (
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                        Zona origen
+                      </div>
+                      <select
+                        value={form.zona_origen}
+                        onChange={(e) => setForm((prev) => ({ ...prev, zona_origen: e.target.value }))}
+                        style={inputStyle()}
+                        disabled={!form.producto_id || availableOriginZones.length === 0}
+                      >
+                        <option value="">
+                          {!form.producto_id
+                            ? "Primero selecciona un producto"
+                            : availableOriginZones.length === 0
+                            ? "No hay zonas con stock para este producto"
+                            : "Seleccionar zona"}
+                        </option>
+                        {availableOriginZones.map((z) => (
+                          <option key={z} value={z}>
+                            {z}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                 </>
+              ) : null}
+
+              {/* PICKER multi-zona: solo cuando origen=Vivero + producto + tamaño */}
+              {distribucionActiva ? (
+                <div style={{ gridColumn: "span 2" }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                    Distribución en el vivero — {form.tamano_origen}
+                  </div>
+                  <div
+                    style={{
+                      border: "1px solid rgba(15,23,42,0.10)",
+                      borderRadius: 14,
+                      background: "#fbfdff",
+                      padding: 12,
+                      display: "grid",
+                      gap: 8,
+                    }}
+                  >
+                    {Object.keys(distribucionDisponible).length === 0 ? (
+                      <div style={{ color: "#64748b", fontWeight: 700 }}>
+                        No hay stock de este producto en tamaño {form.tamano_origen}.
+                      </div>
+                    ) : (
+                      Object.entries(distribucionDisponible).map(([zona, disp]) => {
+                        const valor = distribucion[zona] ?? "";
+                        const invalid = Number(valor) > disp;
+                        return (
+                          <div
+                            key={zona}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "100px 1fr 110px",
+                              gap: 10,
+                              alignItems: "center",
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              background: "white",
+                              border: invalid
+                                ? "1px solid rgba(239,68,68,0.30)"
+                                : "1px solid rgba(15,23,42,0.06)",
+                            }}
+                          >
+                            <div style={{ fontWeight: 900, color: "#0f172a" }}>Zona {zona}</div>
+                            <div style={{ color: "#334155", fontWeight: 700 }}>
+                              Disponible: <span style={{ color: "#0f172a", fontWeight: 900 }}>{disp}</span>
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              max={disp}
+                              value={valor}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setDistribucion((prev) => {
+                                  const nx = { ...prev };
+                                  if (v === "" || Number(v) <= 0) delete nx[zona];
+                                  else nx[zona] = Math.min(Number(v), disp);
+                                  return nx;
+                                });
+                              }}
+                              placeholder="0"
+                              style={{
+                                padding: "8px 10px",
+                                borderRadius: 10,
+                                border: "1px solid rgba(15,23,42,0.12)",
+                                fontWeight: 900,
+                                textAlign: "center",
+                                color: "#0f172a",
+                              }}
+                            />
+                          </div>
+                        );
+                      })
+                    )}
+                    <div
+                      style={{
+                        marginTop: 4,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 4px",
+                        borderTop: "1px dashed rgba(15,23,42,0.10)",
+                      }}
+                    >
+                      <span style={{ color: "#64748b", fontWeight: 700 }}>
+                        {Object.keys(distribucion).filter((k) => Number(distribucion[k]) > 0).length} zona(s) seleccionada(s)
+                      </span>
+                      <span style={{ color: "#0f172a", fontWeight: 900 }}>Total: {totalDistribucion}</span>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
+                    Si eliges varias zonas, se creará un movimiento por cada una.
+                  </div>
+                </div>
               ) : null}
 
               {form.destino_tipo === "Vivero" ? (
@@ -2112,18 +2294,39 @@ export default function Movimientos() {
     });
   }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroFecha]);
 
-  const handleCreateMovimiento = async (payload) => {
+  const handleCreateMovimiento = async (payloadOrList) => {
+    const payloads = Array.isArray(payloadOrList) ? payloadOrList : [payloadOrList];
+    if (!payloads.length) return;
+
     setSaving(true);
+    let creados = 0;
+    let errorMsg = "";
     try {
-      await createMovimiento(payload);
-      setShowModal(false);
-      await load();
-      showTimedMessage("Movimiento guardado correctamente.", "success");
-    } catch (e) {
-      showTimedMessage(
-        e?.response?.data?.detail || e?.message || "Error guardando movimiento",
-        "error"
-      );
+      for (const p of payloads) {
+        try {
+          await createMovimiento(p);
+          creados += 1;
+        } catch (e) {
+          errorMsg = e?.response?.data?.detail || e?.message || "Error guardando movimiento";
+          break; // detenemos en el primer fallo
+        }
+      }
+      if (errorMsg) {
+        await load();
+        showTimedMessage(
+          `Guardados ${creados}/${payloads.length}. ${errorMsg}`,
+          "error"
+        );
+      } else {
+        setShowModal(false);
+        await load();
+        showTimedMessage(
+          payloads.length > 1
+            ? `${payloads.length} movimientos guardados correctamente.`
+            : "Movimiento guardado correctamente.",
+          "success"
+        );
+      }
     } finally {
       setSaving(false);
     }
