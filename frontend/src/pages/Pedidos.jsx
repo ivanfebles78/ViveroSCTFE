@@ -1571,9 +1571,18 @@ export default function Pedidos() {
 
   const pedidosFiltrados = useMemo(() => {
     const texto = textoFiltro.trim().toLowerCase();
+    const esEmpresaExterna = role === "empresa_externa";
 
     return pedidos
       .slice()
+      .filter((p) => {
+        if (!esEmpresaExterna) return true;
+        // Defensa en frontend: oculta reposición y pedidos que no son suyos
+        const tipo = String(p?.tipo || "salida").toLowerCase();
+        if (tipo === "reposicion") return false;
+        const solicitante = solicitanteFromPedido(p);
+        return me?.username && solicitante === me.username;
+      })
       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
       .filter((p) => {
         const idOk = !idFiltro || String(p.id).includes(String(idFiltro).trim());

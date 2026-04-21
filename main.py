@@ -698,7 +698,17 @@ def get_pedidos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
-    pedidos = db.query(Pedido).order_by(Pedido.id.desc()).all()
+    rol = (current_user.rol or "").strip().lower()
+    q = db.query(Pedido)
+
+    # Empresa externa no ve pedidos internos de reposición ni de otros solicitantes
+    if rol == "empresa_externa":
+        q = q.filter(
+            or_(Pedido.tipo.is_(None), func.lower(Pedido.tipo) != "reposicion")
+        )
+        q = q.filter(Pedido.solicitante_username == current_user.username)
+
+    pedidos = q.order_by(Pedido.id.desc()).all()
     return [_pedido_to_dict(p) for p in pedidos]
 
 

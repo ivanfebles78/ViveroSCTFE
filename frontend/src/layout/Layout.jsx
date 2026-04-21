@@ -299,8 +299,69 @@ function buildLowStockNotifications(productos) {
   ];
 }
 
+function isEstadoCaducado(raw) {
+  const s = String(raw || "").trim().toLowerCase();
+  return s === "caducado" || s === "expired" || s === "expirado";
+}
+
+function isEstadoProximo(raw) {
+  const s = String(raw || "").trim().toLowerCase();
+  return (
+    s === "proximo_a_caducar" ||
+    s === "próximo a caducar" ||
+    s === "proximo a caducar" ||
+    s === "near_expiry"
+  );
+}
+
+function computeEstadoByDate(fechaStr) {
+  if (!fechaStr) return null;
+  const d = new Date(fechaStr);
+  if (Number.isNaN(d.getTime())) return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const f = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((f - hoy) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return "caducado";
+  if (diffDays <= 7) return "proximo_a_caducar";
+  return "vigente";
+}
+
+function buildCaducidadNotification({ productName, zona, tamano, fecha, estado, producto, loteUuid }) {
+  const estadoFinal =
+    (isEstadoCaducado(estado) && "caducado") ||
+    (isEstadoProximo(estado) && "proximo_a_caducar") ||
+    computeEstadoByDate(fecha);
+
+  if (estadoFinal !== "caducado" && estadoFinal !== "proximo_a_caducar") return null;
+
+  const isCaducado = estadoFinal === "caducado";
+
+  // ID sin `source` ni `idx`: así una misma entrada que aparece en alertas_caducidad
+  // y en lotes no se notifica dos veces.
+  return {
+    id: `cad-${producto?.id ?? productName}-${loteUuid || "sinuuid"}-${zona}-${tamano}-${fecha}-${estadoFinal}`,
+    type: "caducidad",
+    severity: isCaducado ? "high" : "medium",
+    title: isCaducado
+      ? `Producto ${productName}, Tamaño ${tamano} en la Zona ${zona} HA CADUCADO`
+      : `Producto ${productName}, Tamaño ${tamano} en la Zona ${zona} está próximo a caducar`,
+    description: isCaducado
+      ? `Caducó el ${fecha}. Retíralo del inventario lo antes posible.`
+      : `Fecha estimada de caducidad: ${fecha}.`,
+  };
+}
+
 function buildCaducidadNotifications(productos) {
   const notifications = [];
+  const seen = new Set();
+
+  const pushUnique = (notif) => {
+    if (!notif) return;
+    if (seen.has(notif.id)) return;
+    seen.add(notif.id);
+    notifications.push(notif);
+  };
 
   for (const producto of productos || []) {
     const productName = getProductName(producto);
@@ -311,17 +372,21 @@ function buildCaducidadNotifications(productos) {
       ? producto.caducidad_alertas
       : [];
 
-    explicitAlerts.forEach((alert, idx) => {
+    explicitAlerts.forEach((alert) => {
       const zona = alert?.zona || alert?.zone || alert?.zona_id || "—";
       const tamano = alert?.tamano || alert?.size || "—";
       const fecha = alert?.fecha_caducidad || alert?.caducidad || alert?.fecha || "próximamente";
-      notifications.push({
-        id: `cad-alert-explicit-${producto?.id ?? productName}-${idx}-${zona}-${tamano}-${fecha}`,
-        type: "caducidad",
-        severity: "medium",
-        title: `Producto ${productName}, Tamaño ${tamano} en la Zona ${zona} está próximo a caducar`,
-        description: `Fecha estimada de caducidad: ${fecha}.`,
-      });
+      pushUnique(
+        buildCaducidadNotification({
+          productName,
+          zona,
+          tamano,
+          fecha,
+          estado: alert?.estado,
+          producto,
+          loteUuid: alert?.uuid_lote || alert?.lote_uuid,
+        })
+      );
     });
 
     const lotes = Array.isArray(producto?.lotes)
@@ -330,26 +395,21 @@ function buildCaducidadNotifications(productos) {
       ? producto.batches
       : [];
 
-    lotes.forEach((lote, idx) => {
-      const nearExpiry =
-        lote?.proximo_a_caducar === true ||
-        lote?.near_expiry === true ||
-        lote?.estado === "PROXIMO_A_CADUCAR" ||
-        lote?.status === "NEAR_EXPIRY";
-
-      if (!nearExpiry) return;
-
+    lotes.forEach((lote) => {
       const zona = lote?.zona || lote?.zone || lote?.zona_id || "—";
       const tamano = lote?.tamano || lote?.size || "—";
       const fecha = lote?.fecha_caducidad || lote?.caducidad || lote?.expiry_date || "próximamente";
-
-      notifications.push({
-        id: `cad-alert-lote-${producto?.id ?? productName}-${idx}-${zona}-${tamano}-${fecha}`,
-        type: "caducidad",
-        severity: "medium",
-        title: `Producto ${productName}, Tamaño ${tamano} en la Zona ${zona} está próximo a caducar`,
-        description: `Fecha estimada de caducidad: ${fecha}.`,
-      });
+      pushUnique(
+        buildCaducidadNotification({
+          productName,
+          zona,
+          tamano,
+          fecha,
+          estado: lote?.estado,
+          producto,
+          loteUuid: lote?.uuid_lote || lote?.uuid,
+        })
+      );
     });
   }
 
@@ -811,7 +871,8 @@ export default function Layout() {
   const userRole = me?.rol || me?.role || "";
   const isAdmin = userRole === "admin";
   const sidebarWidth = 220;
-  const hasUnreadNotifications = unreadNotifications.length > 0;
+  const canSeeNotifications = userRole && userRole !== "empresa_externa";
+  const hasUnreadNotifications = canSeeNotifications && unreadNotifications.length > 0;
 
   useEffect(() => {
     if (!userRole) return;
@@ -996,6 +1057,7 @@ export default function Layout() {
               flexWrap: "wrap",
             }}
           >
+            {canSeeNotifications && (
             <button
               onClick={() => setNotificationsOpen(true)}
               style={notificationButtonStyle(hasUnreadNotifications)}
@@ -1047,6 +1109,7 @@ export default function Layout() {
                 </span>
               ) : null}
             </button>
+            )}
 
             <div
               style={{
@@ -1084,12 +1147,14 @@ export default function Layout() {
       </div>
 
       <ZonaMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
-      <NotificationModal
-        open={notificationsOpen}
-        onClose={() => setNotificationsOpen(false)}
-        notifications={unreadNotifications}
-        onMarkAsRead={markNotificationAsRead}
-      />
+      {canSeeNotifications && (
+        <NotificationModal
+          open={notificationsOpen}
+          onClose={() => setNotificationsOpen(false)}
+          notifications={unreadNotifications}
+          onMarkAsRead={markNotificationAsRead}
+        />
+      )}
     </>
   );
 }
