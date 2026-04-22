@@ -790,25 +790,41 @@ function MovimientoModal({
     return map;
   }, [movimientos]);
 
+  // Cantidades de cada pedido_item_id que ya están en el lote local (aún sin enviar)
+  const cantidadesEnLote = useMemo(() => {
+    const m = new Map();
+    for (const p of batchPayloads) {
+      if (!p?.pedido_item_id) continue;
+      const k = Number(p.pedido_item_id);
+      m.set(k, (m.get(k) || 0) + Number(p.cantidad || 0));
+    }
+    return m;
+  }, [batchPayloads]);
+
   const pedidoLineas = useMemo(() => {
     return safeArray(selectedPedido?.items).map((it, idx) => {
       const byItemKey = it?.id ? `item__${it.id}` : null;
       const fallbackKey = `pedido__${selectedPedido?.id || ""}__prod__${it?.producto_id || ""}__tam__${it?.tamano || ""}`;
 
-      const cantidadMovida =
+      const cantidadMovidaBackend =
         (byItemKey ? Number(movimientosPreviosPorPedido.get(byItemKey) || 0) : 0) ||
         Number(movimientosPreviosPorPedido.get(fallbackKey) || 0);
 
-      const yaUsada = cantidadMovida > 0;
+      const cantidadEnLoteLocal = it?.id ? Number(cantidadesEnLote.get(Number(it.id)) || 0) : 0;
+      const cantidadMovida = cantidadMovidaBackend + cantidadEnLoteLocal;
+      const yaUsadaBackend = cantidadMovidaBackend > 0;
+      const yaEnLoteLocal = cantidadEnLoteLocal > 0;
 
       return {
         ...it,
         _key: `${selectedPedido?.id || "pedido"}-${it?.producto_id || "prod"}-${it?.tamano || "tam"}-${idx}`,
         _cantidad_movida: cantidadMovida,
-        _disabled: yaUsada,
+        _cantidad_en_lote: cantidadEnLoteLocal,
+        _disabled: yaUsadaBackend || yaEnLoteLocal,
+        _razon_bloqueo: yaEnLoteLocal ? "ya_en_lote" : yaUsadaBackend ? "ya_servida" : null,
       };
     });
-  }, [selectedPedido, movimientosPreviosPorPedido]);
+  }, [selectedPedido, movimientosPreviosPorPedido, cantidadesEnLote]);
 
   const selectedProducto = productos.find((p) => String(p.id) === String(form.producto_id));
 
@@ -1348,7 +1364,11 @@ function MovimientoModal({
                             </div>
                             <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700 }}>
                               Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}
-                              {disabled ? ` · Ya movida: ${linea._cantidad_movida}` : ""}
+                              {disabled
+                                ? linea._razon_bloqueo === "ya_en_lote"
+                                  ? ` · En el lote (${linea._cantidad_en_lote})`
+                                  : ` · Ya movida: ${linea._cantidad_movida}`
+                                : ""}
                             </div>
                           </div>
 
@@ -1370,7 +1390,11 @@ function MovimientoModal({
                               cursor: disabled ? "not-allowed" : "pointer",
                             }}
                           >
-                            {disabled ? "Ya usada" : "Usar esta línea"}
+                            {disabled
+                              ? linea._razon_bloqueo === "ya_en_lote"
+                                ? "En lote"
+                                : "Ya usada"
+                              : "Usar esta línea"}
                           </button>
                         </div>
                       );
