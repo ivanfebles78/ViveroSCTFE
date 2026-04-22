@@ -2,7 +2,8 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 import uuid
 
-from fastapi import FastAPI, Depends, HTTPException, status, Header
+from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File
+import io
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -688,6 +689,292 @@ def actualizar_producto_interno(
         "id": producto.id,
         "nombre_cientifico": producto.nombre_cientifico,
         "es_interno": bool(producto.es_interno),
+    }
+
+
+# =============================
+# PRODUCTOS - CRUD
+# =============================
+class ProductoCreate(BaseModel):
+    nombre_cientifico: str
+    nombre_natural: Optional[str] = None
+    categoria: str
+    subcategoria: str
+    stock_minimo: int = 0
+    es_interno: bool = False
+
+
+class ProductoUpdate(BaseModel):
+    nombre_cientifico: Optional[str] = None
+    nombre_natural: Optional[str] = None
+    categoria: Optional[str] = None
+    subcategoria: Optional[str] = None
+    stock_minimo: Optional[int] = None
+    es_interno: Optional[bool] = None
+
+
+def _producto_dict(p: Producto) -> dict:
+    return {
+        "id": p.id,
+        "nombre_cientifico": p.nombre_cientifico,
+        "nombre_natural": p.nombre_natural,
+        "categoria": p.categoria,
+        "subcategoria": p.subcategoria,
+        "stock_minimo": int(p.stock_minimo or 0),
+        "es_interno": bool(getattr(p, "es_interno", False)),
+    }
+
+
+@app.post("/productos")
+def crear_producto(
+    payload: ProductoCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+):
+    nombre_c = (payload.nombre_cientifico or "").strip()
+    if not nombre_c:
+        raise HTTPException(status_code=400, detail="El nombre científico es obligatorio")
+    if not (payload.categoria or "").strip():
+        raise HTTPException(status_code=400, detail="La categoría es obligatoria")
+    if not (payload.subcategoria or "").strip():
+        raise HTTPException(status_code=400, detail="La subcategoría es obligatoria")
+
+    existente = db.query(Producto).filter(func.lower(Producto.nombre_cientifico) == nombre_c.lower()).first()
+    if existente:
+        raise HTTPException(status_code=409, detail=f"Ya existe un producto con nombre científico '{nombre_c}'")
+
+    p = Producto(
+        nombre_cientifico=nombre_c,
+        nombre_natural=(payload.nombre_natural or "").strip() or None,
+        categoria=payload.categoria.strip(),
+        subcategoria=payload.subcategoria.strip(),
+        stock_minimo=int(payload.stock_minimo or 0),
+        es_interno=bool(payload.es_interno),
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return _producto_dict(p)
+
+
+@app.put("/productos/{producto_id}")
+def actualizar_producto(
+    producto_id: int,
+    payload: ProductoUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+):
+    producto = db.query(Producto).filter(Producto.id == producto_id).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    if payload.nombre_cientifico is not None:
+        nc = payload.nombre_cientifico.strip()
+        if not nc:
+            raise HTTPException(status_code=400, detail="El nombre científico no puede estar vacío")
+        duplicado = (
+            db.query(Producto)
+            .filter(func.lower(Producto.nombre_cientifico) == nc.lower(), Producto.id != producto_id)
+            .first()
+        )
+        if duplicado:
+            raise HTTPException(status_code=409, detail=f"Ya existe otro producto con nombre científico '{nc}'")
+        producto.nombre_cientifico = nc
+
+    if payload.nombre_natural is not None:
+        producto.nombre_natural = payload.nombre_natural.strip() or None
+    if payload.categoria is not None:
+        nueva_cat = payload.categoria.strip()
+        if not nueva_cat:
+            raise HTTPException(status_code=400, detail="La categoría no puede estar vacía")
+        producto.categoria = nueva_cat
+    if payload.subcategoria is not None:
+        nueva_sub = payload.subcategoria.strip()
+        if not nueva_sub:
+            raise HTTPException(status_code=400, detail="La subcategoría no puede estar vacía")
+        producto.subcategoria = nueva_sub
+    if payload.stock_minimo is not None:
+        if payload.stock_minimo < 0:
+            raise HTTPException(status_code=400, detail="El stock mínimo no puede ser negativo")
+        producto.stock_minimo = int(payload.stock_minimo)
+    if payload.es_interno is not None:
+        producto.es_interno = bool(payload.es_interno)
+
+    db.commit()
+    db.refresh(producto)
+    return _producto_dict(producto)
+
+
+@app.delete("/productos/{producto_id}")
+def eliminar_producto(
+    producto_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+):
+    producto = db.query(Producto).filter(Producto.id == producto_id).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    # No se puede eliminar si hay inventario vivo
+    inv_con_stock = (
+        db.query(InventarioLote)
+        .filter(InventarioLote.producto_id == producto_id, InventarioLote.cantidad_disponible > 0)
+        .count()
+    )
+    if inv_con_stock > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar: el producto tiene inventario vivo. Mueve o da de baja su stock primero.",
+        )
+
+    # Si tiene movimientos históricos, bloquear delete real y sugerir ocultar/inactivo
+    mov_count = db.query(Movimiento).filter(Movimiento.producto_id == producto_id).count()
+    ped_items_count = db.query(PedidoItem).filter(PedidoItem.producto_id == producto_id).count()
+    if mov_count > 0 or ped_items_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar: el producto tiene historial de movimientos o pedidos. Márcalo como interno para ocultarlo a la empresa externa.",
+        )
+
+    db.delete(producto)
+    db.commit()
+    return {"ok": True, "id": producto_id}
+
+
+# =============================
+# PRODUCTOS - IMPORT CSV / EXCEL
+# =============================
+def _parse_bool(value) -> bool:
+    if value is None:
+        return False
+    s = str(value).strip().lower()
+    return s in ("true", "1", "yes", "si", "sí", "y", "t", "verdadero")
+
+
+@app.post("/productos/import")
+async def importar_productos(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+):
+    try:
+        import pandas as pd  # lazy import
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pandas no está instalado en el backend")
+
+    try:
+        content = await file.read()
+        name = (file.filename or "").lower()
+        buf = io.BytesIO(content)
+        if name.endswith(".csv"):
+            df = pd.read_csv(buf)
+        elif name.endswith((".xlsx", ".xls")):
+            df = pd.read_excel(buf)
+        else:
+            # Intenta CSV por defecto
+            df = pd.read_csv(buf)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {e}")
+
+    # Normaliza columnas (acepta varias variantes)
+    alias = {
+        "nombre_cientifico": ["nombre_cientifico", "nombre cientifico", "nombre científico", "cientifico"],
+        "nombre_natural":    ["nombre_natural", "nombre natural", "nombre comun", "nombre común", "comun"],
+        "categoria":         ["categoria", "categoría"],
+        "subcategoria":      ["subcategoria", "subcategoría"],
+        "stock_minimo":      ["stock_minimo", "stock mínimo", "stock minimo", "minimo"],
+        "es_interno":        ["es_interno", "interno", "internal"],
+    }
+
+    cols_lower = {str(c).strip().lower(): c for c in df.columns}
+    resolved = {}
+    for canon, opts in alias.items():
+        for o in opts:
+            if o.lower() in cols_lower:
+                resolved[canon] = cols_lower[o.lower()]
+                break
+
+    if "nombre_cientifico" not in resolved:
+        raise HTTPException(status_code=400, detail="El archivo debe incluir la columna 'nombre_cientifico'")
+    if "categoria" not in resolved:
+        raise HTTPException(status_code=400, detail="El archivo debe incluir la columna 'categoria'")
+    if "subcategoria" not in resolved:
+        raise HTTPException(status_code=400, detail="El archivo debe incluir la columna 'subcategoria'")
+
+    insertados = 0
+    actualizados = 0
+    saltados = 0
+    errores = []
+
+    for idx, row in df.iterrows():
+        try:
+            nc = str(row[resolved["nombre_cientifico"]]).strip()
+            if not nc or nc.lower() == "nan":
+                saltados += 1
+                continue
+
+            natural = None
+            if "nombre_natural" in resolved:
+                v = row[resolved["nombre_natural"]]
+                if v is not None and str(v).strip().lower() != "nan":
+                    natural = str(v).strip() or None
+
+            cat = str(row[resolved["categoria"]]).strip()
+            sub = str(row[resolved["subcategoria"]]).strip()
+            if not cat or not sub or cat.lower() == "nan" or sub.lower() == "nan":
+                errores.append(f"Fila {idx + 2}: categoría o subcategoría vacía")
+                saltados += 1
+                continue
+
+            minimo = 0
+            if "stock_minimo" in resolved:
+                try:
+                    v = row[resolved["stock_minimo"]]
+                    minimo = int(float(v)) if v is not None and str(v).strip().lower() != "nan" else 0
+                except (ValueError, TypeError):
+                    minimo = 0
+                if minimo < 0:
+                    minimo = 0
+
+            interno = False
+            if "es_interno" in resolved:
+                interno = _parse_bool(row[resolved["es_interno"]])
+
+            existente = (
+                db.query(Producto)
+                .filter(func.lower(Producto.nombre_cientifico) == nc.lower())
+                .first()
+            )
+            if existente:
+                existente.nombre_natural = natural
+                existente.categoria = cat
+                existente.subcategoria = sub
+                existente.stock_minimo = minimo
+                existente.es_interno = interno
+                actualizados += 1
+            else:
+                p = Producto(
+                    nombre_cientifico=nc,
+                    nombre_natural=natural,
+                    categoria=cat,
+                    subcategoria=sub,
+                    stock_minimo=minimo,
+                    es_interno=interno,
+                )
+                db.add(p)
+                insertados += 1
+        except Exception as e:
+            errores.append(f"Fila {idx + 2}: {e}")
+            saltados += 1
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "insertados": insertados,
+        "actualizados": actualizados,
+        "saltados": saltados,
+        "errores": errores[:50],  # no devolver listas enormes
     }
 
 

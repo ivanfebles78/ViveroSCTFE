@@ -75,6 +75,28 @@ export const updateProductoInterno = async (productoId, esInterno) => {
   return data;
 };
 
+export const createProducto = async (payload) => {
+  const { data } = await api.post("/productos", payload);
+  return data;
+};
+
+export const updateProducto = async (productoId, payload) => {
+  const { data } = await api.put(`/productos/${productoId}`, payload);
+  return data;
+};
+
+export const deleteProducto = async (productoId) => {
+  const { data } = await api.delete(`/productos/${productoId}`);
+  return data;
+};
+
+export const importarProductos = async (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post("/productos/import", form);
+  return data;
+};
+
 // ---------------- MOVIMIENTOS ----------------
 
 export const getMovimientos = async () => {
