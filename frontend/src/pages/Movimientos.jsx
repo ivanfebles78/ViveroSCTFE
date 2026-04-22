@@ -702,6 +702,8 @@ function MovimientoModal({
   const [showPrestamoModal, setShowPrestamoModal] = useState(false);
   // Distribución origen por zona { zona: cantidad } — se usa cuando origen=Vivero
   const [distribucion, setDistribucion] = useState({});
+  // Lote de payloads acumulados (para procesar varias líneas de un pedido en un solo submit)
+  const [batchPayloads, setBatchPayloads] = useState([]);
 
   useEffect(() => {
     if (!open) {
@@ -730,6 +732,7 @@ function MovimientoModal({
       setShowPedidoModal(false);
       setShowPrestamoModal(false);
       setDistribucion({});
+      setBatchPayloads([]);
     }
   }, [open]);
 
@@ -1049,12 +1052,11 @@ function MovimientoModal({
     setErrors([]);
   };
 
-  const submit = async () => {
+  // Devuelve { ok, payloads, errors } sin mutar estado
+  const buildCurrentPayloads = () => {
     const foundErrors = getFormErrors(form);
-
-    // Cuando el picker por zonas está activo, ignoramos errores de "zona_origen"
-    // y "cantidad" únicos y validamos la distribución.
     let filtered = foundErrors;
+
     if (distribucionActiva) {
       filtered = filtered.filter(
         (e) =>
@@ -1072,10 +1074,11 @@ function MovimientoModal({
         }
       }
     }
-    setErrors(filtered);
-    if (filtered.length > 0) return;
 
-    // Construye uno o varios payloads según la distribución
+    if (filtered.length > 0) {
+      return { ok: false, payloads: [], errors: filtered };
+    }
+
     const basePayload = {
       pedido_id: form.pedido_id ? Number(form.pedido_id) : null,
       pedido_item_id: form.pedido_item_id ? Number(form.pedido_item_id) : null,
@@ -1102,7 +1105,6 @@ function MovimientoModal({
 
     let payloads;
     if (distribucionActiva) {
-      // Un movimiento por cada zona con cantidad > 0
       payloads = Object.entries(distribucion)
         .filter(([, q]) => Number(q) > 0)
         .map(([zona, q]) => ({
@@ -1120,7 +1122,71 @@ function MovimientoModal({
       ];
     }
 
-    await onSubmit(payloads);
+    return { ok: true, payloads, errors: [] };
+  };
+
+  // Devuelve true si el formulario parece "vacío" (el usuario no ha configurado línea actual)
+  const formTieneLineaActual = () => {
+    if (!form.producto_id) return false;
+    if (distribucionActiva) {
+      return Object.values(distribucion).some((q) => Number(q) > 0);
+    }
+    return Number(form.cantidad) > 0;
+  };
+
+  // Añade la línea actual al lote y resetea campos de línea (mantiene pedido_id y destino)
+  const addCurrentToBatch = () => {
+    const result = buildCurrentPayloads();
+    setErrors(result.errors);
+    if (!result.ok) return;
+
+    setBatchPayloads((prev) => [...prev, ...result.payloads]);
+
+    // Reset de campos de línea, conservando contexto del pedido y destino general
+    setForm((prev) => ({
+      ...prev,
+      pedido_item_id: "",
+      producto_id: "",
+      cantidad: "",
+      tamano_origen: "",
+      tamano_destino: prev.destino_tipo === "Vivero" ? "" : prev.tamano_destino,
+      zona_origen: "",
+      zona_destino: prev.destino_tipo === "Vivero" ? "" : prev.zona_destino,
+      fecha_disponibilidad: "",
+    }));
+    setDistribucion({});
+    setSelectedPedidoLineKey("");
+  };
+
+  const removeBatchItem = (idx) => {
+    setBatchPayloads((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const clearBatch = () => {
+    setBatchPayloads([]);
+  };
+
+  const submit = async () => {
+    const currentIsFilled = formTieneLineaActual();
+
+    // Si ni el lote tiene nada ni la línea actual está rellena → error
+    if (!currentIsFilled && batchPayloads.length === 0) {
+      setErrors(["No hay líneas que guardar. Rellena la línea actual o añade al lote."]);
+      return;
+    }
+
+    let allPayloads = [...batchPayloads];
+
+    if (currentIsFilled) {
+      const result = buildCurrentPayloads();
+      setErrors(result.errors);
+      if (!result.ok) return;
+      allPayloads = [...allPayloads, ...result.payloads];
+    } else {
+      setErrors([]);
+    }
+
+    await onSubmit(allPayloads);
   };
 
   if (!open) return null;
@@ -1930,6 +1996,84 @@ function MovimientoModal({
               </div>
             </div>
 
+            {batchPayloads.length > 0 ? (
+              <div
+                style={{
+                  padding: "14px 18px",
+                  borderTop: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(245,158,11,0.08)",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 900, color: "white" }}>
+                    Lote: {batchPayloads.length} línea{batchPayloads.length === 1 ? "" : "s"} ·{" "}
+                    Total unidades: {batchPayloads.reduce((s, p) => s + Number(p.cantidad || 0), 0)}
+                  </div>
+                  <button
+                    onClick={clearBatch}
+                    disabled={saving}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(239,68,68,0.35)",
+                      background: "rgba(239,68,68,0.15)",
+                      color: "#fecaca",
+                      fontWeight: 900,
+                      cursor: saving ? "not-allowed" : "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    Vaciar lote
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 150, overflowY: "auto" }}>
+                  {batchPayloads.map((p, idx) => {
+                    const prod = productos.find((x) => String(x.id) === String(p.producto_id));
+                    const nombre = prod ? getProductDisplayName(prod) : `#${p.producto_id}`;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "6px 10px",
+                          borderRadius: 10,
+                          background: "rgba(255,255,255,0.06)",
+                          color: "white",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {idx + 1}. {nombre} · {p.tamano_origen || p.tamano_destino || "—"} ·{" "}
+                          {p.cantidad} ud {p.zona_origen ? `· zona ${p.zona_origen}` : ""}
+                        </span>
+                        <button
+                          onClick={() => removeBatchItem(idx)}
+                          disabled={saving}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "#fecaca",
+                            fontWeight: 900,
+                            cursor: saving ? "not-allowed" : "pointer",
+                            fontSize: 14,
+                          }}
+                          title="Quitar del lote"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div
               style={{
                 padding: "16px 18px",
@@ -1950,23 +2094,52 @@ function MovimientoModal({
                 Cancelar
               </button>
 
-              <button
-                onClick={submit}
-                disabled={saving}
-                style={{
-                  padding: "12px 18px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(16,185,129,0.35)",
-                  background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
-                  color: "white",
-                  fontWeight: 900,
-                  cursor: saving ? "not-allowed" : "pointer",
-                  minWidth: 220,
-                  opacity: saving ? 0.8 : 1,
-                }}
-              >
-                {saving ? "Guardando movimiento..." : "Guardar movimiento"}
-              </button>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {form.pedido_id ? (
+                  <button
+                    onClick={addCurrentToBatch}
+                    disabled={saving || !formTieneLineaActual()}
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: 14,
+                      border: "1px solid rgba(245,158,11,0.35)",
+                      background: (saving || !formTieneLineaActual())
+                        ? "rgba(245,158,11,0.20)"
+                        : "linear-gradient(90deg, #f59e0b 0%, #f97316 100%)",
+                      color: "white",
+                      fontWeight: 900,
+                      cursor: (saving || !formTieneLineaActual()) ? "not-allowed" : "pointer",
+                      minWidth: 200,
+                      opacity: (saving || !formTieneLineaActual()) ? 0.65 : 1,
+                    }}
+                    title="Añadir esta línea al lote y procesar otra línea del pedido"
+                  >
+                    + Añadir otra línea
+                  </button>
+                ) : null}
+
+                <button
+                  onClick={submit}
+                  disabled={saving}
+                  style={{
+                    padding: "12px 18px",
+                    borderRadius: 14,
+                    border: "1px solid rgba(16,185,129,0.35)",
+                    background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
+                    color: "white",
+                    fontWeight: 900,
+                    cursor: saving ? "not-allowed" : "pointer",
+                    minWidth: 220,
+                    opacity: saving ? 0.8 : 1,
+                  }}
+                >
+                  {saving
+                    ? "Guardando movimiento..."
+                    : batchPayloads.length > 0
+                    ? `Guardar ${batchPayloads.length + (formTieneLineaActual() ? 1 : 0)} movimiento(s)`
+                    : "Guardar movimiento"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

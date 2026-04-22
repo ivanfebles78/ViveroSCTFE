@@ -140,6 +140,173 @@ function filterLabelStyle() {
   };
 }
 
+function DetallePedidoModal({ pedido, onClose }) {
+  if (!pedido) return null;
+
+  const fmtFecha = (v) => {
+    if (!v) return "—";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "—";
+    return new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(d);
+  };
+
+  const items = safeArray(pedido.items);
+  const solicitante =
+    pedido?.solicitante_username || pedido?.solicitante || pedido?.created_by || pedido?.usuario || "—";
+
+  const destino =
+    pedido?.tipo === "reposicion"
+      ? "Vivero"
+      : [pedido?.distrito_destino, pedido?.barrio_destino, pedido?.direccion_destino]
+          .filter(Boolean)
+          .join(" · ") || "—";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.55)",
+        zIndex: 1400,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: "min(880px, 96vw)",
+          maxHeight: "90vh",
+          overflow: "hidden",
+          background: "white",
+          borderRadius: 24,
+          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+          display: "grid",
+          gridTemplateRows: "auto 1fr auto",
+        }}
+      >
+        <div style={{ padding: "20px 22px", borderBottom: "1px solid rgba(15,23,42,0.08)", display: "flex", justifyContent: "space-between", alignItems: "start", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: "#0f172a" }}>
+              Detalle del pedido #{pedido.id}
+            </div>
+            <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 900,
+                  background: pedido.tipo === "reposicion" ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
+                  color: pedido.tipo === "reposicion" ? "#92400e" : "#1e3a8a",
+                  border: "1px solid rgba(15,23,42,0.08)",
+                  marginRight: 8,
+                }}
+              >
+                {pedido.tipo === "reposicion" ? "Reposición" : "Salida"}
+              </span>
+              <span style={badge(pedido.estado)}>{pedido.estado || "—"}</span>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 14,
+              fontWeight: 900,
+              cursor: "pointer",
+              background: "#f59e0b",
+              color: "#111827",
+              border: "2px solid #000",
+              boxShadow: "0 8px 18px rgba(0,0,0,0.18)",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+
+        <div style={{ padding: "16px 22px", overflow: "auto" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ padding: 12, borderRadius: 12, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)" }}>
+              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Fecha creación</div>
+              <div style={{ marginTop: 4, fontWeight: 900, color: "#0f172a" }}>{fmtFecha(pedido.created_at)}</div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 12, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)" }}>
+              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Solicitante</div>
+              <div style={{ marginTop: 4, fontWeight: 900, color: "#0f172a" }}>{solicitante}</div>
+            </div>
+            <div style={{ gridColumn: "span 2", padding: 12, borderRadius: 12, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)" }}>
+              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Destino</div>
+              <div style={{ marginTop: 4, fontWeight: 900, color: "#0f172a" }}>{destino}</div>
+            </div>
+            {pedido.nota ? (
+              <div style={{ gridColumn: "span 2", padding: 12, borderRadius: 12, background: "#fffbeb", border: "1px solid rgba(245,158,11,0.25)" }}>
+                <div style={{ fontSize: 12, color: "#92400e", fontWeight: 900, textTransform: "uppercase" }}>Nota</div>
+                <div style={{ marginTop: 4, fontWeight: 700, color: "#0f172a" }}>{pedido.nota}</div>
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 8 }}>
+            Productos del pedido ({items.length})
+          </div>
+
+          {items.length === 0 ? (
+            <div style={{ color: "#64748b", fontWeight: 700 }}>Este pedido no tiene líneas.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={thStyle()}>Producto</th>
+                    <th style={thStyle()}>Tamaño</th>
+                    <th style={thStyle()}>Cantidad</th>
+                    <th style={thStyle()}>Servido</th>
+                    <th style={thStyle()}>Pendiente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => {
+                    const cantidad = Number(it.cantidad || 0);
+                    const servida = Number(it.cantidad_servida || 0);
+                    const pendiente = Math.max(cantidad - servida, 0);
+                    return (
+                      <tr key={it.id || idx} style={{ borderTop: "1px solid rgba(15,23,42,0.06)" }}>
+                        <td style={tdStyle()}>
+                          {it.producto_nombre_cientifico ||
+                            it.producto_nombre ||
+                            it.producto_nombre_natural ||
+                            `Producto #${it.producto_id}`}
+                        </td>
+                        <td style={tdStyle()}>{it.tamano || "—"}</td>
+                        <td style={{ ...tdStyle(), fontWeight: 900 }}>{cantidad}</td>
+                        <td style={{ ...tdStyle(), color: "#065f46", fontWeight: 900 }}>{servida}</td>
+                        <td style={{ ...tdStyle(), color: pendiente > 0 ? "#92400e" : "#64748b", fontWeight: 900 }}>
+                          {pendiente}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageBanner({ msg, onClose }) {
   if (!msg) return null;
 
@@ -192,6 +359,7 @@ export default function Aprobaciones() {
   const [fechaFiltro, setFechaFiltro] = useState("");
   const [solicitanteFiltro, setSolicitanteFiltro] = useState("");
   const [textoFiltro, setTextoFiltro] = useState("");
+  const [detallePedido, setDetallePedido] = useState(null);
 
   const msgTimerRef = useRef(null);
 
@@ -467,41 +635,57 @@ export default function Aprobaciones() {
                           borderBottomRightRadius: 14,
                         }}
                       >
-                        {canApprove && editable ? (
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <button
-                              onClick={() => aprobar(p.id)}
-                              style={{
-                                padding: "8px 10px",
-                                borderRadius: 10,
-                                border: "1px solid rgba(16,185,129,0.35)",
-                                background: "rgba(16,185,129,0.10)",
-                                color: "#065f46",
-                                fontWeight: 900,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Aprobar
-                            </button>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {canApprove && editable ? (
+                            <>
+                              <button
+                                onClick={() => aprobar(p.id)}
+                                style={{
+                                  padding: "8px 10px",
+                                  borderRadius: 10,
+                                  border: "1px solid rgba(16,185,129,0.35)",
+                                  background: "rgba(16,185,129,0.10)",
+                                  color: "#065f46",
+                                  fontWeight: 900,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Aprobar
+                              </button>
 
-                            <button
-                              onClick={() => denegar(p.id)}
-                              style={{
-                                padding: "8px 10px",
-                                borderRadius: 10,
-                                border: "1px solid rgba(239,68,68,0.25)",
-                                background: "rgba(239,68,68,0.08)",
-                                color: "#991b1b",
-                                fontWeight: 900,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Denegar
-                            </button>
-                          </div>
-                        ) : (
-                          <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>
-                        )}
+                              <button
+                                onClick={() => denegar(p.id)}
+                                style={{
+                                  padding: "8px 10px",
+                                  borderRadius: 10,
+                                  border: "1px solid rgba(239,68,68,0.25)",
+                                  background: "rgba(239,68,68,0.08)",
+                                  color: "#991b1b",
+                                  fontWeight: 900,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Denegar
+                              </button>
+                            </>
+                          ) : null}
+
+                          <button
+                            onClick={() => setDetallePedido(p)}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: "1px solid rgba(59,130,246,0.30)",
+                              background: "rgba(59,130,246,0.08)",
+                              color: "#1d4ed8",
+                              fontWeight: 900,
+                              cursor: "pointer",
+                            }}
+                            title="Ver detalle del pedido"
+                          >
+                            Detalle pedido
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -511,6 +695,8 @@ export default function Aprobaciones() {
           </div>
         )}
       </div>
+
+      <DetallePedidoModal pedido={detallePedido} onClose={() => setDetallePedido(null)} />
     </div>
   );
 }
