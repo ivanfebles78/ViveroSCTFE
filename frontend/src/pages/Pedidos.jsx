@@ -9,7 +9,7 @@ import {
   cancelarPedido,
 } from "../api/api";
 
-const TAMANOS = ["semillero", "M12", "M20", "M35"];
+const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
 const ESTADO_FILTERS = [
   { value: "TODOS", label: "Todos" },
