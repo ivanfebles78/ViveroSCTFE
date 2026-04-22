@@ -515,6 +515,7 @@ def _pedido_to_dict(pedido: Pedido) -> dict:
                     {
                         "movimiento_id": getattr(mov, "id", None),
                         "fecha_movimiento": getattr(mov, "fecha_movimiento", None),
+                        "fecha_caducidad": getattr(mov, "fecha_caducidad", None),
                         "cantidad": getattr(mov, "cantidad", 0),
                         "origen_tipo": getattr(mov, "origen_tipo", None),
                         "destino_tipo": getattr(mov, "destino_tipo", None),

@@ -144,6 +144,22 @@ const dateInputValue = (value) => {
 
 const estadoNormalizado = (estado) => String(estado || "").trim().toUpperCase();
 
+// Devuelve la fecha de caducidad más próxima entre todas las movimientos_servicio del pedido.
+const getPedidoFechaCaducidad = (pedido) => {
+  const items = Array.isArray(pedido?.items) ? pedido.items : [];
+  let min = null;
+  for (const it of items) {
+    const movs = Array.isArray(it?.movimientos_servicio) ? it.movimientos_servicio : [];
+    for (const m of movs) {
+      if (!m?.fecha_caducidad) continue;
+      const d = new Date(m.fecha_caducidad);
+      if (Number.isNaN(d.getTime())) continue;
+      if (!min || d < min) min = d;
+    }
+  }
+  return min;
+};
+
 function lineKey(productoId, tamano) {
   return `${productoId}__${tamano}`;
 }
@@ -1742,12 +1758,13 @@ export default function Pedidos() {
           <div style={{ color: "#64748b", fontWeight: 800 }}>No hay pedidos para los filtros seleccionados.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 1260 }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 1360 }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
                   <th style={thStyle()}>ID</th>
                   <th style={thStyle()}>Tipo</th>
-                  <th style={thStyle()}>Fecha</th>
+                  <th style={thStyle()}>Pedido</th>
+                  <th style={thStyle()}>Caduca</th>
                   <th style={thStyle()}>Solicitante</th>
                   <th style={thStyle()}>Destino</th>
                   <th style={thStyle()}>Detalle</th>
@@ -1802,6 +1819,21 @@ export default function Pedidos() {
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
                         {fmtFechaES(p.created_at)}
+                      </td>
+
+                      <td
+                        style={{
+                          ...tdStyle(),
+                          borderTop: "1px solid rgba(15,23,42,0.10)",
+                          borderBottom: "1px solid rgba(15,23,42,0.10)",
+                          color: "#b91c1c",
+                          fontWeight: 900,
+                        }}
+                      >
+                        {(() => {
+                          const fc = getPedidoFechaCaducidad(p);
+                          return fc ? fmtFechaES(fc) : <span style={{ color: "#94a3b8", fontWeight: 700 }}>—</span>;
+                        })()}
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
