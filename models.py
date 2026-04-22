@@ -131,6 +131,9 @@ class Pedido(Base):
     served_at = Column(DateTime, nullable=True)
     served_by = Column(String(150), nullable=True)
 
+    # Caducidad del propio pedido (p.ej. empresa_externa: 15 días)
+    fecha_caducidad = Column(Date, nullable=True)
+
     items = relationship(
         "PedidoItem",
         back_populates="pedido",

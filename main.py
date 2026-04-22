@@ -484,6 +484,7 @@ def _pedido_to_dict(pedido: Pedido) -> dict:
         "id": getattr(pedido, "id", None),
         "estado": getattr(pedido, "estado", None),
         "tipo": getattr(pedido, "tipo", "salida") or "salida",
+        "fecha_caducidad": getattr(pedido, "fecha_caducidad", None),
         "solicitante_username": getattr(pedido, "solicitante_username", None),
         "nota": getattr(pedido, "nota", None),
         "distrito_destino": getattr(pedido, "distrito_destino", None),
@@ -1040,6 +1041,11 @@ def create_pedido(
                     ),
                 )
 
+    # Empresa externa: pedido caduca a los 15 días
+    fecha_cad_pedido = None
+    if (current_user.rol or "").strip().lower() == "empresa_externa" and tipo_pedido == "salida":
+        fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=15)
+
     pedido = Pedido(
         solicitante_username=current_user.username,
         estado="RESERVA",
@@ -1048,6 +1054,7 @@ def create_pedido(
         distrito_destino=payload.distrito_destino if tipo_pedido == "salida" else None,
         barrio_destino=payload.barrio_destino if tipo_pedido == "salida" else None,
         direccion_destino=payload.direccion_destino if tipo_pedido == "salida" else None,
+        fecha_caducidad=fecha_cad_pedido,
     )
     db.add(pedido)
     db.flush()

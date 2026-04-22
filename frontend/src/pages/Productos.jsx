@@ -243,6 +243,8 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
     stock_minimo: 0,
     es_interno: false,
   });
+  const [nuevoCategoriaSel, setNuevoCategoriaSel] = useState("");
+  const [nuevoSubcategoriaSel, setNuevoSubcategoriaSel] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -263,6 +265,8 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         stock_minimo: 0,
         es_interno: false,
       });
+      setNuevoCategoriaSel("");
+      setNuevoSubcategoriaSel("");
       setSaving(false);
       setMsg("");
       setErr("");
@@ -366,6 +370,8 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         stock_minimo: 0,
         es_interno: false,
       });
+      setNuevoCategoriaSel("");
+      setNuevoSubcategoriaSel("");
       onChanged && (await onChanged());
     } catch (e) {
       showErr(fmtErr(e));
@@ -614,7 +620,25 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
             </div>
           )}
 
-          {tab === "nuevo" && (
+          {tab === "nuevo" && (() => {
+            const categoriasExistentes = [
+              ...new Set(
+                (Array.isArray(productos) ? productos : [])
+                  .map((p) => String(p?.categoria || "").trim())
+                  .filter(Boolean)
+              ),
+            ].sort((a, b) => a.localeCompare(b, "es"));
+
+            const subcategoriasParaCategoria = [
+              ...new Set(
+                (Array.isArray(productos) ? productos : [])
+                  .filter((p) => !nuevoCategoriaSel || String(p?.categoria || "").trim() === nuevoCategoriaSel)
+                  .map((p) => String(p?.subcategoria || "").trim())
+                  .filter(Boolean)
+              ),
+            ].sort((a, b) => a.localeCompare(b, "es"));
+
+            return (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Nombre científico *</div>
@@ -624,13 +648,69 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Nombre común</div>
                 <input value={nuevo.nombre_natural} onChange={(e) => setNuevo((n) => ({ ...n, nombre_natural: e.target.value }))} style={inputS} placeholder="Ej: Palmera canaria" />
               </div>
+
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Categoría *</div>
-                <input value={nuevo.categoria} onChange={(e) => setNuevo((n) => ({ ...n, categoria: e.target.value }))} style={inputS} placeholder="Ej: Plantas" />
+                <select
+                  value={nuevoCategoriaSel}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setNuevoCategoriaSel(v);
+                    setNuevoSubcategoriaSel(""); // reset subcat al cambiar cat
+                    setNuevo((n) => ({
+                      ...n,
+                      categoria: v === "__NUEVA__" ? "" : v,
+                      subcategoria: "",
+                    }));
+                  }}
+                  style={inputS}
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categoriasExistentes.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                  <option value="__NUEVA__">＋ Nueva categoría</option>
+                </select>
+                {nuevoCategoriaSel === "__NUEVA__" ? (
+                  <input
+                    autoFocus
+                    value={nuevo.categoria}
+                    onChange={(e) => setNuevo((n) => ({ ...n, categoria: e.target.value }))}
+                    placeholder="Escribe el nombre de la nueva categoría"
+                    style={{ ...inputS, marginTop: 6 }}
+                  />
+                ) : null}
               </div>
+
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Subcategoría *</div>
-                <input value={nuevo.subcategoria} onChange={(e) => setNuevo((n) => ({ ...n, subcategoria: e.target.value }))} style={inputS} placeholder="Ej: Arbusto" />
+                <select
+                  value={nuevoSubcategoriaSel}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setNuevoSubcategoriaSel(v);
+                    setNuevo((n) => ({ ...n, subcategoria: v === "__NUEVA__" ? "" : v }));
+                  }}
+                  style={inputS}
+                  disabled={!nuevoCategoriaSel}
+                >
+                  <option value="">
+                    {nuevoCategoriaSel ? "Seleccionar subcategoría" : "Primero elige categoría"}
+                  </option>
+                  {subcategoriasParaCategoria.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                  <option value="__NUEVA__">＋ Nueva subcategoría</option>
+                </select>
+                {nuevoSubcategoriaSel === "__NUEVA__" ? (
+                  <input
+                    autoFocus
+                    value={nuevo.subcategoria}
+                    onChange={(e) => setNuevo((n) => ({ ...n, subcategoria: e.target.value }))}
+                    placeholder="Escribe el nombre de la nueva subcategoría"
+                    style={{ ...inputS, marginTop: 6 }}
+                  />
+                ) : null}
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Stock mínimo</div>
@@ -647,7 +727,8 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                 </button>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {tab === "importar" && (
             <div>

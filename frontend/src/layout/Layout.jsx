@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { clearStoredToken, getMe, getProductos, getZonaItems } from "../api/api";
+import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
 import zonas from "../components/vivero/zonasConfig";
 
@@ -350,6 +350,48 @@ function buildCaducidadNotification({ productName, zona, tamano, fecha, estado, 
       ? `Caducó el ${fecha}. Retíralo del inventario lo antes posible.`
       : `Fecha estimada de caducidad: ${fecha}.`,
   };
+}
+
+function buildPedidoCaducidadNotifications(pedidos) {
+  const notifications = [];
+  if (!Array.isArray(pedidos)) return notifications;
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  for (const p of pedidos) {
+    const estado = String(p?.estado || "").trim().toUpperCase();
+    // Solo avisamos sobre pedidos aún "vivos"
+    if (!["RESERVA", "APROBADO"].includes(estado)) continue;
+    if (!p?.fecha_caducidad) continue;
+
+    const d = new Date(p.fecha_caducidad);
+    if (Number.isNaN(d.getTime())) continue;
+    const f = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.floor((f - hoy) / (1000 * 60 * 60 * 24));
+
+    const fechaTxt = new Intl.DateTimeFormat("es-ES", { dateStyle: "short" }).format(f);
+
+    if (diffDays < 0) {
+      notifications.push({
+        id: `pedido-caducado-${p.id}`,
+        type: "pedido_caducado",
+        severity: "high",
+        title: `Tu pedido #${p.id} HA CADUCADO`,
+        description: `El pedido caducó el ${fechaTxt}. Contacta con el vivero si aún lo necesitas.`,
+      });
+    } else if (diffDays <= 3) {
+      notifications.push({
+        id: `pedido-proximo-${p.id}-${diffDays}`,
+        type: "pedido_proximo",
+        severity: "medium",
+        title: `Tu pedido #${p.id} caduca en ${diffDays === 0 ? "hoy" : diffDays + " día(s)"}`,
+        description: `Fecha límite: ${fechaTxt}.`,
+      });
+    }
+  }
+
+  return notifications;
 }
 
 function buildCaducidadNotifications(productos) {
@@ -810,6 +852,7 @@ export default function Layout() {
   const [me, setMe] = useState(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [productos, setProductos] = useState([]);
+  const [pedidosUsuario, setPedidosUsuario] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState(() =>
     getReadNotificationsFromStorage()
@@ -834,8 +877,12 @@ export default function Layout() {
     loadMe();
   }, [navigate]);
 
+  const rolActual = (me?.rol || me?.role || "").trim().toLowerCase();
+  const esEmpresaExternaRol = rolActual === "empresa_externa";
+
   useEffect(() => {
-    const loadProducts = async () => {
+    if (!me) return; // espera a saber el rol
+    const loadInterno = async () => {
       try {
         const data = await getProductos();
         setProductos(Array.isArray(data) ? data : []);
@@ -843,19 +890,38 @@ export default function Layout() {
         setProductos([]);
       }
     };
+    const loadPedidosUsuario = async () => {
+      try {
+        const data = await getPedidos();
+        setPedidosUsuario(Array.isArray(data) ? data : []);
+      } catch {
+        setPedidosUsuario([]);
+      }
+    };
 
-    loadProducts();
-  }, [location.pathname]);
+    if (esEmpresaExternaRol) {
+      // Empresa externa: solo pedidos (no stock/caducidad de productos internos)
+      setProductos([]);
+      loadPedidosUsuario();
+    } else {
+      setPedidosUsuario([]);
+      loadInterno();
+    }
+  }, [location.pathname, me, esEmpresaExternaRol]);
 
   useEffect(() => {
     saveReadNotificationsToStorage(readNotificationIds);
   }, [readNotificationIds]);
 
   const allNotifications = useMemo(() => {
+    if (esEmpresaExternaRol) {
+      // Empresa externa solo ve notificaciones de SUS pedidos
+      return buildPedidoCaducidadNotifications(pedidosUsuario);
+    }
     const lowStockNotifications = buildLowStockNotifications(productos);
     const caducidadNotifications = buildCaducidadNotifications(productos);
     return [...lowStockNotifications, ...caducidadNotifications];
-  }, [productos]);
+  }, [productos, pedidosUsuario, esEmpresaExternaRol]);
 
   const unreadNotifications = useMemo(() => {
     const readSet = new Set(readNotificationIds);

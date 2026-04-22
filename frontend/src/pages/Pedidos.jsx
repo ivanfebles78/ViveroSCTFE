@@ -144,8 +144,14 @@ const dateInputValue = (value) => {
 
 const estadoNormalizado = (estado) => String(estado || "").trim().toUpperCase();
 
-// Devuelve la fecha de caducidad más próxima entre todas las movimientos_servicio del pedido.
+// Devuelve la fecha de caducidad del pedido.
+// 1) Si el pedido tiene fecha_caducidad a nivel pedido (ej. empresa_externa = 15 días), usa esa.
+// 2) Si no, calcula la más próxima entre los movimientos_servicio de sus items.
 const getPedidoFechaCaducidad = (pedido) => {
+  if (pedido?.fecha_caducidad) {
+    const d = new Date(pedido.fecha_caducidad);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
   const items = Array.isArray(pedido?.items) ? pedido.items : [];
   let min = null;
   for (const it of items) {
