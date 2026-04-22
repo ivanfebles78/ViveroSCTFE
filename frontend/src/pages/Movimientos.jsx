@@ -512,23 +512,29 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
         backdropFilter: "blur(3px)",
         zIndex: 1300,
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "center",
         padding: 24,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         style={{
           width: "min(980px, 95vw)",
-          maxHeight: "88vh",
-          overflow: "hidden",
           background: "white",
           borderRadius: 24,
           boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
           border: "1px solid rgba(15,23,42,0.10)",
-          display: "grid",
-          gridTemplateRows: "auto auto 1fr",
+          display: "flex",
+          flexDirection: "column",
+          marginTop: "auto",
+          marginBottom: "auto",
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div
           style={{
@@ -537,6 +543,13 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
             alignItems: "start",
             justifyContent: "space-between",
             gap: 16,
+            position: "sticky",
+            top: 0,
+            background: "white",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            zIndex: 2,
+            borderBottom: "1px solid rgba(15,23,42,0.05)",
           }}
         >
           <div>
@@ -553,7 +566,7 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
           </button>
         </div>
 
-        <div style={{ padding: "0 22px 14px" }}>
+        <div style={{ padding: "14px 22px", position: "sticky", top: 96, background: "white", zIndex: 1 }}>
           <input
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -562,7 +575,7 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
           />
         </div>
 
-        <div style={{ padding: "0 22px 22px", overflow: "auto" }}>
+        <div style={{ padding: "0 22px 22px" }}>
           {pedidosFiltrados.length === 0 ? (
             <div
               style={{
@@ -2223,23 +2236,29 @@ function PrestamoSelectorModal({ open, prestamos, productos, onClose, onSelect }
         backdropFilter: "blur(3px)",
         zIndex: 1300,
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "center",
         padding: 24,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         style={{
           width: "min(980px, 95vw)",
-          maxHeight: "88vh",
-          overflow: "hidden",
           background: "white",
           borderRadius: 24,
           boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
           border: "1px solid rgba(15,23,42,0.10)",
-          display: "grid",
-          gridTemplateRows: "auto auto 1fr",
+          display: "flex",
+          flexDirection: "column",
+          marginTop: "auto",
+          marginBottom: "auto",
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div
           style={{
@@ -2248,6 +2267,13 @@ function PrestamoSelectorModal({ open, prestamos, productos, onClose, onSelect }
             alignItems: "start",
             justifyContent: "space-between",
             gap: 16,
+            position: "sticky",
+            top: 0,
+            background: "white",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            zIndex: 2,
+            borderBottom: "1px solid rgba(15,23,42,0.05)",
           }}
         >
           <div>
@@ -2264,7 +2290,7 @@ function PrestamoSelectorModal({ open, prestamos, productos, onClose, onSelect }
           </button>
         </div>
 
-        <div style={{ padding: "0 22px 14px" }}>
+        <div style={{ padding: "14px 22px", position: "sticky", top: 96, background: "white", zIndex: 1 }}>
           <input
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -2273,7 +2299,7 @@ function PrestamoSelectorModal({ open, prestamos, productos, onClose, onSelect }
           />
         </div>
 
-        <div style={{ padding: "0 22px 22px", overflow: "auto" }}>
+        <div style={{ padding: "0 22px 22px" }}>
           {prestamosFiltrados.length === 0 ? (
             <div
               style={{
