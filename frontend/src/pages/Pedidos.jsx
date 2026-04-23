@@ -1764,7 +1764,7 @@ export default function Pedidos() {
           <div style={{ color: "#64748b", fontWeight: 800 }}>No hay pedidos para los filtros seleccionados.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 1360 }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 1180 }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
                   <th style={thStyle()}>ID</th>
@@ -1880,8 +1880,17 @@ export default function Pedidos() {
                         />
                       </td>
 
-                      <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-                        <span style={badge(estado)}>{estado}</span>
+                      <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)", whiteSpace: "nowrap" }}>
+                        {(() => {
+                          const e = estadoNormalizado(estado);
+                          let color = "#92400e"; // reserva/default ámbar
+                          if (e === "APROBADO") color = "#065f46";
+                          else if (e === "DENEGADO") color = "#991b1b";
+                          else if (e === "SERVIDO") color = "#1e3a8a";
+                          else if (e === "CANCELADO") color = "#334155";
+                          else if (e === "CADUCADO") color = "#475569";
+                          return <span style={{ fontWeight: 900, color, fontSize: 13 }}>{estado}</span>;
+                        })()}
                       </td>
 
                       <td
