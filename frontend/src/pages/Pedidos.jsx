@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import logoViverApp from "../assets/logo.png";
 import {
   getPedidos,
   getProductos,
@@ -288,6 +291,155 @@ function badge(estado) {
   if (e === "CANCELADO") return { ...base, background: "rgba(148,163,184,0.18)", color: "#334155" };
   if (e === "CADUCADO") return { ...base, background: "rgba(100,116,139,0.16)", color: "#475569" };
   return { ...base, background: "rgba(245,158,11,0.12)", color: "#92400e" };
+}
+
+async function loadImageAsDataUrl(src) {
+  try {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error("No se pudo cargar la imagen");
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeFileName(name) {
+  return String(name || "pedido")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9-_ ]/g, "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .slice(0, 80);
+}
+
+const _fmtFechaPdf = (v) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("es-ES", { dateStyle: "short" }).format(d);
+};
+
+async function imprimirPedidoPdf(pedido, mapProdName) {
+  const doc = new jsPDF("p", "mm", "a4");
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Banda superior
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 28, "F");
+  doc.setFillColor(6, 182, 212);
+  doc.rect(0, 28, pageWidth, 3, "F");
+
+  // Título
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(255, 255, 255);
+  doc.text("ViverApp", 14, 16);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(226, 232, 240);
+  doc.text("Comprobante de pedido", 14, 23);
+
+  // Logo opcional
+  try {
+    const logo = await loadImageAsDataUrl(logoViverApp);
+    if (logo) doc.addImage(logo, "PNG", pageWidth - 42, 1, 32, 32);
+  } catch {}
+
+  // Encabezado del pedido
+  doc.setTextColor(15, 23, 42);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.text(`Pedido #${pedido.id}`, 14, 44);
+
+  doc.setDrawColor(226, 232, 240);
+  doc.line(14, 48, pageWidth - 14, 48);
+
+  // Metadata
+  const estado = String(pedido.estado || "—").toUpperCase();
+  const tipo = pedido.tipo === "reposicion" ? "Reposición" : "Salida";
+  const solicitante =
+    pedido.solicitante_username || pedido.solicitante || pedido.created_by || "—";
+  const destino =
+    pedido.tipo === "reposicion"
+      ? "Vivero"
+      : [pedido.distrito_destino, pedido.barrio_destino, pedido.direccion_destino]
+          .filter(Boolean)
+          .join(" · ") || "—";
+
+  autoTable(doc, {
+    startY: 55,
+    theme: "grid",
+    head: [["Campo", "Valor"]],
+    body: [
+      ["Tipo", tipo],
+      ["Estado", estado],
+      ["Fecha del pedido", _fmtFechaPdf(pedido.created_at)],
+      ["Caduca el", _fmtFechaPdf(pedido.fecha_caducidad)],
+      ["Solicitante", solicitante],
+      ["Destino", destino],
+      ["Aprobado por", pedido.aprobado_por || "—"],
+      ["Aprobado el", _fmtFechaPdf(pedido.aprobado_at)],
+      ["Servido por", pedido.served_by || "—"],
+      ["Servido el", _fmtFechaPdf(pedido.served_at)],
+      ["Nota", pedido.nota || "—"],
+    ],
+    styles: { fontSize: 10, cellPadding: 2.5 },
+    headStyles: { fillColor: [14, 165, 233] },
+    columnStyles: { 0: { cellWidth: 45, fontStyle: "bold" } },
+  });
+
+  // Productos
+  const items = Array.isArray(pedido.items) ? pedido.items : [];
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 8,
+    theme: "grid",
+    head: [["Producto", "Tamaño", "Cantidad", "Servido", "Pendiente"]],
+    body: items.map((it) => {
+      const nombre =
+        it.producto_nombre_cientifico ||
+        it.producto_nombre ||
+        it.producto_nombre_natural ||
+        (mapProdName && mapProdName.get(it.producto_id)) ||
+        `Producto #${it.producto_id}`;
+      const cantidad = Number(it.cantidad || 0);
+      const servida = Number(it.cantidad_servida || 0);
+      const pendiente = Math.max(cantidad - servida, 0);
+      return [nombre, it.tamano || "—", String(cantidad), String(servida), String(pendiente)];
+    }),
+    styles: { fontSize: 10, cellPadding: 2.3 },
+    headStyles: { fillColor: [16, 185, 129] },
+  });
+
+  // Pie
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i += 1) {
+    doc.setPage(i);
+    const h = doc.internal.pageSize.getHeight();
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, h - 12, pageWidth - 14, h - 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `Generado: ${new Date().toLocaleString("es-ES")}`,
+      14,
+      h - 7
+    );
+    doc.text(`Página ${i} de ${pageCount}`, pageWidth - 14, h - 7, { align: "right" });
+  }
+
+  const fileName = `${sanitizeFileName(`pedido_${pedido.id}`)}_${new Date()
+    .toISOString()
+    .slice(0, 10)}.pdf`;
+
+  doc.save(fileName);
 }
 
 function buildStockByProductSize(movimientos) {
@@ -1904,9 +2056,9 @@ export default function Pedidos() {
                           minWidth: 220,
                         }}
                       >
-                        {canEditCancel ? (
-                          editingId !== p.id ? (
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {canEditCancel && editingId !== p.id ? (
+                            <>
                               {!isReadOnly && (
                                 <button onClick={() => startEdit(p)} style={actionBtn(true)}>
                                   Editar
@@ -1917,24 +2069,36 @@ export default function Pedidos() {
                                   Cancelar
                                 </button>
                               )}
-                            </div>
-                          ) : (
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button
-                                onClick={() => onGuardarEdicion(p.id)}
-                                style={primaryBtn(false)}
-                              >
+                            </>
+                          ) : null}
+
+                          {canEditCancel && editingId === p.id ? (
+                            <>
+                              <button onClick={() => onGuardarEdicion(p.id)} style={primaryBtn(false)}>
                                 Guardar
                               </button>
-
                               <button onClick={stopEdit} style={actionBtn(true)}>
                                 Cerrar
                               </button>
-                            </div>
-                          )
-                        ) : (
-                          <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>
-                        )}
+                            </>
+                          ) : null}
+
+                          <button
+                            onClick={() => imprimirPedidoPdf(p, mapProdName)}
+                            style={{
+                              padding: "10px 12px",
+                              borderRadius: 12,
+                              border: "1px solid rgba(59,130,246,0.30)",
+                              background: "rgba(59,130,246,0.08)",
+                              color: "#1d4ed8",
+                              fontWeight: 900,
+                              cursor: "pointer",
+                            }}
+                            title="Descargar PDF del pedido"
+                          >
+                            Imprimir
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
