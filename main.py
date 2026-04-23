@@ -477,6 +477,41 @@ def _stock_total_producto_tamano(db: Session, producto_id: int, tamano: str) -> 
     return sum(int(r.cantidad_disponible or 0) for r in rows)
 
 
+def _transicionar_pedidos_caducados(db: Session) -> int:
+    """
+    Marca como CADUCADO todos los pedidos cuya fecha_caducidad ya pasó
+    y que todavía estén en RESERVA o APROBADO. Devuelve el número afectado.
+    """
+    hoy = datetime.utcnow().date()
+    q = (
+        db.query(Pedido)
+        .filter(Pedido.fecha_caducidad.isnot(None))
+        .filter(Pedido.fecha_caducidad < hoy)
+        .filter(func.upper(Pedido.estado).in_(["RESERVA", "APROBADO"]))
+    )
+    vencidos = q.all()
+    for p in vencidos:
+        p.estado = "CADUCADO"
+    if vencidos:
+        db.commit()
+    return len(vencidos)
+
+
+def _asegurar_no_caducado(pedido: Pedido, db: Session) -> None:
+    """Si el pedido ha pasado su fecha_caducidad y sigue vivo, lo cierra como CADUCADO y lanza 400."""
+    if pedido is None or pedido.fecha_caducidad is None:
+        return
+    hoy = datetime.utcnow().date()
+    estado_norm = (pedido.estado or "").upper()
+    if pedido.fecha_caducidad < hoy and estado_norm in ("RESERVA", "APROBADO"):
+        pedido.estado = "CADUCADO"
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="El pedido ha caducado. Ya no se puede modificar ni aprobar.",
+        )
+
+
 def _pedido_to_dict(pedido: Pedido) -> dict:
     items = getattr(pedido, "items", []) or []
 
@@ -987,6 +1022,9 @@ def get_pedidos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
+    # Transiciona pedidos vencidos antes de listar
+    _transicionar_pedidos_caducados(db)
+
     rol = (current_user.rol or "").strip().lower()
     q = db.query(Pedido)
 
@@ -1086,6 +1124,8 @@ def update_pedido(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
+    _asegurar_no_caducado(pedido, db)
+
     estado_normalizado = (pedido.estado or "").upper()
     if estado_normalizado != "RESERVA":
         raise HTTPException(status_code=400, detail="Solo se pueden editar pedidos en estado RESERVA")
@@ -1159,6 +1199,8 @@ def cancelar_pedido_endpoint(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
+    _asegurar_no_caducado(pedido, db)
+
     estado = (pedido.estado or "").upper()
     if estado != "RESERVA":
         raise HTTPException(status_code=400, detail="Solo se pueden cancelar pedidos en estado RESERVA")
@@ -1183,6 +1225,8 @@ def aprobar_pedido(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Pedido no encontrado.",
         )
+
+    _asegurar_no_caducado(pedido, db)
 
     if (pedido.estado or "").upper() != "RESERVA":
         raise HTTPException(
@@ -1222,6 +1266,8 @@ def denegar_pedido(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Pedido no encontrado.",
         )
+
+    _asegurar_no_caducado(pedido, db)
 
     if (pedido.estado or "").upper() != "RESERVA":
         raise HTTPException(
@@ -1303,6 +1349,8 @@ def crear_movimiento(
         pedido = db.query(Pedido).filter(Pedido.id == payload.pedido_id).first()
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+        _asegurar_no_caducado(pedido, db)
 
         if (pedido.estado or "").upper() != "APROBADO":
             raise HTTPException(
