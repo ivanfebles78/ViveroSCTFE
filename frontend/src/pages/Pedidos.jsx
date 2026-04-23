@@ -326,17 +326,16 @@ const _fmtFechaPdf = (v) => {
   return new Intl.DateTimeFormat("es-ES", { dateStyle: "short" }).format(d);
 };
 
-async function imprimirPedidoPdf(pedido, mapProdName) {
-  const doc = new jsPDF("p", "mm", "a4");
+// Renderiza UN pedido en el jsPDF actual. Si es el primero, no añade página previa.
+async function renderPedidoEnPdf(doc, pedido, mapProdName, isFirst, logoDataUrl) {
+  if (!isFirst) doc.addPage();
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  // Banda superior
   doc.setFillColor(15, 23, 42);
   doc.rect(0, 0, pageWidth, 28, "F");
   doc.setFillColor(6, 182, 212);
   doc.rect(0, 28, pageWidth, 3, "F");
 
-  // Título
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
   doc.setTextColor(255, 255, 255);
@@ -346,13 +345,10 @@ async function imprimirPedidoPdf(pedido, mapProdName) {
   doc.setTextColor(226, 232, 240);
   doc.text("Comprobante de pedido", 14, 23);
 
-  // Logo opcional
-  try {
-    const logo = await loadImageAsDataUrl(logoViverApp);
-    if (logo) doc.addImage(logo, "PNG", pageWidth - 42, 1, 32, 32);
-  } catch {}
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, "PNG", pageWidth - 42, 1, 32, 32); } catch {}
+  }
 
-  // Encabezado del pedido
   doc.setTextColor(15, 23, 42);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
@@ -361,7 +357,6 @@ async function imprimirPedidoPdf(pedido, mapProdName) {
   doc.setDrawColor(226, 232, 240);
   doc.line(14, 48, pageWidth - 14, 48);
 
-  // Metadata
   const estado = String(pedido.estado || "—").toUpperCase();
   const tipo = pedido.tipo === "reposicion" ? "Reposición" : "Salida";
   const solicitante =
@@ -395,7 +390,6 @@ async function imprimirPedidoPdf(pedido, mapProdName) {
     columnStyles: { 0: { cellWidth: 45, fontStyle: "bold" } },
   });
 
-  // Productos
   const items = Array.isArray(pedido.items) ? pedido.items : [];
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 8,
@@ -416,9 +410,11 @@ async function imprimirPedidoPdf(pedido, mapProdName) {
     styles: { fontSize: 10, cellPadding: 2.3 },
     headStyles: { fillColor: [16, 185, 129] },
   });
+}
 
-  // Pie
+function addFootersToAllPages(doc) {
   const pageCount = doc.internal.getNumberOfPages();
+  const pageWidth = doc.internal.pageSize.getWidth();
   for (let i = 1; i <= pageCount; i += 1) {
     doc.setPage(i);
     const h = doc.internal.pageSize.getHeight();
@@ -427,19 +423,63 @@ async function imprimirPedidoPdf(pedido, mapProdName) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
-    doc.text(
-      `Generado: ${new Date().toLocaleString("es-ES")}`,
-      14,
-      h - 7
-    );
+    doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 14, h - 7);
     doc.text(`Página ${i} de ${pageCount}`, pageWidth - 14, h - 7, { align: "right" });
   }
+}
 
-  const fileName = `${sanitizeFileName(`pedido_${pedido.id}`)}_${new Date()
-    .toISOString()
-    .slice(0, 10)}.pdf`;
+// Construye el documento PDF con uno o varios pedidos (uno por página).
+async function buildPedidosPdf(pedidos, mapProdName) {
+  const doc = new jsPDF("p", "mm", "a4");
+  const logoDataUrl = await loadImageAsDataUrl(logoViverApp);
+  for (let i = 0; i < pedidos.length; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await renderPedidoEnPdf(doc, pedidos[i], mapProdName, i === 0, logoDataUrl);
+  }
+  addFootersToAllPages(doc);
+  return doc;
+}
 
+// Guarda los pedidos como PDF (descarga directa).
+async function guardarPedidosPdf(pedidos, mapProdName) {
+  if (!pedidos.length) return;
+  const doc = await buildPedidosPdf(pedidos, mapProdName);
+  const fileName =
+    pedidos.length === 1
+      ? `${sanitizeFileName(`pedido_${pedidos[0].id}`)}_${new Date().toISOString().slice(0, 10)}.pdf`
+      : `pedidos_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(fileName);
+}
+
+// Abre el diálogo nativo de impresión (impresora física o "Guardar como PDF").
+async function imprimirPedidosEnNavegador(pedidos, mapProdName) {
+  if (!pedidos.length) return;
+  const doc = await buildPedidosPdf(pedidos, mapProdName);
+  const blobUrl = doc.output("bloburl");
+
+  // Usa un iframe oculto para abrir el print dialog sin salir de la página
+  let iframe = document.getElementById("__printFramePedidos");
+  if (iframe) iframe.remove();
+  iframe = document.createElement("iframe");
+  iframe.id = "__printFramePedidos";
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.src = blobUrl;
+  document.body.appendChild(iframe);
+
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch {
+      // Fallback: abrir en nueva pestaña
+      window.open(blobUrl, "_blank");
+    }
+  };
 }
 
 function buildStockByProductSize(movimientos) {
@@ -1524,6 +1564,382 @@ function PedidoDetalleCellOld({
   );
 }
 
+function ImprimirPedidosModal({ open, pedidos, mapProdName, onClose }) {
+  const [seleccion, setSeleccion] = useState({}); // { [id]: true }
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setSeleccion({});
+      setSearch("");
+      setBusy(false);
+      setErr("");
+    }
+  }, [open]);
+
+  const lista = useMemo(() => {
+    const t = search.trim().toLowerCase();
+    const arr = Array.isArray(pedidos) ? [...pedidos] : [];
+    arr.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    if (!t) return arr;
+    return arr.filter((p) => {
+      const sol = String(p.solicitante_username || p.solicitante || p.created_by || "").toLowerCase();
+      const est = String(p.estado || "").toLowerCase();
+      const tipo = String(p.tipo || "salida").toLowerCase();
+      const destino = [p.distrito_destino, p.barrio_destino, p.direccion_destino].filter(Boolean).join(" ").toLowerCase();
+      const detalle = (Array.isArray(p.items) ? p.items : [])
+        .map((it) => `${it.producto_nombre_cientifico || it.producto_nombre || ""} ${it.tamano || ""}`.toLowerCase())
+        .join(" ");
+      return (
+        String(p.id).includes(t) ||
+        sol.includes(t) ||
+        est.includes(t) ||
+        tipo.includes(t) ||
+        destino.includes(t) ||
+        detalle.includes(t)
+      );
+    });
+  }, [pedidos, search]);
+
+  const seleccionados = useMemo(
+    () => lista.filter((p) => seleccion[p.id]),
+    [lista, seleccion]
+  );
+
+  const toggleOne = (id) =>
+    setSeleccion((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+
+  const marcarTodosVisibles = () => {
+    setSeleccion((prev) => {
+      const next = { ...prev };
+      lista.forEach((p) => {
+        next[p.id] = true;
+      });
+      return next;
+    });
+  };
+
+  const limpiar = () => setSeleccion({});
+
+  const handleGuardar = async () => {
+    if (!seleccionados.length) {
+      setErr("Selecciona al menos un pedido.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await guardarPedidosPdf(seleccionados, mapProdName);
+    } catch (e) {
+      setErr(e?.message || "Error generando PDF.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImprimir = async () => {
+    if (!seleccionados.length) {
+      setErr("Selecciona al menos un pedido.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await imprimirPedidosEnNavegador(seleccionados, mapProdName);
+    } catch (e) {
+      setErr(e?.message || "Error imprimiendo.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.55)",
+        zIndex: 1500,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        padding: 24,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(1100px, 96vw)",
+          background: "white",
+          borderRadius: 22,
+          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+          display: "flex",
+          flexDirection: "column",
+          marginTop: "auto",
+          marginBottom: "auto",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 22px",
+            borderBottom: "1px solid rgba(15,23,42,0.08)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 14,
+            position: "sticky",
+            top: 0,
+            background: "white",
+            zIndex: 2,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#0f172a" }}>Imprimir pedido</div>
+            <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 14 }}>
+              Selecciona uno o varios pedidos. Podrás elegir impresora o guardar como PDF.
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              fontWeight: 900,
+              cursor: "pointer",
+              background: "#f59e0b",
+              color: "#111827",
+              border: "2px solid #000",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+
+        <div
+          style={{
+            padding: "14px 22px",
+            borderBottom: "1px solid rgba(15,23,42,0.05)",
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por ID, solicitante, estado, destino..."
+            style={{
+              flex: 1,
+              minWidth: 240,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid rgba(15,23,42,0.15)",
+              fontWeight: 700,
+            }}
+          />
+          <button
+            onClick={marcarTodosVisibles}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid rgba(15,23,42,0.10)",
+              background: "white",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
+          >
+            Seleccionar todos
+          </button>
+          <button
+            onClick={limpiar}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid rgba(15,23,42,0.10)",
+              background: "white",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
+          >
+            Limpiar
+          </button>
+          <span style={{ fontWeight: 900, color: "#0f172a", marginLeft: "auto" }}>
+            Seleccionados: {seleccionados.length}
+          </span>
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              margin: "12px 22px 0",
+              padding: "10px 14px",
+              borderRadius: 10,
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.25)",
+              color: "#991b1b",
+              fontWeight: 800,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+
+        <div style={{ padding: 22 }}>
+          {lista.length === 0 ? (
+            <div style={{ color: "#64748b", fontWeight: 800, padding: 20 }}>
+              No hay pedidos que coincidan.
+            </div>
+          ) : (
+            <div
+              style={{
+                border: "1px solid rgba(15,23,42,0.08)",
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "36px 80px 110px 110px 1fr 160px 120px",
+                  gap: 8,
+                  padding: "10px 12px",
+                  background: "#f8fafc",
+                  fontWeight: 900,
+                  fontSize: 12,
+                  color: "#334155",
+                  textTransform: "uppercase",
+                }}
+              >
+                <div></div>
+                <div>ID</div>
+                <div>Tipo</div>
+                <div>Fecha</div>
+                <div>Solicitante / Destino</div>
+                <div>Estado</div>
+                <div>Caduca</div>
+              </div>
+              {lista.map((p) => {
+                const checked = !!seleccion[p.id];
+                const destino =
+                  p.tipo === "reposicion"
+                    ? "Vivero"
+                    : [p.distrito_destino, p.barrio_destino, p.direccion_destino]
+                        .filter(Boolean)
+                        .join(" · ") || "—";
+                const solicitante = p.solicitante_username || p.solicitante || p.created_by || "—";
+                return (
+                  <label
+                    key={p.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "36px 80px 110px 110px 1fr 160px 120px",
+                      gap: 8,
+                      padding: "10px 12px",
+                      borderTop: "1px solid rgba(15,23,42,0.06)",
+                      alignItems: "center",
+                      background: checked ? "rgba(14,165,233,0.06)" : "white",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleOne(p.id)}
+                      style={{ width: 18, height: 18, cursor: "pointer" }}
+                    />
+                    <div style={{ fontWeight: 900 }}>#{p.id}</div>
+                    <div style={{ fontWeight: 800, color: p.tipo === "reposicion" ? "#92400e" : "#1e3a8a" }}>
+                      {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                    </div>
+                    <div>{fmtFechaES(p.created_at)}</div>
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={{ fontWeight: 800 }}>{solicitante}</div>
+                      <div style={{ color: "#64748b", fontSize: 12 }}>{destino}</div>
+                    </div>
+                    <div style={{ fontWeight: 900 }}>{p.estado || "—"}</div>
+                    <div style={{ color: "#b91c1c", fontWeight: 900 }}>
+                      {p.fecha_caducidad ? fmtFechaES(p.fecha_caducidad) : "—"}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            padding: "14px 22px",
+            borderTop: "1px solid rgba(15,23,42,0.08)",
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            flexWrap: "wrap",
+            position: "sticky",
+            bottom: 0,
+            background: "white",
+            borderBottomLeftRadius: 22,
+            borderBottomRightRadius: 22,
+          }}
+        >
+          <button
+            onClick={handleGuardar}
+            disabled={busy || seleccionados.length === 0}
+            style={{
+              padding: "12px 18px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,0.10)",
+              background: busy || seleccionados.length === 0 ? "#f1f5f9" : "white",
+              color: "#0f172a",
+              fontWeight: 900,
+              cursor: busy || seleccionados.length === 0 ? "not-allowed" : "pointer",
+            }}
+            title="Descargar como PDF"
+          >
+            {busy ? "Generando..." : "Descargar PDF"}
+          </button>
+          <button
+            onClick={handleImprimir}
+            disabled={busy || seleccionados.length === 0}
+            style={{
+              padding: "12px 18px",
+              borderRadius: 12,
+              border: "1px solid rgba(6,182,212,0.30)",
+              background:
+                busy || seleccionados.length === 0
+                  ? "rgba(148,163,184,0.35)"
+                  : "linear-gradient(135deg, #0ea5e9 0%, #06b6d4 60%, #10b981 100%)",
+              color: "white",
+              fontWeight: 900,
+              cursor: busy || seleccionados.length === 0 ? "not-allowed" : "pointer",
+            }}
+            title="Abrir diálogo de impresión (imprimir o guardar como PDF)"
+          >
+            {busy ? "Preparando..." : `Imprimir${seleccionados.length > 1 ? ` ${seleccionados.length}` : ""}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Pedidos() {
   const { me } = useOutletContext();
 
@@ -1547,6 +1963,7 @@ export default function Pedidos() {
   const [editQty, setEditQty] = useState({});
   const [editSearch, setEditSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [imprimirOpen, setImprimirOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
 
   const role = me?.rol || me?.role;
@@ -1830,6 +2247,22 @@ export default function Pedidos() {
             </button>
           )}
 
+          <button
+            onClick={() => setImprimirOpen(true)}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(59,130,246,0.30)",
+              background: "rgba(59,130,246,0.08)",
+              color: "#1d4ed8",
+              fontWeight: 900,
+              cursor: "pointer",
+            }}
+            title="Imprimir uno o varios pedidos"
+          >
+            Imprimir pedido
+          </button>
+
           <div style={{ fontWeight: 800, color: "#64748b" }}>
             Usuario: <span style={{ color: "#0f172a" }}>{me?.username || "—"}</span> · Rol:{" "}
             <span style={{ color: "#0f172a" }}>{role || "—"}</span>
@@ -2083,21 +2516,9 @@ export default function Pedidos() {
                             </>
                           ) : null}
 
-                          <button
-                            onClick={() => imprimirPedidoPdf(p, mapProdName)}
-                            style={{
-                              padding: "10px 12px",
-                              borderRadius: 12,
-                              border: "1px solid rgba(59,130,246,0.30)",
-                              background: "rgba(59,130,246,0.08)",
-                              color: "#1d4ed8",
-                              fontWeight: 900,
-                              cursor: "pointer",
-                            }}
-                            title="Descargar PDF del pedido"
-                          >
-                            Imprimir
-                          </button>
+                          {!canEditCancel ? (
+                            <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -2116,6 +2537,13 @@ export default function Pedidos() {
         stockByProductSize={stockByProductSize}
         onSubmit={handleCreatePedidoFromModal}
         saving={savingNewPedido}
+      />
+
+      <ImprimirPedidosModal
+        open={imprimirOpen}
+        pedidos={pedidos}
+        mapProdName={mapProdName}
+        onClose={() => setImprimirOpen(false)}
       />
     </div>
   );
