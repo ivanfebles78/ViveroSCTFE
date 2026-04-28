@@ -2,13 +2,17 @@ import React, { useState } from "react";
 import "./MapaVivero.css";
 import Modal from "../common/Modal";
 import zonas from "./zonasConfig";
+import useMapaDebug from "./useMapaDebug";
 import { getZonaItems } from "../../api/api";
+
+const DEBUG_MAPA = true;
 
 export default function MapaVivero() {
   const [zonaSeleccionada, setZonaSeleccionada] = useState(null);
   const [zonaData, setZonaData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const debugClick = useMapaDebug();
 
   const handleZonaClick = async (zona) => {
     setZonaSeleccionada(zona);
@@ -46,9 +50,14 @@ export default function MapaVivero() {
 
       <svg
         className="vivero-map-overlay"
-        viewBox="0 0 2000 1200"
+        viewBox="0 0 1536 1024"
         preserveAspectRatio="xMidYMid meet"
+        onClick={DEBUG_MAPA ? debugClick : undefined}
+        style={DEBUG_MAPA ? { pointerEvents: "all" } : undefined}
       >
+        {DEBUG_MAPA && (
+          <rect x="0" y="0" width="1536" height="1024" fill="transparent" />
+        )}
         {zonas.map((zona) => (
           <polygon
             key={zona.id}

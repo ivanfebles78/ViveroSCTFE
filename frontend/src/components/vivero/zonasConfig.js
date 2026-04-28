@@ -12,7 +12,7 @@ const zonas = [
   { id: "zona-9", apiId: "9", nombre: "Zona 9", color: "#F7E85B", puntos: "925,320 1125,195 1240,215 1165,305 955,390" },
   { id: "zona-10a", apiId: "10a", nombre: "Zona 10 A", color: "#6BAED6", puntos: "520,650 640,600 665,690 545,735" },
   { id: "zona-10b", apiId: "10b", nombre: "Zona 10 B", color: "#4E8BC5", puntos: "690,700 745,720 725,905 660,875" },
-  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "315,550 535,430 675,360 710,500 640,565 305,720" },
+  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "350,550 535,430 675,360 710,500 640,565 305,720" },
   { id: "oficina", apiId: "oficina", nombre: "Oficina", color: "#FFFFFF", puntos: "755,335 855,300 895,360 790,405" },
   { id: "zona-compostaje", apiId: "compostaje", nombre: "Zona de Compostaje", color: "#E5E5E5", puntos: "1270,120 1340,150 1325,265 1245,235" },
 ];

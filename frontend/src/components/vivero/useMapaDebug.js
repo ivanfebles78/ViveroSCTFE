@@ -1,7 +1,6 @@
 export default function useMapaDebug() {
   return (e) => {
-    const tag = e.target.tagName?.toLowerCase();
-    if (tag === "polygon" || tag === "rect" || tag === "path") return;
+    if (e.target.classList?.contains("zona-clickable")) return;
 
     const svg = e.currentTarget;
     const pt = svg.createSVGPoint();
