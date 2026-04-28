@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import "./MapaVivero.css";
 import zonas from "./zonasConfig";
 import { getZonaItems } from "../../api/api";
-import Modal from "../Modal/Modal";
+
 
 export default function MapaVivero() {
   const [zonaSeleccionada, setZonaSeleccionada] = useState(null);
