@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./MapaVivero.css";
-import Modal from "./Modal";
+import Modal from "../common/Modal";
 import zonas from "./zonasConfig";
 import { getZonaItems } from "../../api/api";
 
