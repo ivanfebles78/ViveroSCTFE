@@ -1,104 +1,20 @@
 const zonas = [
-  {
-    id: "zona-1",
-    nombre: "Zona 1",
-    puntos: "722,98 950,190 950,255 470,499"
-  },
-  {
-    id: "zona-3c",
-    nombre: "Zona 3C",
-    puntos: "952,190 1160,190 1160,330 952,330"
-  },
-  {
-    id: "zona-3b",
-    nombre: "Zona 3B",
-    puntos: "1168,190 1375,190 1375,330 1168,330"
-  },
-  {
-    id: "zona-3a",
-    nombre: "Zona 3A",
-    puntos: "1382,190 1596,190 1596,330 1382,330"
-  },
-  {
-    id: "zona-compostaje",
-    nombre: "Zona de Compostaje",
-    puntos: "1690,150 1940,250 1940,380 1690,380"
-  },
-  {
-    id: "zona-4a",
-    nombre: "Zona 4A",
-    puntos: "1745,395 1930,395 1930,533 1745,533"
-  },
-  {
-    id: "zona-4b",
-    nombre: "Zona 4B",
-    puntos: "1745,533 1930,533 1930,687 1745,687"
-  },
-  {
-    id: "zona-4c",
-    nombre: "Zona 4C",
-    puntos: "1745,687 1930,687 1930,833 1745,833"
-  },
-  {
-    id: "zona-9a",
-    nombre: "Zona 9A",
-    puntos: "1600,350 1710,520 1510,590 1435,410"
-  },
-  {
-    id: "zona-9b",
-    nombre: "Zona 9B",
-    puntos: "1440,405 1520,590 1375,610 1315,430"
-  },
-  {
-    id: "zona-9c",
-    nombre: "Zona 9C",
-    puntos: "1207,465 1317,430 1387,605 1199,666"
-  },
-  {
-    id: "zona-2",
-    nombre: "Zona 2",
-    puntos: "1030,735 1680,620 1715,845 1020,845"
-  },
-  {
-    id: "zona-8",
-    nombre: "Zona 8",
-    puntos: "1095,905 1890,905 1890,1049 1095,1049"
-  },
-  {
-    id: "zona-10a",
-    nombre: "Zona 10A",
-    puntos: "810,730 960,770 950,1060 760,1010"
-  },
-  {
-    id: "zona-10b",
-    nombre: "Zona 10B",
-    puntos: "535,761 759,676 724,856 550,886"
-  },
-  {
-    id: "zona-11",
-    nombre: "Zona 11",
-    puntos: "535,530 710,425 760,620 335,800"
-  },
-  {
-    id: "zona-5",
-    nombre: "Zona 5",
-    puntos: "270,875 530,780 540,900 205,935"
-  },
-  {
-    id: "zona-6",
-    nombre: "Zona 6",
-    puntos: "470,915 720,875 715,965 420,955"
-  },
-  {
-    id: "zona-7",
-    nombre: "Zona 7",
-    puntos: "120,970 720,980 705,1085 95,1085"
-  },
-  {
-    id: "oficina",
-    nombre: "Oficina",
-    puntos: "790,415 1190,415 1190,585 790,585"
-  }
+  { id: "zona-1", apiId: "1", nombre: "Zona 1", color: "#F4E2C1", puntos: "555,265 650,190 720,250 690,325 620,360 535,345" },
+  { id: "zona-2", apiId: "2", nombre: "Zona 2", color: "#E87B69", puntos: "845,385 1125,260 1165,340 965,420 815,470" },
+  { id: "zona-3", apiId: "3", nombre: "Zona 3", color: "#9FD486", puntos: "800,430 900,385 930,430 810,485" },
+  { id: "zona-4", apiId: "4", nombre: "Zona 4", color: "#BFD9EA", puntos: "1195,330 1295,315 1295,455 1190,450" },
+  { id: "zona-4a", apiId: "4a", nombre: "Zona 4 A", color: "#F5D547", puntos: "1030,610 1205,545 1300,575 1295,655 1115,685 1020,655" },
+  { id: "zona-4b", apiId: "4b", nombre: "Zona 4 B", color: "#F08A80", puntos: "1115,685 1295,655 1320,760 1160,805 1085,750" },
+  { id: "zona-5", apiId: "5", nombre: "Zona 5", color: "#F3CF39", puntos: "305,720 640,565 675,610 335,775" },
+  { id: "zona-6", apiId: "6", nombre: "Zona 6", color: "#A7D98C", puntos: "545,735 680,690 700,780 565,815" },
+  { id: "zona-7", apiId: "7", nombre: "Zona 7", color: "#9ECBE2", puntos: "20,880 545,735 680,780 670,965 25,950" },
+  { id: "zona-8", apiId: "8", nombre: "Zona 8", color: "#F3E0BD", puntos: "850,690 1035,590 1265,570 1285,795 1365,790 1280,965 975,995 845,945 805,795" },
+  { id: "zona-9", apiId: "9", nombre: "Zona 9", color: "#F7E85B", puntos: "925,320 1125,195 1240,215 1165,305 955,390" },
+  { id: "zona-10a", apiId: "10a", nombre: "Zona 10 A", color: "#6BAED6", puntos: "520,650 640,600 665,690 545,735" },
+  { id: "zona-10b", apiId: "10b", nombre: "Zona 10 B", color: "#4E8BC5", puntos: "690,700 745,720 725,905 660,875" },
+  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "315,550 535,430 675,360 710,500 640,565 305,720" },
+  { id: "oficina", apiId: "oficina", nombre: "Oficina", color: "#FFFFFF", puntos: "755,335 855,300 895,360 790,405" },
+  { id: "zona-compostaje", apiId: "compostaje", nombre: "Zona de Compostaje", color: "#E5E5E5", puntos: "1270,120 1340,150 1325,265 1245,235" },
 ];
 
 export default zonas;
