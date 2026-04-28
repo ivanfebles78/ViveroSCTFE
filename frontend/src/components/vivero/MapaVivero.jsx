@@ -39,7 +39,7 @@ export default function MapaVivero() {
   return (
     <div className="vivero-map-wrapper">
       <img
-        src="/mapa_vivero.png"
+        src="/mapa-vivero.png"
         alt="Mapa del vivero"
         className="vivero-map-image"
       />
