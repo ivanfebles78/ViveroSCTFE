@@ -4,7 +4,7 @@ const zonas = [
   { id: "zona-3", apiId: "3", nombre: "Zona 3", color: "#9FD486", puntos: "1050,672 1055,680 1167,540 1177,570 1027,665" },
   { id: "zona-4", apiId: "4", nombre: "Zona 4", color: "#BFD9EA", puntos: "1195,330 1295,315 1295,455 1190,450" },
   { id: "zona-4a", apiId: "4a", nombre: "Zona 4 A", color: "#F5D547", puntos: "1380,750 1555,700 1650,720 1650,800 1465,825 1370,810" },
-  { id: "zona-4b", apiId: "4b", nombre: "Zona 4 B", color: "#F08A80", puntos: "1155,685 1355,655 1350,760 1160,805 1085,750" },
+  { id: "zona-4b", apiId: "4b", nombre: "Zona 4 B", color: "#F08A80", puntos: "1455,800 1655,725 1650,880 1460,925 1385,870" },
   { id: "zona-5", apiId: "5", nombre: "Zona 5", color: "#F3CF39", puntos: "920,790 435,1030 425,975 890,740" },
   { id: "zona-6", apiId: "6", nombre: "Zona 6", color: "#A7D98C", puntos: "740,1055 705,975 860,915 865,1000" },
   { id: "zona-7", apiId: "7", nombre: "Zona 7", color: "#9ECBE2", puntos: "685,1086 665,1153 430,1095 215,1080 82,1094 501,885 555,997 663,943 649,873 677,858 693,867 646,1061" },
