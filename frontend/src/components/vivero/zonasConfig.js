@@ -12,7 +12,7 @@ const zonas = [
   { id: "zona-9", apiId: "9", nombre: "Zona 9", color: "#F7E85B", puntos: "1170,570 1525,315 1525,245 1210,310" },
   { id: "zona-10a", apiId: "10a", nombre: "Zona 10 A", color: "#6BAED6", puntos: "529,731 643,686 624,628 509,680" },
   { id: "zona-10b", apiId: "10b", nombre: "Zona 10 B", color: "#4E8BC5", puntos: "935,885 1000,915 920,1190 860,1170" },
-  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "855,663 475,753 354,905 360,917 869,749 884,714" },
+  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "865,625 520,753 370,935 380,935 875,749 890,680" },
 ];
 
 export default zonas;
