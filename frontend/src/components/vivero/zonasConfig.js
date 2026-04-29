@@ -1,6 +1,6 @@
 const zonas = [
   { id: "zona-1", apiId: "1", nombre: "Zona 1", color: "#F4E2C1", puntos: "382,966 681,696 952,600 1052,428 764,753 650,300 550,965 50,1200" },
-  { id: "zona-2", apiId: "2", nombre: "Zona 2", color: "#E87B69", puntos: "1035,550 1400,440 1550,470 1615,350 1625,355 1165,620 1045,650" },
+  { id: "zona-2", apiId: "2", nombre: "Zona 2", color: "#E87B69", puntos: "1035,550 1400,440 1550,470 1615,350 1625,355 1165,655 1045,668" },
   { id: "zona-3", apiId: "3", nombre: "Zona 3", color: "#9FD486", puntos: "1000,630 1100,585 1130,630 1010,685" },
   { id: "zona-4", apiId: "4", nombre: "Zona 4", color: "#BFD9EA", puntos: "1195,330 1295,315 1295,455 1190,450" },
   { id: "zona-4a", apiId: "4a", nombre: "Zona 4 A", color: "#F5D547", puntos: "1380,810 1555,745 1650,775 1650,855 1465,885 1370,855" },
@@ -12,7 +12,7 @@ const zonas = [
   { id: "zona-9", apiId: "9", nombre: "Zona 9", color: "#F7E85B", puntos: "1170,570 1545,320 1520,250 1205,430" },
   { id: "zona-10a", apiId: "10a", nombre: "Zona 10 A", color: "#6BAED6", puntos: "729,980 870,956 850,875 709,940" },
   { id: "zona-10b", apiId: "10b", nombre: "Zona 10 B", color: "#4E8BC5", puntos: "935,885 1000,915 920,1190 860,1170" },
-  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "875,620 550,750 400,1005 885,749 900,680" },
+  { id: "zona-11", apiId: "11", nombre: "Zona 11", color: "#E56F61", puntos: "875,620 550,750 400,980 885,749 900,680" },
 ];
 
 export default zonas;
