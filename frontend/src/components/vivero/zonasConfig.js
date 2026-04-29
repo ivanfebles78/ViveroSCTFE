@@ -1,6 +1,6 @@
 const zonas = [
-  { id: "zona-1", apiId: "1", nombre: "Zona 1", color: "#F4E2C1", puntos: "50,1200 340,966 300,850 660,375 950,575 550,965" },
-  { id: "zona-2", apiId: "2", nombre: "Zona 2", color: "#E87B69", puntos: "1000,625 1600,345 1605,352 1040,680" },
+  { id: "zona-1", apiId: "1", nombre: "Zona 1", color: "#F4E2C1", puntos: "50,1200 340,966 300,850 700,365 950,575 550,965" },
+  { id: "zona-2", apiId: "2", nombre: "Zona 2", color: "#E87B69", puntos: "1035,665 1570,325 1580,345 1040,680" },
   { id: "zona-3", apiId: "3", nombre: "Zona 3", color: "#9FD486", puntos: "1050,652 1055,650 1167,500 1177,500 1027,655" },
   { id: "zona-4", apiId: "4", nombre: "Zona 4", color: "#BFD9EA", puntos: "1195,330 1295,315 1295,455 1190,450" },
   { id: "zona-4a", apiId: "4a", nombre: "Zona 4 A", color: "#F5D547", puntos: "1380,750 1555,700 1650,720 1650,800 1465,825 1370,810" },
