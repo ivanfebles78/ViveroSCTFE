@@ -13,7 +13,7 @@ import {
 } from "../components/vivero/zonesStorage";
 
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
-const ENABLE_ZONE_EDITOR = false;
+const ENABLE_ZONE_EDITOR = true;
 
 const MAP_WIDTH = 2048;
 const MAP_HEIGHT = 1365;

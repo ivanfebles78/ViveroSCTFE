@@ -15,7 +15,7 @@ import {
 
 const DEBUG_MAPA = false;
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
-const ENABLE_ZONE_EDITOR = false;
+const ENABLE_ZONE_EDITOR = true;
 
 export default function MapaVivero() {
   const [zonas, setZonas] = useState(() =>
