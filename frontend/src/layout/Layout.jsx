@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
+import zonasDefault from "../components/vivero/zonasConfig";
 import ZoneEditor from "../components/vivero/ZoneEditor";
 import {
   loadZonas,
@@ -10,6 +11,9 @@ import {
   hasZonasDraft,
   exportZonasAsJsFile,
 } from "../components/vivero/zonesStorage";
+
+// Flip to true to re-enable the in-app zone editor (button + drag UI).
+const ENABLE_ZONE_EDITOR = false;
 
 const MAP_WIDTH = 2048;
 const MAP_HEIGHT = 1365;
@@ -615,8 +619,12 @@ function ZonaMapModal({ open, onClose }) {
   const [loading, setLoading] = useState(false);
   const [zonaError, setZonaError] = useState("");
 
-  const [zonas, setZonas] = useState(() => loadZonas());
-  const [draftActive, setDraftActive] = useState(() => hasZonasDraft());
+  const [zonas, setZonas] = useState(() =>
+    ENABLE_ZONE_EDITOR ? loadZonas() : zonasDefault
+  );
+  const [draftActive, setDraftActive] = useState(() =>
+    ENABLE_ZONE_EDITOR ? hasZonasDraft() : false
+  );
   const [editMode, setEditMode] = useState(false);
 
   const zonePolygons = useMemo(
@@ -680,7 +688,7 @@ function ZonaMapModal({ open, onClose }) {
 
   if (!open) return null;
 
-  if (editMode) {
+  if (editMode && ENABLE_ZONE_EDITOR) {
     return (
       <div
         style={{
@@ -758,7 +766,7 @@ function ZonaMapModal({ open, onClose }) {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              {draftActive && (
+              {ENABLE_ZONE_EDITOR && draftActive && (
                 <>
                   <span
                     style={{
@@ -789,20 +797,22 @@ function ZonaMapModal({ open, onClose }) {
                   </button>
                 </>
               )}
-              <button
-                onClick={() => setEditMode(true)}
-                style={{
-                  padding: "8px 14px",
-                  background: "#0f5132",
-                  color: "#ffffff",
-                  border: 0,
-                  borderRadius: 8,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                }}
-              >
-                Editar zonas
-              </button>
+              {ENABLE_ZONE_EDITOR && (
+                <button
+                  onClick={() => setEditMode(true)}
+                  style={{
+                    padding: "8px 14px",
+                    background: "#0f5132",
+                    color: "#ffffff",
+                    border: 0,
+                    borderRadius: 8,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Editar zonas
+                </button>
+              )}
               <button onClick={onClose} style={closeButtonStyle()}>
                 Cerrar
               </button>

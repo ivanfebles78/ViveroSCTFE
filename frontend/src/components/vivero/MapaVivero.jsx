@@ -3,6 +3,7 @@ import "./MapaVivero.css";
 import Modal from "../common/Modal";
 import useMapaDebug from "./useMapaDebug";
 import { getZonaItems } from "../../api/api";
+import zonasDefault from "./zonasConfig";
 import ZoneEditor from "./ZoneEditor";
 import {
   loadZonas,
@@ -13,10 +14,16 @@ import {
 } from "./zonesStorage";
 
 const DEBUG_MAPA = false;
+// Flip to true to re-enable the in-app zone editor (button + drag UI).
+const ENABLE_ZONE_EDITOR = false;
 
 export default function MapaVivero() {
-  const [zonas, setZonas] = useState(() => loadZonas());
-  const [draftActive, setDraftActive] = useState(() => hasZonasDraft());
+  const [zonas, setZonas] = useState(() =>
+    ENABLE_ZONE_EDITOR ? loadZonas() : zonasDefault
+  );
+  const [draftActive, setDraftActive] = useState(() =>
+    ENABLE_ZONE_EDITOR ? hasZonasDraft() : false
+  );
   const [editMode, setEditMode] = useState(false);
 
   const [zonaSeleccionada, setZonaSeleccionada] = useState(null);
@@ -72,7 +79,7 @@ export default function MapaVivero() {
 
   const items = zonaData?.items || zonaData?.productos || [];
 
-  if (editMode) {
+  if (editMode && ENABLE_ZONE_EDITOR) {
     return (
       <ZoneEditor
         zonas={zonas}
@@ -84,29 +91,31 @@ export default function MapaVivero() {
 
   return (
     <>
-      <div className="vivero-admin-bar">
-        <button
-          type="button"
-          className="vivero-admin-btn"
-          onClick={() => setEditMode(true)}
-        >
-          Editar zonas
-        </button>
-        {draftActive && (
-          <>
-            <span className="vivero-admin-badge">
-              Mostrando borrador local
-            </span>
-            <button
-              type="button"
-              className="vivero-admin-btn-secondary"
-              onClick={handleClearDraft}
-            >
-              Limpiar borrador
-            </button>
-          </>
-        )}
-      </div>
+      {ENABLE_ZONE_EDITOR && (
+        <div className="vivero-admin-bar">
+          <button
+            type="button"
+            className="vivero-admin-btn"
+            onClick={() => setEditMode(true)}
+          >
+            Editar zonas
+          </button>
+          {draftActive && (
+            <>
+              <span className="vivero-admin-badge">
+                Mostrando borrador local
+              </span>
+              <button
+                type="button"
+                className="vivero-admin-btn-secondary"
+                onClick={handleClearDraft}
+              >
+                Limpiar borrador
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="vivero-map-wrapper">
         <img
