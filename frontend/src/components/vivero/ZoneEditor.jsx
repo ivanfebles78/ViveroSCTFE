@@ -189,7 +189,7 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
         <svg
           ref={svgRef}
           className="vivero-map-overlay"
-          viewBox="0 0 1536 1024"
+          viewBox="0 0 2048 1365"
           preserveAspectRatio="xMidYMid meet"
           onMouseMove={handleMouseMove}
           onMouseUp={endDrag}
@@ -236,7 +236,7 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
                   <circle
                     cx={mx}
                     cy={my}
-                    r={7}
+                    r={10}
                     className="zona-add-handle"
                     onClick={(e) => insertVertex(e, selectedZona.id, i)}
                   >
@@ -252,7 +252,7 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
                 <circle
                   cx={x}
                   cy={y}
-                  r={10}
+                  r={14}
                   className="zona-vertex-handle"
                   onMouseDown={(e) =>
                     startVertexDrag(e, selectedZona.id, i)
@@ -268,7 +268,7 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
                 </circle>
                 <text
                   x={x}
-                  y={y - 14}
+                  y={y - 20}
                   className="zona-vertex-label"
                   textAnchor="middle"
                 >

@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
-import zonas from "../components/vivero/zonasConfig";
+import ZoneEditor from "../components/vivero/ZoneEditor";
+import {
+  loadZonas,
+  saveZonasDraft,
+  clearZonasDraft,
+  hasZonasDraft,
+  exportZonasAsJsFile,
+} from "../components/vivero/zonesStorage";
 
 const MAP_WIDTH = 2048;
 const MAP_HEIGHT = 1365;
@@ -608,10 +615,35 @@ function ZonaMapModal({ open, onClose }) {
   const [loading, setLoading] = useState(false);
   const [zonaError, setZonaError] = useState("");
 
+  const [zonas, setZonas] = useState(() => loadZonas());
+  const [draftActive, setDraftActive] = useState(() => hasZonasDraft());
+  const [editMode, setEditMode] = useState(false);
+
   const zonePolygons = useMemo(
     () => (Array.isArray(zonas) ? zonas.filter((z) => !z.disabled) : []),
-    []
+    [zonas]
   );
+
+  const handleEditorSave = (updatedZonas) => {
+    saveZonasDraft(updatedZonas);
+    exportZonasAsJsFile(updatedZonas);
+    setZonas(updatedZonas);
+    setDraftActive(true);
+    setEditMode(false);
+  };
+
+  const handleClearDraft = () => {
+    if (
+      !window.confirm(
+        "¿Descartar los cambios locales y volver a las zonas del fichero zonasConfig.js?"
+      )
+    ) {
+      return;
+    }
+    clearZonasDraft();
+    setZonas(loadZonas());
+    setDraftActive(false);
+  };
 
   const selectedZoneLabel =
     zonePolygons.find((z) => String(z.id) === String(selectedZone))?.nombre ||
@@ -647,6 +679,41 @@ function ZonaMapModal({ open, onClose }) {
   }, [open]);
 
   if (!open) return null;
+
+  if (editMode) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(2,6,23,0.55)",
+          zIndex: 2000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            width: "min(1700px, 98vw)",
+            maxHeight: "94vh",
+            overflow: "auto",
+            background: "white",
+            borderRadius: 24,
+            padding: 20,
+            boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+          }}
+        >
+          <ZoneEditor
+            zonas={zonas}
+            onSave={handleEditorSave}
+            onCancel={() => setEditMode(false)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -690,9 +757,56 @@ function ZonaMapModal({ open, onClose }) {
               </div>
             </div>
 
-            <button onClick={onClose} style={closeButtonStyle()}>
-              Cerrar
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {draftActive && (
+                <>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#92400e",
+                      background: "#fef3c7",
+                      border: "1px solid #fbbf24",
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                    }}
+                  >
+                    Borrador local
+                  </span>
+                  <button
+                    onClick={handleClearDraft}
+                    style={{
+                      padding: "8px 12px",
+                      background: "#ffffff",
+                      color: "#44403c",
+                      border: "1px solid #d6d3d1",
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Limpiar borrador
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setEditMode(true)}
+                style={{
+                  padding: "8px 14px",
+                  background: "#0f5132",
+                  color: "#ffffff",
+                  border: 0,
+                  borderRadius: 8,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Editar zonas
+              </button>
+              <button onClick={onClose} style={closeButtonStyle()}>
+                Cerrar
+              </button>
+            </div>
           </div>
 
           <div

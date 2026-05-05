@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import "./MapaVivero.css";
 import Modal from "../common/Modal";
 import useMapaDebug from "./useMapaDebug";
-import { getMe, getZonaItems } from "../../api/api";
+import { getZonaItems } from "../../api/api";
 import ZoneEditor from "./ZoneEditor";
 import {
   loadZonas,
@@ -14,43 +14,16 @@ import {
 
 const DEBUG_MAPA = false;
 
-const readUserFromStorage = () => {
-  try {
-    return JSON.parse(window.localStorage.getItem("user") || "null");
-  } catch {
-    return null;
-  }
-};
-
 export default function MapaVivero() {
   const [zonas, setZonas] = useState(() => loadZonas());
   const [draftActive, setDraftActive] = useState(() => hasZonasDraft());
   const [editMode, setEditMode] = useState(false);
-
-  const [me, setMe] = useState(() => readUserFromStorage());
 
   const [zonaSeleccionada, setZonaSeleccionada] = useState(null);
   const [zonaData, setZonaData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const debugClick = useMapaDebug();
-
-  useEffect(() => {
-    let cancelled = false;
-    getMe()
-      .then((data) => {
-        if (!cancelled) setMe(data);
-      })
-      .catch(() => {
-        // si /auth/me falla, dejamos lo que haya en localStorage
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const userRole = (me?.rol || me?.role || "").toString().trim().toLowerCase();
-  const isAdmin = userRole === "admin";
 
   const handleZonaClick = async (zona) => {
     setZonaSeleccionada(zona);
@@ -111,35 +84,29 @@ export default function MapaVivero() {
 
   return (
     <>
-      {(isAdmin || draftActive) && (
-        <div className="vivero-admin-bar">
-          {isAdmin && (
+      <div className="vivero-admin-bar">
+        <button
+          type="button"
+          className="vivero-admin-btn"
+          onClick={() => setEditMode(true)}
+        >
+          Editar zonas
+        </button>
+        {draftActive && (
+          <>
+            <span className="vivero-admin-badge">
+              Mostrando borrador local
+            </span>
             <button
               type="button"
-              className="vivero-admin-btn"
-              onClick={() => setEditMode(true)}
+              className="vivero-admin-btn-secondary"
+              onClick={handleClearDraft}
             >
-              Editar zonas
+              Limpiar borrador
             </button>
-          )}
-          {draftActive && (
-            <>
-              <span className="vivero-admin-badge">
-                Mostrando borrador local
-              </span>
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="vivero-admin-btn-secondary"
-                  onClick={handleClearDraft}
-                >
-                  Limpiar borrador
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       <div className="vivero-map-wrapper">
         <img
@@ -150,13 +117,13 @@ export default function MapaVivero() {
 
         <svg
           className="vivero-map-overlay"
-          viewBox="0 0 1536 1024"
+          viewBox="0 0 2048 1365"
           preserveAspectRatio="xMidYMid meet"
           onClick={DEBUG_MAPA ? debugClick : undefined}
           style={DEBUG_MAPA ? { pointerEvents: "all" } : undefined}
         >
           {DEBUG_MAPA && (
-            <rect x="0" y="0" width="1536" height="1024" fill="transparent" />
+            <rect x="0" y="0" width="2048" height="1365" fill="transparent" />
           )}
           {zonas.map((zona) => (
             <polygon

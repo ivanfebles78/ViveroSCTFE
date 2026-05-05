@@ -359,11 +359,11 @@
 
 .zona-vertex-label {
   fill: #0f5132;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 700;
   pointer-events: none;
   user-select: none;
   paint-order: stroke;
   stroke: #ffffff;
-  stroke-width: 3;
+  stroke-width: 4;
 }
