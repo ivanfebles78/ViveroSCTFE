@@ -227,6 +227,11 @@ export const adminUpdateUser = async (userId, payload) => {
   return data;
 };
 
+export const adminDeleteUser = async (userId) => {
+  const { data } = await api.delete(`/admin/users/${userId}`);
+  return data;
+};
+
 export const adminResendInvitation = async (userId) => {
   const { data } = await api.post(`/admin/users/${userId}/resend-invitation`);
   return data;

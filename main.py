@@ -2395,6 +2395,46 @@ def admin_update_user(
     return _user_admin_dict(user)
 
 
+@app.delete("/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+    # No te dejes a ti mismo fuera del sistema.
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes borrar tu propio usuario.",
+        )
+
+    # No dejar al sistema sin admins activos.
+    if (user.rol or "").lower() == "admin":
+        admin_count = db.query(Usuario).filter(
+            Usuario.rol == "admin",
+            Usuario.status == "activo",
+            Usuario.id != user.id,
+        ).count()
+        if admin_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No puedes borrar al último administrador activo.",
+            )
+
+    # Borrado en cascada manual de tokens (FK sin ondelete=CASCADE).
+    db.query(AccountToken).filter(AccountToken.user_id == user.id).delete(
+        synchronize_session=False
+    )
+    db.delete(user)
+    db.commit()
+
+    return {"ok": True, "deleted_user_id": user_id}
+
+
 @app.post("/admin/users/{user_id}/resend-invitation")
 def admin_resend_invitation(
     user_id: int,

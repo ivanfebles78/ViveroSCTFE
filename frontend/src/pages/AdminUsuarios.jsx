@@ -3,6 +3,7 @@ import {
   adminListUsers,
   adminCreateUser,
   adminUpdateUser,
+  adminDeleteUser,
   adminResendInvitation,
   adminResetPassword,
   adminUnlockUser,
@@ -209,8 +210,8 @@ function EditUserForm({ user, onCancel, onUpdated, onError }) {
       </label>
 
       <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
-        Para borrar a un usuario, márcalo como <strong>Inactivo</strong>. Conservaremos su histórico
-        pero no podrá entrar.
+        <strong>Inactivo</strong> revoca el acceso conservando el histórico. Para eliminar
+        definitivamente al usuario usa el botón <strong>Borrar</strong> en la lista.
       </p>
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
@@ -292,6 +293,26 @@ export default function AdminUsuarios() {
       flash(`Email de desbloqueo enviado a ${user.email}.`);
     } catch (err) {
       setError(extractError(err, "No se pudo desbloquear al usuario."));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (user) => {
+    const confirmed = window.confirm(
+      `¿Borrar definitivamente al usuario "${user.username}"?\n\n` +
+        "Esta acción NO se puede deshacer. Si solo quieres revocarle el acceso, " +
+        "edítalo y márcalo como Inactivo en su lugar."
+    );
+    if (!confirmed) return;
+    setBusyId(user.id);
+    setError("");
+    try {
+      await adminDeleteUser(user.id);
+      flash(`Usuario "${user.username}" borrado.`);
+      reload();
+    } catch (err) {
+      setError(extractError(err, "No se pudo borrar al usuario."));
     } finally {
       setBusyId(null);
     }
@@ -391,6 +412,9 @@ export default function AdminUsuarios() {
                         <button style={btnAction} onClick={() => setModal({ type: "edit", user: u })} disabled={isBusy}>
                           Editar
                         </button>
+                        <button style={btnActionDanger} onClick={() => handleDelete(u)} disabled={isBusy}>
+                          Borrar
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -488,6 +512,13 @@ const btnActionWarn = {
   background: "#fef3c7",
   borderColor: "#fbbf24",
   color: "#92400e",
+};
+
+const btnActionDanger = {
+  ...btnAction,
+  background: "#fee2e2",
+  borderColor: "#dc2626",
+  color: "#991b1b",
 };
 
 const th = {
