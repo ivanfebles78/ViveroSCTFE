@@ -242,27 +242,26 @@ def _wrap_text(intro: str, button_url: str, outro: str) -> str:
 
 def send_invitation_email(*, to: str, username: str, token: str) -> None:
     url = f"{_frontend_url()}/activar/{token}"
-    subject = "Has sido invitado a ViverApp"
+    subject = "ViverApp · Activa tu cuenta"
     html = _wrap_html(
-        title="Bienvenido/a a ViverApp",
+        title="Activa tu cuenta de ViverApp",
         body_html=(
             f"Hola <strong>{username}</strong>,<br><br>"
-            "Se ha creado una cuenta para ti en ViverApp, el sistema de gestión "
-            "del vivero municipal de Santa Cruz de Tenerife.<br><br>"
-            "Para activar tu cuenta y definir tu contraseña, pulsa el botón inferior."
+            "Un administrador ha creado una cuenta para ti en ViverApp. "
+            "Para activarla y definir tu contraseña, pulsa el botón inferior."
         ),
         button_label="Activar cuenta",
         button_url=url,
-        footer="Si no esperabas este email, puedes ignorarlo: la cuenta solo se activa al usar el enlace.",
+        footer="Si no esperabas este mensaje, contacta con el administrador del sistema.",
     )
     text = _wrap_text(
         intro=(
             f"Hola {username},\n\n"
-            "Se ha creado una cuenta para ti en ViverApp.\n"
-            "Para activar tu cuenta y definir tu contraseña, abre este enlace:"
+            "Un administrador ha creado una cuenta para ti en ViverApp.\n"
+            "Para activarla y definir tu contraseña, abre este enlace:"
         ),
         button_url=url,
-        outro="Si no esperabas este email, puedes ignorarlo.",
+        outro="Si no esperabas este mensaje, contacta con el administrador del sistema.",
     )
     _dispatch(to=to, subject=subject, html=html, text=text)
 
