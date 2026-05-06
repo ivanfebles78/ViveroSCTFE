@@ -7,7 +7,7 @@ MovimientoTipo = Literal["entrada", "salida", "traslado_interno"]
 OrigenTipo = Literal["Empresa Externa", "Vivero", "Palmetum"]
 DestinoTipo = Literal["Vivero", "Externo", "Baja Vivero", "Palmetum"]
 
-UserStatus = Literal["activo", "inactivo", "bloqueado"]
+UserStatus = Literal["activo", "inactivo", "bloqueado", "pendiente"]
 UserRole = Literal["admin", "tecnico", "manager", "empresa_externa", "gestor_vivero"]
 
 

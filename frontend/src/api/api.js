@@ -208,5 +208,56 @@ export const getPrestamosActivos = async () => {
   return data;
 };
 
+// =========================
+// ADMIN USERS
+// =========================
+
+export const adminListUsers = async () => {
+  const { data } = await api.get("/admin/users");
+  return data;
+};
+
+export const adminCreateUser = async (payload) => {
+  const { data } = await api.post("/admin/users", payload);
+  return data;
+};
+
+export const adminUpdateUser = async (userId, payload) => {
+  const { data } = await api.patch(`/admin/users/${userId}`, payload);
+  return data;
+};
+
+export const adminResendInvitation = async (userId) => {
+  const { data } = await api.post(`/admin/users/${userId}/resend-invitation`);
+  return data;
+};
+
+export const adminResetPassword = async (userId) => {
+  const { data } = await api.post(`/admin/users/${userId}/reset-password`);
+  return data;
+};
+
+export const adminUnlockUser = async (userId) => {
+  const { data } = await api.post(`/admin/users/${userId}/unlock`);
+  return data;
+};
+
+// =========================
+// ACCOUNT TOKENS (public, no auth)
+// =========================
+
+export const validateAccountToken = async (token) => {
+  const { data } = await api.get(`/auth/token/${encodeURIComponent(token)}`);
+  return data;
+};
+
+export const consumeAccountToken = async (token, newPassword) => {
+  const { data } = await api.post(
+    `/auth/token/${encodeURIComponent(token)}/consume`,
+    { new_password: newPassword }
+  );
+  return data;
+};
+
 export default api;
 

@@ -1,0 +1,516 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  adminListUsers,
+  adminCreateUser,
+  adminUpdateUser,
+  adminResendInvitation,
+  adminResetPassword,
+  adminUnlockUser,
+} from "../api/api";
+import Modal from "../components/common/Modal";
+
+const ROLES = [
+  { value: "admin", label: "Administrador" },
+  { value: "manager", label: "Manager" },
+  { value: "gestor_vivero", label: "Gestor de vivero" },
+  { value: "tecnico", label: "Técnico" },
+  { value: "empresa_externa", label: "Empresa externa" },
+];
+
+const STATUS_LABELS = {
+  activo: "Activo",
+  pendiente: "Pendiente",
+  inactivo: "Inactivo",
+  bloqueado: "Bloqueado",
+};
+
+const STATUS_STYLES = {
+  activo: { bg: "#dcfce7", border: "#16a34a", color: "#166534" },
+  pendiente: { bg: "#fef3c7", border: "#fbbf24", color: "#92400e" },
+  inactivo: { bg: "#f1f5f9", border: "#cbd5e1", color: "#475569" },
+  bloqueado: { bg: "#fee2e2", border: "#dc2626", color: "#991b1b" },
+};
+
+function extractError(err, fallback) {
+  const detail = err?.response?.data?.detail;
+  if (detail && typeof detail === "object") return detail.message || JSON.stringify(detail);
+  if (typeof detail === "string") return detail;
+  return err?.message || fallback;
+}
+
+function StatusBadge({ status }) {
+  const style = STATUS_STYLES[status] || STATUS_STYLES.inactivo;
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "3px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 800,
+        background: style.bg,
+        border: `1px solid ${style.border}`,
+        color: style.color,
+      }}
+    >
+      {STATUS_LABELS[status] || status}
+    </span>
+  );
+}
+
+function NewUserForm({ onCancel, onCreated, onError }) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [rol, setRol] = useState("tecnico");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (username.trim().length < 3) {
+      onError("El username debe tener al menos 3 caracteres.");
+      return;
+    }
+    if (!email.includes("@")) {
+      onError("Email inválido.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await adminCreateUser({
+        username: username.trim(),
+        email: email.trim(),
+        rol,
+        status: "pendiente",
+      });
+      onCreated();
+    } catch (err) {
+      onError(extractError(err, "No se pudo crear el usuario."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <h2 style={{ margin: 0, color: "#10231a" }}>Nuevo usuario</h2>
+      <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
+        El usuario quedará en estado <strong>pendiente</strong> hasta que active su cuenta desde el
+        email que le enviaremos.
+      </p>
+
+      <label style={labelStyle}>
+        Username
+        <input
+          style={inputStyle}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="p. ej. juan.perez"
+          minLength={3}
+          required
+          autoFocus
+        />
+      </label>
+
+      <label style={labelStyle}>
+        Email
+        <input
+          style={inputStyle}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="juan.perez@santacruzdetenerife.es"
+          required
+        />
+      </label>
+
+      <label style={labelStyle}>
+        Rol
+        <select style={inputStyle} value={rol} onChange={(e) => setRol(e.target.value)}>
+          {ROLES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+        <button type="button" onClick={onCancel} style={btnSecondary} disabled={submitting}>
+          Cancelar
+        </button>
+        <button type="submit" style={btnPrimary} disabled={submitting}>
+          {submitting ? "Creando…" : "Crear y enviar invitación"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function EditUserForm({ user, onCancel, onUpdated, onError }) {
+  const [email, setEmail] = useState(user.email || "");
+  const [rol, setRol] = useState(user.rol || "tecnico");
+  const [status, setStatus] = useState(user.status || "activo");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (email && !email.includes("@")) {
+      onError("Email inválido.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await adminUpdateUser(user.id, { email: email.trim(), rol, status });
+      onUpdated();
+    } catch (err) {
+      onError(extractError(err, "No se pudo actualizar el usuario."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <h2 style={{ margin: 0, color: "#10231a" }}>Editar usuario</h2>
+      <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
+        Username: <strong>{user.username}</strong>
+      </p>
+
+      <label style={labelStyle}>
+        Email
+        <input
+          style={inputStyle}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+      </label>
+
+      <label style={labelStyle}>
+        Rol
+        <select style={inputStyle} value={rol} onChange={(e) => setRol(e.target.value)}>
+          {ROLES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label style={labelStyle}>
+        Estado
+        <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="activo">Activo</option>
+          <option value="inactivo">Inactivo</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="bloqueado">Bloqueado</option>
+        </select>
+      </label>
+
+      <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
+        Para borrar a un usuario, márcalo como <strong>Inactivo</strong>. Conservaremos su histórico
+        pero no podrá entrar.
+      </p>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+        <button type="button" onClick={onCancel} style={btnSecondary} disabled={submitting}>
+          Cancelar
+        </button>
+        <button type="submit" style={btnPrimary} disabled={submitting}>
+          {submitting ? "Guardando…" : "Guardar cambios"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export default function AdminUsuarios() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [busyId, setBusyId] = useState(null);
+
+  const [modal, setModal] = useState(null); // { type: "new" | "edit", user? }
+
+  const reload = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await adminListUsers();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(extractError(err, "No se pudo cargar el listado de usuarios."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  const flash = (msg) => {
+    setInfo(msg);
+    setTimeout(() => setInfo(""), 4000);
+  };
+
+  const handleResend = async (user) => {
+    setBusyId(user.id);
+    setError("");
+    try {
+      await adminResendInvitation(user.id);
+      flash(`Invitación reenviada a ${user.email}.`);
+    } catch (err) {
+      setError(extractError(err, "No se pudo reenviar la invitación."));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReset = async (user) => {
+    if (!window.confirm(`¿Enviar email de reset password a ${user.email}?`)) return;
+    setBusyId(user.id);
+    setError("");
+    try {
+      await adminResetPassword(user.id);
+      flash(`Email de reset password enviado a ${user.email}.`);
+    } catch (err) {
+      setError(extractError(err, "No se pudo enviar el reset."));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleUnlock = async (user) => {
+    if (!window.confirm(`¿Enviar email de desbloqueo a ${user.email}?`)) return;
+    setBusyId(user.id);
+    setError("");
+    try {
+      await adminUnlockUser(user.id);
+      flash(`Email de desbloqueo enviado a ${user.email}.`);
+    } catch (err) {
+      setError(extractError(err, "No se pudo desbloquear al usuario."));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const sortedUsers = useMemo(() => {
+    const order = { pendiente: 0, bloqueado: 1, activo: 2, inactivo: 3 };
+    return [...users].sort((a, b) => {
+      const oa = order[a.status] ?? 99;
+      const ob = order[b.status] ?? 99;
+      if (oa !== ob) return oa - ob;
+      return (a.username || "").localeCompare(b.username || "");
+    });
+  }, [users]);
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ margin: 0, color: "#10231a", fontSize: 28, fontWeight: 900 }}>Gestión de usuarios</h1>
+          <p style={{ margin: "6px 0 0", color: "#64748b", fontWeight: 600 }}>
+            Crea cuentas, reenvía invitaciones, restablece contraseñas y desbloquea cuentas.
+          </p>
+        </div>
+        <button style={btnPrimary} onClick={() => setModal({ type: "new" })}>
+          + Nuevo usuario
+        </button>
+      </div>
+
+      {info && (
+        <div style={{ ...flashBox, background: "#dcfce7", borderColor: "#16a34a", color: "#166534" }}>
+          {info}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ ...flashBox, background: "#fee2e2", borderColor: "#dc2626", color: "#991b1b" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ marginTop: 18, overflowX: "auto", border: "1px solid rgba(15,23,42,0.08)", borderRadius: 14, background: "#fff" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#0f5132", color: "#fff" }}>
+              <th style={th}>Usuario</th>
+              <th style={th}>Email</th>
+              <th style={th}>Rol</th>
+              <th style={th}>Estado</th>
+              <th style={{ ...th, textAlign: "center" }}>Fallos</th>
+              <th style={{ ...th, textAlign: "right" }}>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={6} style={{ ...td, textAlign: "center", color: "#64748b", padding: 28 }}>
+                  Cargando…
+                </td>
+              </tr>
+            ) : sortedUsers.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ ...td, textAlign: "center", color: "#64748b", padding: 28 }}>
+                  No hay usuarios.
+                </td>
+              </tr>
+            ) : (
+              sortedUsers.map((u) => {
+                const isBusy = busyId === u.id;
+                const status = (u.status || "").toLowerCase();
+                return (
+                  <tr key={u.id} style={{ borderTop: "1px solid rgba(15,23,42,0.06)" }}>
+                    <td style={{ ...td, fontWeight: 800 }}>{u.username}</td>
+                    <td style={td}>{u.email || <span style={{ color: "#94a3b8" }}>—</span>}</td>
+                    <td style={td}>{ROLES.find((r) => r.value === u.rol)?.label || u.rol}</td>
+                    <td style={td}><StatusBadge status={status} /></td>
+                    <td style={{ ...td, textAlign: "center", color: u.failed_login_attempts ? "#991b1b" : "#94a3b8" }}>
+                      {u.failed_login_attempts || 0}
+                    </td>
+                    <td style={{ ...td, textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        {status === "pendiente" && (
+                          <button style={btnAction} onClick={() => handleResend(u)} disabled={isBusy}>
+                            Reenviar invitación
+                          </button>
+                        )}
+                        {status === "activo" && (
+                          <button style={btnAction} onClick={() => handleReset(u)} disabled={isBusy}>
+                            Reset password
+                          </button>
+                        )}
+                        {status === "bloqueado" && (
+                          <button style={btnActionWarn} onClick={() => handleUnlock(u)} disabled={isBusy}>
+                            Desbloquear
+                          </button>
+                        )}
+                        <button style={btnAction} onClick={() => setModal({ type: "edit", user: u })} disabled={isBusy}>
+                          Editar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modal?.type === "new" && (
+        <Modal onClose={() => setModal(null)}>
+          <NewUserForm
+            onCancel={() => setModal(null)}
+            onCreated={() => {
+              setModal(null);
+              flash("Usuario creado. Invitación enviada por email.");
+              reload();
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        </Modal>
+      )}
+
+      {modal?.type === "edit" && modal.user && (
+        <Modal onClose={() => setModal(null)}>
+          <EditUserForm
+            user={modal.user}
+            onCancel={() => setModal(null)}
+            onUpdated={() => {
+              setModal(null);
+              flash("Usuario actualizado.");
+              reload();
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+const labelStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#10231a",
+};
+
+const inputStyle = {
+  padding: "10px 12px",
+  border: "1px solid #d6d3d1",
+  borderRadius: 10,
+  fontSize: 14,
+  outline: "none",
+  fontFamily: "inherit",
+  background: "#fff",
+};
+
+const btnPrimary = {
+  padding: "10px 16px",
+  background: "#0f5132",
+  color: "#fff",
+  border: 0,
+  borderRadius: 10,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const btnSecondary = {
+  padding: "10px 16px",
+  background: "#fff",
+  color: "#44403c",
+  border: "1px solid #d6d3d1",
+  borderRadius: 10,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const btnAction = {
+  padding: "6px 10px",
+  background: "#fff",
+  color: "#10231a",
+  border: "1px solid #d6d3d1",
+  borderRadius: 8,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const btnActionWarn = {
+  ...btnAction,
+  background: "#fef3c7",
+  borderColor: "#fbbf24",
+  color: "#92400e",
+};
+
+const th = {
+  padding: "12px 14px",
+  textAlign: "left",
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+};
+
+const td = {
+  padding: "12px 14px",
+  fontSize: 14,
+  color: "#10231a",
+  verticalAlign: "middle",
+};
+
+const flashBox = {
+  marginTop: 14,
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid",
+  fontWeight: 700,
+  fontSize: 14,
+};

@@ -1247,6 +1247,54 @@ export default function Layout() {
               flexWrap: "wrap",
             }}
           >
+            {isAdmin && (
+              <button
+                onClick={() => navigate("/admin/usuarios")}
+                title="Gestión de usuarios"
+                aria-label="Gestión de usuarios"
+                style={{
+                  position: "relative",
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
+                  border: "1px solid rgba(15,23,42,0.08)",
+                  boxShadow: "0 8px 18px rgba(2,6,23,0.04)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#0f5132",
+                  transition: "transform 0.18s ease, box-shadow 0.18s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-1px) scale(1.02)";
+                  e.currentTarget.style.boxShadow = "0 12px 22px rgba(15,81,50,0.18)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0) scale(1)";
+                  e.currentTarget.style.boxShadow = "0 8px 18px rgba(2,6,23,0.04)";
+                }}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle cx="9" cy="8" r="3.6" stroke="currentColor" strokeWidth="1.8" />
+                  <path
+                    d="M2.5 19c.7-3.4 3.4-5.5 6.5-5.5s5.8 2.1 6.5 5.5"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="17" cy="9" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+                  <path
+                    d="M14.6 17c.5-1.9 2-3.2 3.9-3.2 1.6 0 3 .9 3.7 2.3"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
+
             {canSeeNotifications && (
             <button
               onClick={() => setNotificationsOpen(true)}

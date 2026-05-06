@@ -221,6 +221,29 @@ class Movimiento(Base):
 
 
 # =========================
+# TOKENS DE CUENTA (activación, reset password, unlock)
+# =========================
+class AccountToken(Base):
+    __tablename__ = "account_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+
+    # SHA-256 del token entregado al usuario. Nunca guardamos el token en claro.
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
+
+    # "activate" | "reset" | "unlock"
+    purpose = Column(String(20), nullable=False, index=True)
+
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by = Column(String(50), nullable=True)
+
+    user = relationship("Usuario")
+
+
+# =========================
 # DETALLE MOVIMIENTO-LOTE
 # =========================
 class MovimientoLoteDetalle(Base):

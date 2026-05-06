@@ -23,9 +23,13 @@ from models import (
     Pedido,
     PedidoItem,
     CaducidadConfig,
+    AccountToken,
     Base,
 )
 from schemas import PedidoActionRequest, PedidoOut
+
+import account_tokens
+import email_service
 
 
 
@@ -180,20 +184,60 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
         return False
 
 
+MAX_FAILED_LOGIN_ATTEMPTS = 3
+
+
 @app.post("/auth/login", response_model=LoginResponse)
 def auth_login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(Usuario).filter(Usuario.username == payload.username).first()
 
     if not user:
+        # Mensaje genérico para no filtrar si el usuario existe o no.
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
-    if user.status and str(user.status).lower() != "activo":
+    status_norm = (user.status or "").strip().lower()
+
+    if status_norm == "bloqueado":
+        raise HTTPException(
+            status_code=403,
+            detail="Cuenta bloqueada por intentos fallidos. Contacta con un administrador.",
+        )
+
+    if status_norm == "pendiente":
+        raise HTTPException(
+            status_code=403,
+            detail="Cuenta pendiente de activación. Revisa tu email.",
+        )
+
+    if status_norm and status_norm != "activo":
         raise HTTPException(status_code=403, detail="Usuario inactivo")
 
     password_hash = getattr(user, "password_hash", None)
 
     if not verify_password(payload.password, password_hash):
+        # Incrementar contador de fallos y bloquear si llegamos al límite.
+        current_failures = (user.failed_login_attempts or 0) + 1
+        user.failed_login_attempts = current_failures
+        if current_failures >= MAX_FAILED_LOGIN_ATTEMPTS:
+            user.status = "bloqueado"
+        db.add(user)
+        db.commit()
+
+        if current_failures >= MAX_FAILED_LOGIN_ATTEMPTS:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Cuenta bloqueada por superar el número máximo de intentos. "
+                    "Contacta con un administrador."
+                ),
+            )
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
+    # Login correcto: reseteamos el contador de fallos.
+    if user.failed_login_attempts:
+        user.failed_login_attempts = 0
+        db.add(user)
+        db.commit()
 
     access_token = create_access_token({"sub": user.username})
 
@@ -2167,3 +2211,342 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
         "total_productos": len(items),
         "items": items,
     }
+
+
+# =============================
+# GESTIÓN DE USUARIOS (ADMIN)
+# =============================
+ALLOWED_ROLES = {"admin", "manager", "tecnico", "gestor_vivero", "empresa_externa"}
+ALLOWED_STATUSES_FOR_UPDATE = {"activo", "inactivo", "bloqueado", "pendiente"}
+
+
+class AdminUserCreate(BaseModel):
+    username: str
+    email: str
+    rol: str
+    status: Optional[str] = "pendiente"
+
+
+class AdminUserUpdate(BaseModel):
+    email: Optional[str] = None
+    rol: Optional[str] = None
+    status: Optional[str] = None
+
+
+def _user_admin_dict(u: Usuario) -> dict:
+    last_token = None
+    return {
+        "id": u.id,
+        "username": u.username,
+        "email": u.email,
+        "rol": u.rol,
+        "status": u.status,
+        "failed_login_attempts": u.failed_login_attempts or 0,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+    }
+
+
+def _normalize_email(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    return cleaned or None
+
+
+def _validate_email_or_400(email: Optional[str]) -> str:
+    cleaned = _normalize_email(email)
+    if not cleaned or "@" not in cleaned or "." not in cleaned.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Email inválido.")
+    return cleaned
+
+
+@app.get("/admin/users")
+def admin_list_users(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    users = db.query(Usuario).order_by(Usuario.username.asc()).all()
+    return [_user_admin_dict(u) for u in users]
+
+
+@app.post("/admin/users", status_code=201)
+def admin_create_user(
+    payload: AdminUserCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    username = (payload.username or "").strip()
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="El username debe tener al menos 3 caracteres.")
+
+    email = _validate_email_or_400(payload.email)
+    rol = (payload.rol or "").strip().lower()
+    if rol not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Rol no válido.")
+
+    status_norm = (payload.status or "pendiente").strip().lower()
+    # Solo permitimos crear en 'pendiente' o 'activo'. Activo será raro pero permitido.
+    if status_norm not in {"pendiente", "activo"}:
+        raise HTTPException(status_code=400, detail="Estado inicial no válido.")
+
+    # Verificar unicidad
+    existing_username = db.query(Usuario).filter(func.lower(Usuario.username) == username.lower()).first()
+    if existing_username:
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con ese nombre.")
+
+    existing_email = db.query(Usuario).filter(func.lower(Usuario.email) == email).first()
+    if existing_email:
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email.")
+
+    # Password placeholder hasheado: nunca conocido por nadie. Se reemplaza al activar.
+    placeholder = pwd_context.hash(uuid.uuid4().hex)
+
+    user = Usuario(
+        username=username,
+        email=email,
+        password_hash=placeholder,
+        status=status_norm,
+        rol=rol,
+        failed_login_attempts=0,
+    )
+    db.add(user)
+    db.flush()
+
+    # Generar token de activación + enviar email solo si queda en pendiente
+    if status_norm == "pendiente":
+        raw_token = account_tokens.issue_token(
+            db, user, "activate", created_by=current_user.username
+        )
+        db.commit()
+        try:
+            email_service.send_invitation_email(
+                to=user.email, username=user.username, token=raw_token
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[admin_create_user] Email send failed: {e}")
+    else:
+        db.commit()
+
+    db.refresh(user)
+    return _user_admin_dict(user)
+
+
+@app.patch("/admin/users/{user_id}")
+def admin_update_user(
+    user_id: int,
+    payload: AdminUserUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+    if payload.email is not None:
+        new_email = _validate_email_or_400(payload.email)
+        existing = (
+            db.query(Usuario)
+            .filter(func.lower(Usuario.email) == new_email, Usuario.id != user.id)
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="Otro usuario ya tiene ese email.")
+        user.email = new_email
+
+    if payload.rol is not None:
+        rol = payload.rol.strip().lower()
+        if rol not in ALLOWED_ROLES:
+            raise HTTPException(status_code=400, detail="Rol no válido.")
+        # Evitar dejar el sistema sin admins
+        if user.rol == "admin" and rol != "admin":
+            admin_count = db.query(Usuario).filter(
+                Usuario.rol == "admin", Usuario.status == "activo", Usuario.id != user.id
+            ).count()
+            if admin_count == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No puedes quitar el rol de admin al último administrador activo.",
+                )
+        user.rol = rol
+
+    if payload.status is not None:
+        new_status = payload.status.strip().lower()
+        if new_status not in ALLOWED_STATUSES_FOR_UPDATE:
+            raise HTTPException(status_code=400, detail="Estado no válido.")
+        # Si pasamos a activo o inactivo desde bloqueado, reseteamos el contador
+        if new_status in {"activo", "inactivo"}:
+            user.failed_login_attempts = 0
+        # Idem: no dejar al sistema sin admins activos
+        if user.rol == "admin" and user.status == "activo" and new_status != "activo":
+            admin_count = db.query(Usuario).filter(
+                Usuario.rol == "admin", Usuario.status == "activo", Usuario.id != user.id
+            ).count()
+            if admin_count == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No puedes desactivar al último administrador activo.",
+                )
+        user.status = new_status
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _user_admin_dict(user)
+
+
+@app.post("/admin/users/{user_id}/resend-invitation")
+def admin_resend_invitation(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if (user.status or "").strip().lower() != "pendiente":
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede reenviar invitación a usuarios en estado 'pendiente'.",
+        )
+    if not user.email:
+        raise HTTPException(status_code=400, detail="El usuario no tiene email registrado.")
+
+    raw_token = account_tokens.issue_token(db, user, "activate", created_by=current_user.username)
+    db.commit()
+    try:
+        email_service.send_invitation_email(
+            to=user.email, username=user.username, token=raw_token
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[admin_resend_invitation] Email send failed: {e}")
+    return {"ok": True}
+
+
+@app.post("/admin/users/{user_id}/reset-password")
+def admin_reset_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if not user.email:
+        raise HTTPException(status_code=400, detail="El usuario no tiene email registrado.")
+
+    raw_token = account_tokens.issue_token(db, user, "reset", created_by=current_user.username)
+    db.commit()
+    try:
+        email_service.send_reset_password_email(
+            to=user.email, username=user.username, token=raw_token
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[admin_reset_password] Email send failed: {e}")
+    return {"ok": True}
+
+
+@app.post("/admin/users/{user_id}/unlock")
+def admin_unlock_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if (user.status or "").strip().lower() != "bloqueado":
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede desbloquear a usuarios en estado 'bloqueado'.",
+        )
+    if not user.email:
+        raise HTTPException(status_code=400, detail="El usuario no tiene email registrado.")
+
+    raw_token = account_tokens.issue_token(db, user, "unlock", created_by=current_user.username)
+    db.commit()
+    try:
+        email_service.send_unlock_email(
+            to=user.email, username=user.username, token=raw_token
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[admin_unlock_user] Email send failed: {e}")
+    return {"ok": True}
+
+
+# =============================
+# TOKENS PÚBLICOS (sin auth)
+# Activación inicial · Reset password · Unlock
+# =============================
+class ConsumeTokenIn(BaseModel):
+    new_password: str
+
+
+def _validate_password_or_400(pwd: str) -> str:
+    if not pwd or len(pwd) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 8 caracteres.",
+        )
+    if len(pwd) > 200:
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña es demasiado larga.",
+        )
+    return pwd
+
+
+@app.get("/auth/token/{token}")
+def auth_token_validate(token: str, db: Session = Depends(get_db)):
+    """
+    Valida un token de activación/reset/unlock y devuelve metadatos seguros para
+    pintar el formulario en el frontend. NO devuelve datos sensibles.
+    """
+    try:
+        record = account_tokens.lookup_token(db, token)
+    except account_tokens.TokenValidationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
+
+    user = db.query(Usuario).filter(Usuario.id == record.user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail={"code": "invalid", "message": "Token inválido."})
+
+    return {
+        "purpose": record.purpose,
+        "username": user.username,
+        "expires_at": record.expires_at.isoformat() + "Z",
+    }
+
+
+@app.post("/auth/token/{token}/consume")
+def auth_token_consume(
+    token: str,
+    payload: ConsumeTokenIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Consume un token y fija la nueva contraseña del usuario asociado.
+    Operación atómica: marca el token como usado, actualiza password, ajusta status.
+    """
+    try:
+        record = account_tokens.lookup_token(db, token)
+    except account_tokens.TokenValidationError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
+
+    user = db.query(Usuario).filter(Usuario.id == record.user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail={"code": "invalid", "message": "Token inválido."})
+
+    new_password = _validate_password_or_400(payload.new_password)
+
+    user.password_hash = pwd_context.hash(new_password)
+
+    # Cualquier propósito deja al usuario activo y con contador de fallos a 0.
+    user.status = "activo"
+    user.failed_login_attempts = 0
+
+    account_tokens.consume_token(db, record)
+    db.add(user)
+    db.commit()
+
+    return {"ok": True, "purpose": record.purpose}
