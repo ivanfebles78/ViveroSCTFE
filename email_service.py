@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Optional, Tuple
 
 
 def _env(name: str, default: str = "") -> str:
@@ -32,6 +33,22 @@ def _frontend_url() -> str:
 
 def _email_from() -> str:
     return _env("EMAIL_FROM", "ViverApp <onboarding@resend.dev>")
+
+
+def _parse_email_from() -> Tuple[str, str]:
+    """
+    Convierte 'ViverApp <noreply@dominio.com>' en ('ViverApp', 'noreply@dominio.com').
+    Si solo viene el email crudo, devuelve nombre = 'ViverApp' por defecto.
+    """
+    raw = _email_from()
+    m = re.match(r"^\s*(.+?)\s*<\s*([^>]+)\s*>\s*$", raw)
+    if m:
+        return m.group(1).strip().strip('"'), m.group(2).strip()
+    # Solo email
+    if "@" in raw:
+        return "ViverApp", raw.strip()
+    # Fallback
+    return "ViverApp", "noreply@example.com"
 
 
 def _driver() -> str:
@@ -99,10 +116,62 @@ def _send_resend(*, to: str, subject: str, html: str, text: str) -> None:
         print(f"[email:resend] ERROR: {e}")
 
 
+def _send_brevo(*, to: str, subject: str, html: str, text: str) -> None:
+    api_key = _env("BREVO_API_KEY")
+    if not api_key:
+        print(
+            "[email:brevo] WARNING: BREVO_API_KEY no configurada. "
+            "Cayendo a driver consola."
+        )
+        _send_console(to=to, subject=subject, html=html, text=text)
+        return
+
+    sender_name, sender_email = _parse_email_from()
+
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": html,
+        "textContent": text,
+    }
+    data = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        url="https://api.brevo.com/v3/smtp/email",
+        data=data,
+        method="POST",
+        headers={
+            "api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            # User-Agent explícito por si Cloudflare bloquea el default de urllib.
+            "User-Agent": "ViverApp/1.0 (+https://github.com/) python-urllib",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status >= 400:
+                body = resp.read().decode("utf-8", errors="replace")
+                print(f"[email:brevo] HTTP {resp.status}: {body}")
+            else:
+                # Brevo responde 201 con un messageId al aceptar el envío.
+                body = resp.read().decode("utf-8", errors="replace")
+                print(f"[email:brevo] OK {resp.status}: {body}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        print(f"[email:brevo] ERROR HTTP {e.code}: {body}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[email:brevo] ERROR: {e}")
+
+
 def _dispatch(*, to: str, subject: str, html: str, text: str) -> None:
     driver = _driver()
     if driver == "resend":
         _send_resend(to=to, subject=subject, html=html, text=text)
+    elif driver == "brevo":
+        _send_brevo(to=to, subject=subject, html=html, text=text)
     else:
         _send_console(to=to, subject=subject, html=html, text=text)
 
