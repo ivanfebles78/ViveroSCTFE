@@ -251,6 +251,14 @@ export const adminUnlockUser = async (userId) => {
 // ACCOUNT TOKENS (public, no auth)
 // =========================
 
+export const requestPasswordReset = async (username, email) => {
+  const { data } = await api.post("/auth/forgot-password", {
+    username,
+    email,
+  });
+  return data;
+};
+
 export const validateAccountToken = async (token) => {
   const { data } = await api.get(`/auth/token/${encodeURIComponent(token)}`);
   return data;

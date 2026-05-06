@@ -2536,6 +2536,65 @@ def _validate_password_or_400(pwd: str) -> str:
     return pwd
 
 
+class ForgotPasswordIn(BaseModel):
+    username: str
+    email: str
+
+
+@app.post("/auth/forgot-password")
+def auth_forgot_password(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
+    """
+    Endpoint público (sin auth) para solicitar reset de contraseña desde el login.
+    Si username + email coinciden con un usuario activo, envía un email con enlace.
+    Si no coinciden, ignora silenciosamente la petición.
+
+    En todos los casos devuelve 200 OK con el mismo mensaje genérico para no
+    filtrar información sobre qué usuarios/emails existen en el sistema.
+    """
+    GENERIC_RESPONSE = {
+        "ok": True,
+        "message": (
+            "Si los datos coinciden con una cuenta válida, recibirás un email "
+            "con instrucciones para restablecer tu contraseña."
+        ),
+    }
+
+    username = (payload.username or "").strip()
+    email = (payload.email or "").strip().lower()
+
+    if not username or not email:
+        return GENERIC_RESPONSE
+
+    user = (
+        db.query(Usuario)
+        .filter(
+            func.lower(Usuario.username) == username.lower(),
+            func.lower(Usuario.email) == email,
+        )
+        .first()
+    )
+
+    if not user:
+        return GENERIC_RESPONSE
+
+    # Solo procesamos si el usuario está en un estado en el que un reset tiene sentido.
+    status_norm = (user.status or "").strip().lower()
+    if status_norm not in {"activo", "bloqueado"}:
+        return GENERIC_RESPONSE
+
+    try:
+        raw_token = account_tokens.issue_token(db, user, "reset", created_by="self-service")
+        db.commit()
+        email_service.send_reset_password_email(
+            to=user.email, username=user.username, token=raw_token
+        )
+    except Exception as e:  # noqa: BLE001
+        # Tampoco filtramos el error al cliente.
+        print(f"[auth_forgot_password] Error procesando solicitud: {e}")
+
+    return GENERIC_RESPONSE
+
+
 @app.get("/auth/token/{token}")
 def auth_token_validate(token: str, db: Session = Depends(get_db)):
     """

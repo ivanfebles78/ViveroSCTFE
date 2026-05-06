@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api/api";
+import { login, requestPasswordReset } from "../api/api";
+import Modal from "../components/common/Modal";
 
 import logo from "../assets/ViverApp_logo.png";
 import viveroImg from "../assets/viveroMunicipal.png";
@@ -93,6 +94,102 @@ function EyeOffIcon() {
   );
 }
 
+function ForgotPasswordModal({ onClose }) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErrorMsg("");
+    if (!username.trim() || !email.trim()) {
+      setErrorMsg("Rellena ambos campos.");
+      return;
+    }
+    if (!email.includes("@")) {
+      setErrorMsg("Email inválido.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await requestPasswordReset(username.trim(), email.trim());
+      setDone(true);
+    } catch (err) {
+      // Por seguridad mostramos el mismo mensaje genérico aunque haya error.
+      setDone(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <div style={{ padding: 8 }}>
+        <h2 style={{ margin: "0 0 10px", color: "#10231a" }}>Solicitud enviada</h2>
+        <p style={{ margin: "0 0 18px", color: "#475569", lineHeight: 1.5 }}>
+          Si los datos coinciden con una cuenta válida, recibirás un email con
+          instrucciones para restablecer tu contraseña en los próximos minutos.
+          Revisa también la carpeta de spam.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={modalBtnPrimary}>
+            Entendido
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14, padding: 8 }}>
+      <h2 style={{ margin: 0, color: "#10231a" }}>¿Olvidaste tu contraseña?</h2>
+      <p style={{ margin: 0, color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+        Introduce tu nombre de usuario y el email asociado a tu cuenta. Si los
+        datos coinciden, te enviaremos un enlace para restablecer la contraseña.
+      </p>
+
+      <label style={modalLabel}>
+        Usuario
+        <input
+          style={modalInput}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          autoFocus
+          required
+        />
+      </label>
+
+      <label style={modalLabel}>
+        Email
+        <input
+          type="email"
+          style={modalInput}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
+          required
+        />
+      </label>
+
+      {errorMsg && (
+        <div style={{ color: "#991b1b", fontSize: 13, fontWeight: 700 }}>{errorMsg}</div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+        <button type="button" onClick={onClose} style={modalBtnSecondary} disabled={submitting}>
+          Cancelar
+        </button>
+        <button type="submit" style={modalBtnPrimary} disabled={submitting}>
+          {submitting ? "Enviando…" : "Enviar enlace"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -104,6 +201,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
@@ -323,6 +421,26 @@ export default function Login() {
               <button className="loginBtn" disabled={loading}>
                 {loading ? "Entrando..." : "Entrar"}
               </button>
+
+              <div style={{ textAlign: "center", marginTop: 14 }}>
+                <button
+                  type="button"
+                  onClick={() => setForgotOpen(true)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#0f5132",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    padding: 4,
+                    textDecoration: "underline",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -384,6 +502,53 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      {forgotOpen && (
+        <Modal onClose={() => setForgotOpen(false)}>
+          <ForgotPasswordModal onClose={() => setForgotOpen(false)} />
+        </Modal>
+      )}
     </>
   );
 }
+
+const modalLabel = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#10231a",
+};
+
+const modalInput = {
+  padding: "10px 12px",
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  fontSize: 14,
+  outline: "none",
+  fontFamily: "inherit",
+  background: "#fff",
+};
+
+const modalBtnPrimary = {
+  padding: "10px 16px",
+  background: "#0f5132",
+  color: "#fff",
+  border: 0,
+  borderRadius: 10,
+  fontWeight: 800,
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
+
+const modalBtnSecondary = {
+  padding: "10px 16px",
+  background: "#fff",
+  color: "#44403c",
+  border: "1px solid #d6d3d1",
+  borderRadius: 10,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
