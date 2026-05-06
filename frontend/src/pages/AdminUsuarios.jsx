@@ -18,6 +18,8 @@ const ROLES = [
   { value: "empresa_externa", label: "Empresa externa" },
 ];
 
+const PAGE_SIZE = 10;
+
 const STATUS_LABELS = {
   activo: "Activo",
   pendiente: "Pendiente",
@@ -235,6 +237,11 @@ export default function AdminUsuarios() {
 
   const [modal, setModal] = useState(null); // { type: "new" | "edit", user? }
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+
   const reload = async () => {
     setLoading(true);
     setError("");
@@ -318,15 +325,44 @@ export default function AdminUsuarios() {
     }
   };
 
-  const sortedUsers = useMemo(() => {
+  const filteredUsers = useMemo(() => {
     const order = { pendiente: 0, bloqueado: 1, activo: 2, inactivo: 3 };
-    return [...users].sort((a, b) => {
-      const oa = order[a.status] ?? 99;
-      const ob = order[b.status] ?? 99;
-      if (oa !== ob) return oa - ob;
-      return (a.username || "").localeCompare(b.username || "");
-    });
-  }, [users]);
+    const needle = searchTerm.trim().toLowerCase();
+
+    return [...users]
+      .filter((u) => {
+        if (roleFilter && (u.rol || "").toLowerCase() !== roleFilter) return false;
+        if (statusFilter && (u.status || "").toLowerCase() !== statusFilter) return false;
+        if (needle) {
+          const haystack = `${u.username || ""} ${u.email || ""}`.toLowerCase();
+          if (!haystack.includes(needle)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const oa = order[a.status] ?? 99;
+        const ob = order[b.status] ?? 99;
+        if (oa !== ob) return oa - ob;
+        return (a.username || "").localeCompare(b.username || "");
+      });
+  }, [users, searchTerm, roleFilter, statusFilter]);
+
+  const hasActiveFilters = Boolean(searchTerm || roleFilter || statusFilter);
+  const clearFilters = () => {
+    setSearchTerm("");
+    setRoleFilter("");
+    setStatusFilter("");
+  };
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pagedUsers = filteredUsers.slice(pageStart, pageStart + PAGE_SIZE);
+
+  // Si los filtros reducen la lista por debajo de la página actual, vuelve a 1.
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, roleFilter, statusFilter]);
 
   return (
     <div style={{ padding: 24 }}>
@@ -354,7 +390,89 @@ export default function AdminUsuarios() {
         </div>
       )}
 
-      <div style={{ marginTop: 18, overflowX: "auto", border: "1px solid rgba(15,23,42,0.08)", borderRadius: 14, background: "#fff" }}>
+      <div
+        style={{
+          marginTop: 18,
+          padding: "14px 16px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          alignItems: "center",
+          background: "#ffffff",
+          border: "1px solid rgba(15,23,42,0.08)",
+          borderRadius: 14,
+        }}
+      >
+        <div style={{ position: "relative", flex: "1 1 240px", minWidth: 200 }}>
+          <span
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: 12,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "#94a3b8",
+              fontSize: 16,
+              pointerEvents: "none",
+            }}
+          >
+            🔍
+          </span>
+          <input
+            type="search"
+            placeholder="Buscar por usuario o email…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              ...inputStyle,
+              width: "100%",
+              paddingLeft: 36,
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          style={{ ...inputStyle, minWidth: 180 }}
+          aria-label="Filtrar por rol"
+        >
+          <option value="">Todos los roles</option>
+          {ROLES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{ ...inputStyle, minWidth: 180 }}
+          aria-label="Filtrar por estado"
+        >
+          <option value="">Todos los estados</option>
+          <option value="activo">Activo</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="bloqueado">Bloqueado</option>
+          <option value="inactivo">Inactivo</option>
+        </select>
+
+        {hasActiveFilters && (
+          <button type="button" onClick={clearFilters} style={btnSecondary}>
+            Limpiar filtros
+          </button>
+        )}
+
+        <div style={{ marginLeft: "auto", color: "#64748b", fontSize: 13, fontWeight: 700 }}>
+          {hasActiveFilters
+            ? `${filteredUsers.length} de ${users.length} usuarios`
+            : `${users.length} usuarios`}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, overflowX: "auto", border: "1px solid rgba(15,23,42,0.08)", borderRadius: 14, background: "#fff" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#0f5132", color: "#fff" }}>
@@ -373,14 +491,16 @@ export default function AdminUsuarios() {
                   Cargando…
                 </td>
               </tr>
-            ) : sortedUsers.length === 0 ? (
+            ) : filteredUsers.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ ...td, textAlign: "center", color: "#64748b", padding: 28 }}>
-                  No hay usuarios.
+                  {hasActiveFilters
+                    ? "Ningún usuario coincide con los filtros aplicados."
+                    : "No hay usuarios."}
                 </td>
               </tr>
             ) : (
-              sortedUsers.map((u) => {
+              pagedUsers.map((u) => {
                 const isBusy = busyId === u.id;
                 const status = (u.status || "").toLowerCase();
                 return (
@@ -424,6 +544,60 @@ export default function AdminUsuarios() {
           </tbody>
         </table>
       </div>
+
+      {filteredUsers.length > PAGE_SIZE && (
+        <div
+          style={{
+            marginTop: 14,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ color: "#64748b", fontSize: 13, fontWeight: 700 }}>
+            Mostrando <strong>{pageStart + 1}</strong>–
+            <strong>{Math.min(pageStart + PAGE_SIZE, filteredUsers.length)}</strong> de{" "}
+            <strong>{filteredUsers.length}</strong>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              type="button"
+              style={pageBtnStyle(false, safePage === 1)}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              aria-label="Página anterior"
+            >
+              ← Anterior
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                type="button"
+                style={pageBtnStyle(n === safePage, false)}
+                onClick={() => setPage(n)}
+                aria-label={`Ir a página ${n}`}
+                aria-current={n === safePage ? "page" : undefined}
+              >
+                {n}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              style={pageBtnStyle(false, safePage === totalPages)}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              aria-label="Página siguiente"
+            >
+              Siguiente →
+            </button>
+          </div>
+        </div>
+      )}
 
       {modal?.type === "new" && (
         <Modal onClose={() => setModal(null)}>
@@ -545,3 +719,19 @@ const flashBox = {
   fontWeight: 700,
   fontSize: 14,
 };
+
+function pageBtnStyle(active, disabled) {
+  return {
+    minWidth: 36,
+    padding: "6px 10px",
+    background: active ? "#0f5132" : "#ffffff",
+    color: active ? "#ffffff" : disabled ? "#cbd5e1" : "#10231a",
+    border: `1px solid ${active ? "#0f5132" : "#d6d3d1"}`,
+    borderRadius: 8,
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontFamily: "inherit",
+    transition: "background 0.15s ease, color 0.15s ease",
+  };
+}
