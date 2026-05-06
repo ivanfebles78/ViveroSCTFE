@@ -86,6 +86,7 @@ function isPathAllowedForRole(pathname, role) {
       "/informes",
       "/lotes",
       "/vivero",
+      "/admin/usuarios",
     ].includes(pathname);
   }
 
@@ -1253,30 +1254,32 @@ export default function Layout() {
                 title="Gestión de usuarios"
                 aria-label="Gestión de usuarios"
                 style={{
-                  position: "relative",
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
-                  border: "1px solid rgba(15,23,42,0.08)",
-                  boxShadow: "0 8px 18px rgba(2,6,23,0.04)",
-                  cursor: "pointer",
-                  display: "flex",
+                  display: "inline-flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  color: "#0f5132",
+                  gap: 8,
+                  height: 44,
+                  padding: "0 16px",
+                  borderRadius: 14,
+                  background: "linear-gradient(135deg, #0f5132 0%, #166534 100%)",
+                  border: "1px solid rgba(15,81,50,0.4)",
+                  boxShadow: "0 8px 18px rgba(15,81,50,0.18)",
+                  cursor: "pointer",
+                  color: "#ffffff",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  fontFamily: "inherit",
                   transition: "transform 0.18s ease, box-shadow 0.18s ease",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-1px) scale(1.02)";
-                  e.currentTarget.style.boxShadow = "0 12px 22px rgba(15,81,50,0.18)";
+                  e.currentTarget.style.boxShadow = "0 12px 22px rgba(15,81,50,0.28)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = "translateY(0) scale(1)";
-                  e.currentTarget.style.boxShadow = "0 8px 18px rgba(2,6,23,0.04)";
+                  e.currentTarget.style.boxShadow = "0 8px 18px rgba(15,81,50,0.18)";
                 }}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="9" cy="8" r="3.6" stroke="currentColor" strokeWidth="1.8" />
                   <path
                     d="M2.5 19c.7-3.4 3.4-5.5 6.5-5.5s5.8 2.1 6.5 5.5"
@@ -1292,6 +1295,7 @@ export default function Layout() {
                     strokeLinecap="round"
                   />
                 </svg>
+                <span>Usuarios</span>
               </button>
             )}
 
