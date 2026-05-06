@@ -79,6 +79,9 @@ def _send_resend(*, to: str, subject: str, html: str, text: str) -> None:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            # User-Agent explícito: el default de urllib lo bloquea Cloudflare (error 1010).
+            "User-Agent": "ViverApp/1.0 (+https://github.com/) python-urllib",
         },
     )
 
