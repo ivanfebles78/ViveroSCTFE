@@ -470,161 +470,6 @@ function buildCaducidadNotifications(productos) {
   return notifications;
 }
 
-
-function ViverAppLoadingScreen({ message = "Cargando datos del vivero..." }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        width: "100vw",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background:
-          "radial-gradient(circle at 18% 18%, rgba(16,185,129,0.20), transparent 30%), radial-gradient(circle at 82% 12%, rgba(6,182,212,0.18), transparent 28%), linear-gradient(135deg, #ecfdf5 0%, #f8fafc 45%, #e0f2fe 100%)",
-        overflow: "hidden",
-        padding: 24,
-        boxSizing: "border-box",
-      }}
-    >
-      <style>{`
-        @keyframes viverLoaderFloat {
-          0%, 100% { transform: translateY(0) scale(1); }
-          50% { transform: translateY(-5px) scale(1.015); }
-        }
-        @keyframes viverLoaderProgress {
-          0% { transform: translateX(-110%); }
-          100% { transform: translateX(110%); }
-        }
-        @keyframes viverSkeletonPulse {
-          0%, 100% { opacity: 0.45; }
-          50% { opacity: 1; }
-        }
-      `}</style>
-
-      <div
-        style={{
-          width: "min(720px, 94vw)",
-          borderRadius: 34,
-          border: "1px solid rgba(255,255,255,0.65)",
-          background: "rgba(255,255,255,0.82)",
-          boxShadow: "0 40px 110px rgba(15,23,42,0.16)",
-          backdropFilter: "blur(18px)",
-          padding: "34px 34px 30px",
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 88,
-            height: 88,
-            margin: "0 auto 18px",
-            borderRadius: 28,
-            background: "linear-gradient(135deg, rgba(6,182,212,0.16), rgba(16,185,129,0.18))",
-            border: "1px solid rgba(6,182,212,0.18)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 18px 44px rgba(6,182,212,0.18)",
-            animation: "viverLoaderFloat 2.8s ease-in-out infinite",
-          }}
-        >
-          <img
-            src="/logo.png"
-            alt="ViverApp"
-            style={{ width: 62, height: 62, objectFit: "contain" }}
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-        </div>
-
-        <div style={{ fontSize: 32, fontWeight: 950, letterSpacing: "-0.04em", color: "#0f172a" }}>
-          ViverApp
-        </div>
-        <div style={{ marginTop: 6, fontSize: 16, fontWeight: 800, color: "#64748b" }}>
-          {message}
-        </div>
-
-        <div
-          style={{
-            height: 10,
-            borderRadius: 999,
-            background: "rgba(15,23,42,0.08)",
-            overflow: "hidden",
-            margin: "26px auto 24px",
-            width: "min(420px, 90%)",
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              width: "54%",
-              borderRadius: 999,
-              background: "linear-gradient(90deg, #06b6d4 0%, #10b981 100%)",
-              animation: "viverLoaderProgress 1.35s ease-in-out infinite",
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-            gap: 12,
-            marginTop: 8,
-          }}
-        >
-          {[0, 1, 2].map((item) => (
-            <div
-              key={item}
-              style={{
-                height: 88,
-                borderRadius: 22,
-                background: "rgba(248,250,252,0.86)",
-                border: "1px solid rgba(15,23,42,0.06)",
-                padding: 14,
-                boxSizing: "border-box",
-                animation: "viverSkeletonPulse 1.6s ease-in-out infinite",
-                animationDelay: `${item * 0.16}s`,
-              }}
-            >
-              <div style={{ height: 12, borderRadius: 999, background: "rgba(148,163,184,0.26)", width: "62%" }} />
-              <div style={{ height: 20, borderRadius: 999, background: "rgba(148,163,184,0.20)", width: "86%", marginTop: 14 }} />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ZonePanelLoading() {
-  return (
-    <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
-      {[0, 1, 2].map((item) => (
-        <div
-          key={item}
-          style={{
-            padding: 14,
-            borderRadius: 16,
-            border: "1px solid rgba(15,23,42,0.08)",
-            background: "rgba(248,250,252,0.72)",
-          }}
-        >
-          <div style={{ height: 14, width: "62%", borderRadius: 999, background: "rgba(148,163,184,0.26)", marginBottom: 10 }} />
-          <div style={{ height: 12, width: "84%", borderRadius: 999, background: "rgba(148,163,184,0.20)", marginBottom: 12 }} />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ height: 26, width: 82, borderRadius: 999, background: "rgba(6,182,212,0.12)" }} />
-            <span style={{ height: 26, width: 72, borderRadius: 999, background: "rgba(6,182,212,0.10)" }} />
-            <span style={{ height: 26, width: 94, borderRadius: 999, background: "rgba(6,182,212,0.08)" }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function AlertBellIcon({ hasUnread }) {
   const color = hasUnread ? "#dc2626" : "#0f172a";
 
@@ -1037,7 +882,7 @@ function ZonaMapModal({ open, onClose }) {
               Selecciona una zona del mapa para consultar su inventario.
             </div>
           ) : loading ? (
-            <ZonePanelLoading />
+            <div style={{ marginTop: 12, color: "#64748b", fontWeight: 700 }}>Cargando datos…</div>
           ) : zonaError ? (
             <div
               style={{
@@ -1229,7 +1074,22 @@ export default function Layout() {
   }, [location.pathname, userRole, navigate]);
 
   if (!me) {
-    return <ViverAppLoadingScreen message="Cargando sesión y permisos del vivero..." />;
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#eef3f5",
+          color: "#334155",
+          fontWeight: 800,
+          fontSize: 18,
+        }}
+      >
+        Cargando…
+      </div>
+    );
   }
 
   return (
