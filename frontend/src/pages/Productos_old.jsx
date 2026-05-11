@@ -25,14 +25,6 @@ function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
 
-function productScientificName(producto) {
-  return producto?.nombre_cientifico || producto?.nombre || producto?.nombre_natural || "-";
-}
-
-function productCommonName(producto) {
-  return producto?.nombre_natural || producto?.nombre_comun || "-";
-}
-
 function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
   const [tamano, setTamano] = useState("M12");
   const [cantidad, setCantidad] = useState(1);
@@ -113,10 +105,7 @@ function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
           }}
         >
           <div style={{ fontWeight: 900, color: "#0f172a" }}>
-            {productScientificName(producto)}
-          </div>
-          <div style={{ marginTop: 4, color: "#475569", fontWeight: 800, fontSize: 13 }}>
-            Nombre común: {productCommonName(producto)}
+            {producto.nombre_cientifico || producto.nombre_natural || `Producto #${producto.id}`}
           </div>
           <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 13 }}>
             {(producto.categoria || "—") + " · " + (producto.subcategoria || "—")}
@@ -979,7 +968,7 @@ export default function Productos() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Nombre científico, nombre común, categoría, subcategoría..."
+              placeholder="Nombre científico, categoría, subcategoría..."
               style={{
                 padding: 10,
                 borderRadius: 10,
@@ -1070,7 +1059,6 @@ export default function Productos() {
             <thead>
               <tr>
                 <th>Nombre científico</th>
-                <th>Nombre común</th>
                 <th>Categoría</th>
                 <th>Subcategoría</th>
                 <th style={{ textAlign: "center" }}>Stock</th>
@@ -1084,7 +1072,9 @@ export default function Productos() {
                 <tr>
                   <td
                     colSpan={
-                      5 + (!esEmpresaExterna ? 1 : 0) + (puedeMarcarInterno ? 1 : 0) + (puedePedirMas ? 1 : 0)
+                      esEmpresaExterna
+                        ? 4
+                        : 4 + (puedeMarcarInterno ? 1 : 0) + (puedePedirMas ? 1 : 0) + 1
                     }
                     style={{ textAlign: "center" }}
                   >
@@ -1105,12 +1095,7 @@ export default function Productos() {
 
                   return (
                     <tr key={p.id} style={low ? { color: "crimson", fontWeight: 800 } : undefined}>
-                      <td>
-                        <div style={{ fontWeight: 900 }}>{productScientificName(p)}</div>
-                      </td>
-                      <td>
-                        <div style={{ color: "#475569", fontWeight: 700 }}>{productCommonName(p)}</div>
-                      </td>
+                      <td>{p.nombre_cientifico ?? p.nombre ?? p.nombre_natural ?? "-"}</td>
                       <td>{p.categoria ?? "-"}</td>
                       <td>{p.subcategoria ?? "-"}</td>
                       <td style={{ textAlign: "center", fontWeight: 800 }}>{stock}</td>
