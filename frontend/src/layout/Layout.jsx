@@ -20,7 +20,7 @@ const MAP_HEIGHT = 1365;
 const NOTIFICATIONS_STORAGE_KEY = "vivero_global_notifications_read";
 
 const NAV_ITEMS = [
-  { to: "/dashboard", label: "Dashboard" },
+  { to: "/dashboard", label: "dashboard" },
   { to: "/productos", label: "Productos" },
   { to: "/movimientos", label: "Movimientos" },
   { to: "/pedidos", label: "Pedidos" },
