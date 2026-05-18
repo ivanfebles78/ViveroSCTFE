@@ -660,7 +660,20 @@ def get_productos(
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
+    """
+    Listado de productos con stock agregado y lotes vivos.
+
+    OPTIMIZADO (sin N+1):
+      - 1 query para productos.
+      - 1 query para TODOS los inventarios de esos productos.
+      - 1 query con window function para TODAS las caducidades.
+    Total: 3 queries independientemente del número de productos.
+    """
     rol_user = (user.rol or "").strip().lower()
+    today = datetime.utcnow().date()
+    warning_limit = today + timedelta(days=7)
+
+    # ---------- 1. Productos ----------
     productos_q = db.query(Producto)
     if rol_user == "empresa_externa":
         productos_q = productos_q.filter(
@@ -668,34 +681,91 @@ def get_productos(
         )
     productos = productos_q.order_by(Producto.nombre_cientifico.asc()).all()
 
+    if not productos:
+        return []
+
+    product_ids = [p.id for p in productos]
+
+    # ---------- 2. Todos los inventarios en una sola query ----------
+    inventarios_all = (
+        db.query(InventarioLote)
+        .filter(InventarioLote.producto_id.in_(product_ids))
+        .all()
+    )
+
+    inv_by_product: dict[int, list[InventarioLote]] = {}
+    for inv in inventarios_all:
+        inv_by_product.setdefault(inv.producto_id, []).append(inv)
+
+    # ---------- 3. Caducidad de cada (uuid_lote, producto, zona, tamano) en una sola query ----------
+    # Usamos ROW_NUMBER() para quedarnos con el movimiento más reciente por combinación.
+    from sqlalchemy import desc as _desc
+
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=(
+                MovimientoLoteDetalle.uuid_lote,
+                MovimientoLoteDetalle.producto_id,
+                MovimientoLoteDetalle.zona_destino,
+                MovimientoLoteDetalle.tamano_destino,
+            ),
+            order_by=(_desc(Movimiento.fecha_movimiento), _desc(Movimiento.id)),
+        )
+        .label("rn")
+    )
+
+    sub = (
+        db.query(
+            MovimientoLoteDetalle.uuid_lote.label("uuid_lote"),
+            MovimientoLoteDetalle.producto_id.label("producto_id"),
+            MovimientoLoteDetalle.zona_destino.label("zona"),
+            MovimientoLoteDetalle.tamano_destino.label("tamano"),
+            Movimiento.fecha_caducidad.label("fecha_caducidad"),
+            rn,
+        )
+        .join(Movimiento, Movimiento.id == MovimientoLoteDetalle.movimiento_id)
+        .filter(Movimiento.fecha_caducidad.isnot(None))
+        .filter(MovimientoLoteDetalle.producto_id.in_(product_ids))
+        .subquery()
+    )
+
+    caducidad_rows = db.query(sub).filter(sub.c.rn == 1).all()
+
+    cad_map: dict[tuple, date] = {
+        (r.uuid_lote, r.producto_id, r.zona, r.tamano): r.fecha_caducidad
+        for r in caducidad_rows
+    }
+
+    # ---------- 4. Construcción de la respuesta (todo en memoria, sin más DB) ----------
     out = []
-    today = datetime.utcnow().date()
-    warning_limit = today + timedelta(days=7)
 
     for p in productos:
-        stock_total = _stock_total_producto(db, p.id)
-        stock_by_size = _stock_por_tamano_producto(db, p.id)
+        invs = inv_by_product.get(p.id, [])
 
-        alertas_caducidad = []
+        # Stock total: solo lotes "disponibles" (fecha_disponibilidad <= hoy o NULL)
+        stock_total = 0
+        stock_by_size: dict[str, int] = {}
+        for inv in invs:
+            cantidad = int(inv.cantidad_disponible or 0)
+            if cantidad <= 0:
+                continue
+            disp = inv.fecha_disponibilidad
+            if disp is not None and disp > today:
+                continue
+            stock_total += cantidad
+            tam = (inv.tamano or "").strip()
+            if tam:
+                stock_by_size[tam] = stock_by_size.get(tam, 0) + cantidad
+
+        # Lotes vivos para mostrar caducidades: cantidad > 0 (sin filtrar por disponibilidad)
         lotes = []
-        inventarios_vivos = (
-            db.query(InventarioLote)
-            .filter(
-                InventarioLote.producto_id == p.id,
-                InventarioLote.cantidad_disponible > 0,
-            )
-            .all()
-        )
-
-        for inv in inventarios_vivos:
-            fecha_cad = _get_fecha_caducidad_actual_lote(
-                db=db,
-                uuid_lote=inv.uuid_lote,
-                producto_id=p.id,
-                zona=inv.zona,
-                tamano=inv.tamano,
-            )
-
+        alertas_caducidad = []
+        for inv in invs:
+            cantidad = int(inv.cantidad_disponible or 0)
+            if cantidad <= 0:
+                continue
+            fecha_cad = cad_map.get((inv.uuid_lote, p.id, inv.zona, inv.tamano))
             if not fecha_cad:
                 continue
 
@@ -710,14 +780,13 @@ def get_productos(
                 "uuid_lote": inv.uuid_lote,
                 "zona": inv.zona,
                 "tamano": inv.tamano,
-                "cantidad_disponible": int(inv.cantidad_disponible or 0),
+                "cantidad_disponible": cantidad,
                 "fecha_caducidad": fecha_cad.isoformat(),
-                "fecha_disponibilidad": inv.fecha_disponibilidad.isoformat() if getattr(inv, "fecha_disponibilidad", None) else None,
+                "fecha_disponibilidad": inv.fecha_disponibilidad.isoformat() if inv.fecha_disponibilidad else None,
                 "estado": estado,
             }
 
             lotes.append(lote_info)
-
             if fecha_cad <= warning_limit:
                 alertas_caducidad.append(lote_info)
 
