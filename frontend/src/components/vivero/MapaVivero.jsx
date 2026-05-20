@@ -15,7 +15,7 @@ import {
 
 const DEBUG_MAPA = false;
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
-const ENABLE_ZONE_EDITOR = false;
+const ENABLE_ZONE_EDITOR = true;
 
 export default function MapaVivero() {
   const [zonas, setZonas] = useState(() =>
@@ -39,7 +39,7 @@ export default function MapaVivero() {
     setLoading(true);
 
     try {
-      const data = await getZonaItems(zona.id);
+      const data = await getZonaItems(zona.apiId || zona.id);
       setZonaData(data);
     } catch (err) {
       console.error(err);
@@ -139,6 +139,7 @@ export default function MapaVivero() {
               key={zona.id}
               points={zona.puntos}
               className="zona-clickable"
+              style={{ "--zona-color": zona.color }}
               onClick={() => handleZonaClick(zona)}
             >
               <title>{zona.nombre}</title>
