@@ -10,7 +10,17 @@ if not DATABASE_URL:
 
 engine = create_engine(
     DATABASE_URL,
+    # pool_pre_ping: verifica conexión antes de cada uso (descarta zombies).
     pool_pre_ping=True,
+    # pool_recycle: recicla conexiones cada hora para evitar conexiones envejecidas
+    # que el firewall o el propio Postgres puedan haber cerrado en silencio
+    # (Railway suele cortar conexiones idle tras un rato).
+    pool_recycle=3600,
+    # Límites razonables del pool: si se agota, las nuevas requests fallan rápido
+    # (en lugar de quedarse esperando indefinidamente y colgar el proceso).
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=10,
 )
 
 SessionLocal = sessionmaker(
