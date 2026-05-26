@@ -2358,7 +2358,20 @@ export default function Pedidos() {
                   <th style={thStyle()}>Caduca</th>
                   <th style={thStyle()}>Solicitante</th>
                   <th style={thStyle()}>Destino</th>
-                  <th style={thStyle()}>Detalle</th>
+                  <th style={{ ...thStyle(), minWidth: 380 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 90px 80px",
+                        gap: 10,
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>Producto</div>
+                      <div style={{ textAlign: "center" }}>Tamaño</div>
+                      <div style={{ textAlign: "right" }}>Cantidad</div>
+                    </div>
+                  </th>
                   <th style={thStyle()}>Estado</th>
                   <th style={thStyle()}>Acciones</th>
                 </tr>
