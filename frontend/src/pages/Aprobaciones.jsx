@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
 import { getPedidos, aprobarPedido, denegarPedido } from "../api/api";
+import { formatUsername } from "../utils/format";
 
 const ESTADO_FILTERS = [
   { value: "TODOS", label: "Todos" },
@@ -152,7 +153,9 @@ function DetallePedidoModal({ pedido, onClose }) {
 
   const items = safeArray(pedido.items);
   const solicitante =
-    pedido?.solicitante_username || pedido?.solicitante || pedido?.created_by || pedido?.usuario || "—";
+    formatUsername(
+      pedido?.solicitante_username || pedido?.solicitante || pedido?.created_by || pedido?.usuario || ""
+    ) || "—";
 
   const destino =
     pedido?.tipo === "reposicion"
@@ -406,7 +409,9 @@ export default function Aprobaciones() {
   }, []);
 
   const solicitanteFromPedido = (p) =>
-    p?.solicitante_username || p?.solicitante || p?.created_by || p?.usuario || p?.username || "—";
+    formatUsername(
+      p?.solicitante_username || p?.solicitante || p?.created_by || p?.usuario || p?.username || ""
+    ) || "—";
 
   const pedidosFiltrados = useMemo(() => {
     const texto = textoFiltro.trim().toLowerCase();

@@ -8,6 +8,7 @@ import {
   loadZonasFromServer,
   saveZonasToServer,
 } from "../components/vivero/zonesStorage";
+import { formatUsername } from "../utils/format";
 
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
 const ENABLE_ZONE_EDITOR = true;
@@ -17,7 +18,7 @@ const MAP_HEIGHT = 1365;
 const NOTIFICATIONS_STORAGE_KEY = "vivero_global_notifications_read";
 
 const NAV_ITEMS = [
-  { to: "/dashboard", label: "dashboard" },
+  { to: "/dashboard", label: "Panel de control" },
   { to: "/productos", label: "Productos" },
   { to: "/movimientos", label: "Movimientos" },
   { to: "/pedidos", label: "Pedidos" },
@@ -1479,7 +1480,7 @@ export default function Layout() {
                 boxShadow: "0 8px 18px rgba(2,6,23,0.04)",
               }}
             >
-              Usuario: <span style={{ color: "#0f172a" }}>{me?.username || "—"}</span> · Rol:{" "}
+              Usuario: <span style={{ color: "#0f172a" }}>{formatUsername(me?.username) || "—"}</span> · Rol:{" "}
               <span style={{ color: "#0f172a" }}>{userRole || "—"}</span>
             </div>
 

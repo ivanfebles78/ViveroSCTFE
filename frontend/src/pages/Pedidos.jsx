@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
+import { formatUsername } from "../utils/format";
 import {
   getPedidos,
   getProductos,
@@ -359,8 +360,9 @@ async function renderPedidoEnPdf(doc, pedido, mapProdName, isFirst, logoDataUrl)
 
   const estado = String(pedido.estado || "—").toUpperCase();
   const tipo = pedido.tipo === "reposicion" ? "Reposición" : "Salida";
-  const solicitante =
-    pedido.solicitante_username || pedido.solicitante || pedido.created_by || "—";
+  const solicitante = formatUsername(
+    pedido.solicitante_username || pedido.solicitante || pedido.created_by || ""
+  ) || "—";
   const destino =
     pedido.tipo === "reposicion"
       ? "Vivero"
@@ -379,9 +381,9 @@ async function renderPedidoEnPdf(doc, pedido, mapProdName, isFirst, logoDataUrl)
       ["Caduca el", _fmtFechaPdf(pedido.fecha_caducidad)],
       ["Solicitante", solicitante],
       ["Destino", destino],
-      ["Aprobado por", pedido.aprobado_por || "—"],
+      ["Aprobado por", formatUsername(pedido.aprobado_por) || "—"],
       ["Aprobado el", _fmtFechaPdf(pedido.aprobado_at)],
-      ["Servido por", pedido.served_by || "—"],
+      ["Servido por", formatUsername(pedido.served_by) || "—"],
       ["Servido el", _fmtFechaPdf(pedido.served_at)],
       ["Nota", pedido.nota || "—"],
     ],
@@ -1843,7 +1845,10 @@ function ImprimirPedidosModal({ open, pedidos, mapProdName, onClose }) {
                     : [p.distrito_destino, p.barrio_destino, p.direccion_destino]
                         .filter(Boolean)
                         .join(" · ") || "—";
-                const solicitante = p.solicitante_username || p.solicitante || p.created_by || "—";
+                const solicitante =
+                  formatUsername(
+                    p.solicitante_username || p.solicitante || p.created_by || ""
+                  ) || "—";
                 return (
                   <label
                     key={p.id}
@@ -1992,7 +1997,9 @@ export default function Pedidos() {
   }, []);
 
   const solicitanteFromPedido = (p) =>
-    p?.solicitante_username || p?.solicitante || p?.created_by || p?.usuario || p?.username || "—";
+    formatUsername(
+      p?.solicitante_username || p?.solicitante || p?.created_by || p?.usuario || p?.username || ""
+    ) || "—";
 
   const refrescar = async () => {
     setLoading(true);

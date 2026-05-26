@@ -6,6 +6,7 @@ import {
   createMovimiento,
 } from "../api/api";
 import { loadZonasFromServer } from "../components/vivero/zonesStorage";
+import { formatUsername } from "../utils/format";
 
 // Fallback hardcoded por si la API de configuración de zonas falla.
 // La lista real se carga dinámicamente desde el servidor en el componente
@@ -2969,7 +2970,7 @@ export default function Movimientos() {
                         }}
                       >
                         <div
-                          title={m.created_by || "—"}
+                          title={formatUsername(m.created_by) || "—"}
                           style={{
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -2978,7 +2979,7 @@ export default function Movimientos() {
                             fontWeight: 800,
                           }}
                         >
-                          {m.created_by || "—"}
+                          {formatUsername(m.created_by) || "—"}
                         </div>
                       </td>
 
@@ -3191,7 +3192,7 @@ function MovimientoDetalleModal({ movimiento, onClose }) {
               Detalle del movimiento #{m.id}
             </div>
             <div style={{ color: "#64748b", fontWeight: 700, marginTop: 4 }}>
-              Registrado por <strong style={{ color: "#1e3a8a" }}>{m.created_by || "—"}</strong>
+              Registrado por <strong style={{ color: "#1e3a8a" }}>{formatUsername(m.created_by) || "—"}</strong>
             </div>
           </div>
           <button
