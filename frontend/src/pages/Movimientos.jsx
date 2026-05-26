@@ -742,6 +742,8 @@ function MovimientoModal({
   const [distribucion, setDistribucion] = useState({});
   // Lote de payloads acumulados (para procesar varias líneas de un pedido en un solo submit)
   const [batchPayloads, setBatchPayloads] = useState([]);
+  // Texto de búsqueda libre para filtrar el desplegable de productos.
+  const [productoSearch, setProductoSearch] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -771,6 +773,7 @@ function MovimientoModal({
       setShowPrestamoModal(false);
       setDistribucion({});
       setBatchPayloads([]);
+      setProductoSearch("");
     }
   }, [open]);
 
@@ -865,6 +868,25 @@ function MovimientoModal({
   }, [selectedPedido, movimientosPreviosPorPedido, cantidadesEnLote]);
 
   const selectedProducto = productos.find((p) => String(p.id) === String(form.producto_id));
+
+  // Lista de productos filtrada por el texto de búsqueda. Siempre incluye el
+  // producto actualmente seleccionado aunque no encaje con la búsqueda,
+  // para que el <select> no parezca vacío al elegir y empezar a tipear.
+  const filteredProductos = useMemo(() => {
+    const needle = productoSearch.trim().toLowerCase();
+    if (!needle) return productos;
+    return productos.filter((p) => {
+      if (String(p.id) === String(form.producto_id)) return true;
+      const display = String(getProductDisplayName(p) || "").toLowerCase();
+      const natural = String(p.nombre_natural || "").toLowerCase();
+      const cientifico = String(p.nombre_cientifico || "").toLowerCase();
+      return (
+        display.includes(needle) ||
+        natural.includes(needle) ||
+        cientifico.includes(needle)
+      );
+    });
+  }, [productos, productoSearch, form.producto_id]);
 
   const availableOriginZones = useMemo(() => {
     if (form.origen_tipo !== "Vivero" || !form.producto_id) return ZONAS;
@@ -1577,18 +1599,33 @@ function MovimientoModal({
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
                   Producto
                 </div>
+                <input
+                  type="search"
+                  placeholder="🔍  Buscar por nombre científico o natural..."
+                  value={productoSearch}
+                  onChange={(e) => setProductoSearch(e.target.value)}
+                  style={{ ...inputStyle(), marginBottom: 6 }}
+                />
                 <select
                   value={form.producto_id}
                   onChange={(e) => setForm((prev) => ({ ...prev, producto_id: e.target.value }))}
                   style={inputStyle()}
+                  size={productoSearch.trim() ? Math.min(Math.max(filteredProductos.length + 1, 4), 10) : 1}
                 >
                   <option value="">Seleccionar producto</option>
-                  {productos.map((p) => (
+                  {filteredProductos.map((p) => (
                     <option key={p.id} value={p.id}>
                       {getProductDisplayName(p)}
                     </option>
                   ))}
                 </select>
+                {productoSearch.trim() && (
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, fontWeight: 700 }}>
+                    {filteredProductos.length === 0
+                      ? "Ningún producto coincide con la búsqueda."
+                      : `${filteredProductos.length} ${filteredProductos.length === 1 ? "producto coincide" : "productos coinciden"}.`}
+                  </div>
+                )}
               </div>
 
               {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ */}
