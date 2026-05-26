@@ -5,10 +5,14 @@ import {
   getPedidos,
   createMovimiento,
 } from "../api/api";
+import { loadZonasFromServer } from "../components/vivero/zonesStorage";
 
-const ZONAS = [
-  "1", "2", "3a", "3b", "3c", "4a", "4b", "4c",
-  "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11",
+// Fallback hardcoded por si la API de configuración de zonas falla.
+// La lista real se carga dinámicamente desde el servidor en el componente
+// principal y se pasa como prop a los hijos.
+const DEFAULT_ZONAS = [
+  "1", "2", "3a", "3b", "4a", "4b",
+  "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11", "12",
 ];
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
@@ -687,7 +691,10 @@ function MovimientoModal({
   pedidosAprobados,
   onSubmit,
   saving,
+  zonas = DEFAULT_ZONAS,
 }) {
+  // Alias local para mantener legibilidad del código existente que usaba ZONAS.
+  const ZONAS = zonas;
   const [form, setForm] = useState({
     pedido_id: "",
     pedido_item_id: "",
@@ -2417,6 +2424,39 @@ export default function Movimientos() {
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState("success");
 
+  // Lista de zonas reales del vivero, cargada dinámicamente desde el servidor
+  // (donde el editor del mapa las persiste). Si la carga falla, se usa el
+  // fallback estático DEFAULT_ZONAS.
+  const [zonasDisponibles, setZonasDisponibles] = useState(DEFAULT_ZONAS);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadZonasFromServer()
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data) && data.length > 0) {
+          const ids = data
+            .map((z) => z.apiId || z.id)
+            .filter(Boolean)
+            .map((id) => String(id).replace(/^zona-/, ""));
+          // Quitamos duplicados y mantenemos el orden del servidor.
+          const seen = new Set();
+          const unique = ids.filter((id) => {
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+          if (unique.length > 0) setZonasDisponibles(unique);
+        }
+      })
+      .catch(() => {
+        // Mantén el fallback estático.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const msgTimerRef = useRef(null);
 
   const [filtroProducto, setFiltroProducto] = useState("");
@@ -2661,7 +2701,7 @@ export default function Movimientos() {
               style={inputStyle()}
             >
               <option value="">Todas</option>
-              {ZONAS.map((zona) => (
+              {zonasDisponibles.map((zona) => (
                 <option key={zona} value={zona}>
                   {zona}
                 </option>
@@ -3036,6 +3076,7 @@ export default function Movimientos() {
         pedidosAprobados={pedidosAprobados}
         onSubmit={handleCreateMovimiento}
         saving={saving}
+        zonas={zonasDisponibles}
       />
 
       <MovimientoDetalleModal

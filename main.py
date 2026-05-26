@@ -190,7 +190,14 @@ MAX_FAILED_LOGIN_ATTEMPTS = 3
 
 @app.post("/auth/login", response_model=LoginResponse)
 def auth_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(Usuario).filter(Usuario.username == payload.username).first()
+    # El username es case-insensitive (medina, Medina y MEDINA son el mismo).
+    # La contraseña SIGUE siendo case-sensitive — esa es la parte segura.
+    username_lookup = (payload.username or "").strip().lower()
+    user = (
+        db.query(Usuario)
+        .filter(func.lower(Usuario.username) == username_lookup)
+        .first()
+    )
 
     if not user:
         # Mensaje genérico para no filtrar si el usuario existe o no.
