@@ -2001,6 +2001,31 @@ export default function Pedidos() {
       p?.solicitante_username || p?.solicitante || p?.created_by || p?.usuario || p?.username || ""
     ) || "—";
 
+  // Lista única de solicitantes presentes en los pedidos actuales.
+  // Cada entrada: { value: "medina", label: "Medina" }.
+  const solicitantesDisponibles = useMemo(() => {
+    if (!Array.isArray(pedidos)) return [];
+    const seen = new Map();
+    for (const p of pedidos) {
+      const raw = String(
+        p?.solicitante_username ||
+          p?.solicitante ||
+          p?.created_by ||
+          p?.usuario ||
+          p?.username ||
+          ""
+      ).trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, { value: key, label: formatUsername(raw) });
+      }
+    }
+    return [...seen.values()].sort((a, b) =>
+      a.label.localeCompare(b.label, "es")
+    );
+  }, [pedidos]);
+
   const refrescar = async () => {
     setLoading(true);
     clearMsgTimer();
@@ -2189,7 +2214,8 @@ export default function Pedidos() {
 
         const solicitante = solicitanteFromPedido(p).toLowerCase();
         const solicitanteOk =
-          !solicitanteFiltro || solicitante.includes(solicitanteFiltro.trim().toLowerCase());
+          !solicitanteFiltro ||
+          solicitante === solicitanteFiltro.trim().toLowerCase();
 
         const detalle = safeArray(p.items)
           .map((it) => {
@@ -2331,12 +2357,26 @@ export default function Pedidos() {
             style={softInputStyle()}
           />
 
-          <input
-            placeholder="Solicitante"
+          <select
             value={solicitanteFiltro}
             onChange={(e) => setSolicitanteFiltro(e.target.value)}
             style={softInputStyle()}
-          />
+            disabled={solicitantesDisponibles.length === 0}
+            aria-label="Filtrar por solicitante"
+          >
+            {solicitantesDisponibles.length === 0 ? (
+              <option value="">No hay solicitantes</option>
+            ) : (
+              <>
+                <option value="">Todos los solicitantes</option>
+                {solicitantesDisponibles.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
 
           <input
             placeholder="Buscar en detalle o destino..."
