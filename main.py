@@ -24,6 +24,7 @@ from models import (
     PedidoItem,
     CaducidadConfig,
     AccountToken,
+    ZonaPolygon,
     Base,
 )
 from schemas import PedidoActionRequest, PedidoOut
@@ -2718,3 +2719,92 @@ def auth_token_consume(
     db.commit()
 
     return {"ok": True, "purpose": record.purpose}
+
+
+# =============================
+# CONFIGURACIÓN DE ZONAS DEL MAPA
+# =============================
+class ZonaPolygonIn(BaseModel):
+    id: str
+    apiId: Optional[str] = None
+    api_id: Optional[str] = None  # acepta ambos por flexibilidad
+    nombre: str
+    color: str
+    puntos: str
+
+
+def _serialize_zona(z: ZonaPolygon) -> dict:
+    return {
+        "id": z.id,
+        "apiId": z.api_id,
+        "nombre": z.nombre,
+        "color": z.color,
+        "puntos": z.puntos,
+    }
+
+
+@app.get("/zonas-config")
+def get_zonas_config(db: Session = Depends(get_db)):
+    """
+    Devuelve la configuración de zonas del mapa.
+    Endpoint público (sin auth): cualquiera con acceso al frontend lo necesita
+    para pintar el mapa, igual que las imágenes estáticas.
+
+    Si la tabla está vacía (primer arranque tras el deploy), devuelve []. El
+    frontend tiene un fallback al fichero estático `zonasConfig.js` en ese caso.
+    """
+    rows = db.query(ZonaPolygon).order_by(ZonaPolygon.sort_order.asc(), ZonaPolygon.id.asc()).all()
+    return [_serialize_zona(z) for z in rows]
+
+
+@app.put("/zonas-config")
+def put_zonas_config(
+    payload: list[ZonaPolygonIn],
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """
+    Reemplaza la configuración de zonas completa. Solo admin.
+
+    Estrategia: borrado + insert en bloque, dentro de una transacción.
+    Para los volúmenes esperados (decenas de zonas) es la opción más simple
+    y robusta. El sort_order se asigna por la posición en el array enviado.
+    """
+    if not isinstance(payload, list):
+        raise HTTPException(status_code=400, detail="Se esperaba un array de zonas.")
+
+    # Validaciones mínimas
+    seen_ids = set()
+    for idx, z in enumerate(payload):
+        zid = (z.id or "").strip()
+        if not zid:
+            raise HTTPException(status_code=400, detail=f"Zona en posición {idx} sin id.")
+        if zid in seen_ids:
+            raise HTTPException(status_code=400, detail=f"Id duplicado: {zid}")
+        seen_ids.add(zid)
+        if not (z.nombre or "").strip():
+            raise HTTPException(status_code=400, detail=f"Zona {zid} sin nombre.")
+        if not (z.puntos or "").strip():
+            raise HTTPException(status_code=400, detail=f"Zona {zid} sin puntos.")
+
+    # Reemplazo atómico: vaciamos y reinsertamos.
+    db.query(ZonaPolygon).delete(synchronize_session=False)
+    now = datetime.utcnow()
+    for idx, z in enumerate(payload):
+        api_id = (z.api_id or z.apiId or z.id).strip()
+        db.add(
+            ZonaPolygon(
+                id=z.id.strip(),
+                api_id=api_id,
+                nombre=z.nombre.strip(),
+                color=(z.color or "#cccccc").strip(),
+                puntos=z.puntos.strip(),
+                sort_order=idx,
+                updated_at=now,
+                updated_by=current_user.username,
+            )
+        )
+    db.commit()
+
+    rows = db.query(ZonaPolygon).order_by(ZonaPolygon.sort_order.asc(), ZonaPolygon.id.asc()).all()
+    return [_serialize_zona(z) for z in rows]

@@ -1,36 +1,68 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./MapaVivero.css";
 import Modal from "../common/Modal";
 import useMapaDebug from "./useMapaDebug";
-import { getZonaItems } from "../../api/api";
+import { getMe, getZonaItems } from "../../api/api";
 import zonasDefault from "./zonasConfig";
 import ZoneEditor from "./ZoneEditor";
-import {
-  loadZonas,
-  saveZonasDraft,
-  clearZonasDraft,
-  hasZonasDraft,
-  exportZonasAsJsFile,
-} from "./zonesStorage";
+import { loadZonasFromServer, saveZonasToServer } from "./zonesStorage";
 
 const DEBUG_MAPA = false;
-// Flip to true to re-enable the in-app zone editor (button + drag UI).
+// Cinturón de seguridad: si está en false, el editor está oculto para todos
+// (incluso admins). Para deshabilitar la funcionalidad por completo, ponerlo
+// a false y desplegar.
 const ENABLE_ZONE_EDITOR = true;
 
+const readUserFromStorage = () => {
+  try {
+    return JSON.parse(window.localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+};
+
 export default function MapaVivero() {
-  const [zonas, setZonas] = useState(() =>
-    ENABLE_ZONE_EDITOR ? loadZonas() : zonasDefault
-  );
-  const [draftActive, setDraftActive] = useState(() =>
-    ENABLE_ZONE_EDITOR ? hasZonasDraft() : false
-  );
+  // zonas siempre arrancan con el fichero estático para que la primera pintura
+  // sea instantánea. El useEffect de abajo refresca desde el servidor.
+  const [zonas, setZonas] = useState(zonasDefault);
   const [editMode, setEditMode] = useState(false);
+  const [savingZonas, setSavingZonas] = useState(false);
+
+  const [me, setMe] = useState(() => readUserFromStorage());
 
   const [zonaSeleccionada, setZonaSeleccionada] = useState(null);
   const [zonaData, setZonaData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const debugClick = useMapaDebug();
+
+  // Carga inicial desde servidor (con fallback al fichero si falla).
+  useEffect(() => {
+    let cancelled = false;
+    loadZonasFromServer().then((data) => {
+      if (!cancelled) setZonas(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Verificar rol del usuario actual.
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then((data) => {
+        if (!cancelled) setMe(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const userRole = (me?.rol || me?.role || "").toString().trim().toLowerCase();
+  const isAdmin = userRole === "admin";
+  const canEdit = ENABLE_ZONE_EDITOR && isAdmin;
 
   const handleZonaClick = async (zona) => {
     setZonaSeleccionada(zona);
@@ -56,42 +88,39 @@ export default function MapaVivero() {
     setLoading(false);
   };
 
-  const handleEditorSave = (updatedZonas) => {
-    saveZonasDraft(updatedZonas);
-    exportZonasAsJsFile(updatedZonas);
-    setZonas(updatedZonas);
-    setDraftActive(true);
-    setEditMode(false);
-  };
-
-  const handleClearDraft = () => {
-    if (
-      !window.confirm(
-        "¿Descartar los cambios locales y volver a las zonas del fichero zonasConfig.js?"
-      )
-    ) {
-      return;
+  const handleEditorSave = async (updatedZonas) => {
+    setSavingZonas(true);
+    try {
+      const saved = await saveZonasToServer(updatedZonas);
+      setZonas(Array.isArray(saved) && saved.length > 0 ? saved : updatedZonas);
+      setEditMode(false);
+    } catch (err) {
+      console.error("Error guardando zonas en servidor:", err);
+      window.alert(
+        "No se pudo guardar la configuración de zonas en el servidor. " +
+          "Revisa la conexión y vuelve a intentarlo."
+      );
+    } finally {
+      setSavingZonas(false);
     }
-    clearZonasDraft();
-    setZonas(loadZonas());
-    setDraftActive(false);
   };
 
   const items = zonaData?.items || zonaData?.productos || [];
 
-  if (editMode && ENABLE_ZONE_EDITOR) {
+  if (editMode && canEdit) {
     return (
       <ZoneEditor
         zonas={zonas}
         onSave={handleEditorSave}
         onCancel={() => setEditMode(false)}
+        saving={savingZonas}
       />
     );
   }
 
   return (
     <>
-      {ENABLE_ZONE_EDITOR && (
+      {canEdit && (
         <div className="vivero-admin-bar">
           <button
             type="button"
@@ -100,20 +129,6 @@ export default function MapaVivero() {
           >
             Editar zonas
           </button>
-          {draftActive && (
-            <>
-              <span className="vivero-admin-badge">
-                Mostrando borrador local
-              </span>
-              <button
-                type="button"
-                className="vivero-admin-btn-secondary"
-                onClick={handleClearDraft}
-              >
-                Limpiar borrador
-              </button>
-            </>
-          )}
         </div>
       )}
 

@@ -209,6 +209,20 @@ export const getPrestamosActivos = async () => {
 };
 
 // =========================
+// CONFIGURACIÓN DE ZONAS DEL MAPA
+// =========================
+
+export const getZonasConfig = async () => {
+  const { data } = await api.get("/zonas-config");
+  return data;
+};
+
+export const updateZonasConfig = async (zonas) => {
+  const { data } = await api.put("/zonas-config", zonas);
+  return data;
+};
+
+// =========================
 // ADMIN USERS
 // =========================
 

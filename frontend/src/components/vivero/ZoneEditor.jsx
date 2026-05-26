@@ -3,7 +3,25 @@ import { parsePoints, pointsToString } from "./zonesStorage";
 
 const MIN_VERTICES = 3;
 
-export default function ZoneEditor({ zonas, onSave, onCancel }) {
+// Paleta de colores para nuevas zonas (mismo registro visual que las existentes).
+const DEFAULT_COLOR_PALETTE = [
+  "#F4E2C1", "#E87B69", "#9FD486", "#BFD9EA", "#F5D547",
+  "#F08A80", "#F3CF39", "#A7D98C", "#9ECBE2", "#F3E0BD",
+  "#F7E85B", "#6BAED6", "#4E8BC5", "#E56F61", "#C77DBA",
+];
+
+const pickRandomColor = () =>
+  DEFAULT_COLOR_PALETTE[Math.floor(Math.random() * DEFAULT_COLOR_PALETTE.length)];
+
+// Polígono cuadrado por defecto al crear una zona nueva (centro del mapa).
+const defaultNewZonaPoints = () => [
+  [950, 600],
+  [1100, 600],
+  [1100, 750],
+  [950, 750],
+];
+
+export default function ZoneEditor({ zonas, onSave, onCancel, saving = false }) {
   const [editedZonas, setEditedZonas] = useState(() =>
     zonas.map((z) => ({ ...z, _points: parsePoints(z.puntos) }))
   );
@@ -122,6 +140,68 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
     );
   };
 
+  const handleAddZona = () => {
+    const raw = window.prompt(
+      "Identificador de la nueva zona (ej: 13, 3c, 10c). " +
+        "Le añadiremos automáticamente el prefijo 'zona-'."
+    );
+    if (raw === null) return;
+    const cleaned = raw.trim().toLowerCase().replace(/\s+/g, "");
+    if (!cleaned) {
+      window.alert("Identificador vacío. Operación cancelada.");
+      return;
+    }
+    // Normalizamos: sin prefijo 'zona-' duplicado.
+    const apiId = cleaned.replace(/^zona-/, "");
+    const fullId = `zona-${apiId}`;
+
+    if (editedZonas.some((z) => z.id === fullId)) {
+      window.alert(`Ya existe una zona con id "${fullId}".`);
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(apiId)) {
+      window.alert(
+        "El identificador solo puede contener letras (a-z), números y guiones."
+      );
+      return;
+    }
+
+    const newZona = {
+      id: fullId,
+      apiId,
+      nombre: `Zona ${apiId}`,
+      color: pickRandomColor(),
+      _points: defaultNewZonaPoints(),
+    };
+    setEditedZonas((prev) => [...prev, newZona]);
+    setSelectedId(fullId);
+  };
+
+  const handleDeleteZona = () => {
+    if (!selectedZona) return;
+    const ok = window.confirm(
+      `¿Eliminar la zona "${selectedZona.nombre}" del mapa?\n\n` +
+        "La zona se quitará del listado y dejará de aparecer en el plano. " +
+        "El borrado no se aplica hasta que pulses \"Guardar cambios\". " +
+        "Si tienes inventario asociado a esta zona en la base de datos, esos " +
+        "registros NO se borran (siguen existiendo bajo el nombre antiguo)."
+    );
+    if (!ok) return;
+    setEditedZonas((prev) => {
+      const next = prev.filter((z) => z.id !== selectedZona.id);
+      const fallbackId = next[0]?.id ?? null;
+      setSelectedId(fallbackId);
+      return next;
+    });
+  };
+
+  const updateSelectedZonaMeta = (field, value) => {
+    if (!selectedZona) return;
+    setEditedZonas((prev) =>
+      prev.map((z) => (z.id === selectedZona.id ? { ...z, [field]: value } : z))
+    );
+  };
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") onCancel?.();
@@ -150,6 +230,25 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
 
         <button
           type="button"
+          onClick={handleAddZona}
+          className="zone-editor-btn-secondary"
+          title="Crear una nueva zona con un cuadrado en el centro del plano"
+        >
+          + Añadir zona
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDeleteZona}
+          disabled={!selectedZona}
+          className="zone-editor-btn-danger"
+          title="Eliminar la zona seleccionada del mapa"
+        >
+          Eliminar zona
+        </button>
+
+        <button
+          type="button"
           onClick={handleResetZona}
           disabled={!selectedZona}
           className="zone-editor-btn-secondary"
@@ -168,17 +267,54 @@ export default function ZoneEditor({ zonas, onSave, onCancel }) {
           type="button"
           onClick={handleSave}
           className="zone-editor-btn-save"
+          disabled={saving}
         >
-          Guardar y descargar
+          {saving ? "Guardando…" : "Guardar cambios"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="zone-editor-btn-cancel"
+          disabled={saving}
         >
           Cancelar
         </button>
       </div>
+
+      {selectedZona && (
+        <div className="zone-editor-meta-row">
+          <label className="zone-editor-field">
+            <span>Nombre:</span>
+            <input
+              type="text"
+              value={selectedZona.nombre}
+              onChange={(e) => updateSelectedZonaMeta("nombre", e.target.value)}
+              maxLength={100}
+            />
+          </label>
+          <label className="zone-editor-field">
+            <span>Color:</span>
+            <input
+              type="color"
+              value={selectedZona.color || "#cccccc"}
+              onChange={(e) => updateSelectedZonaMeta("color", e.target.value)}
+              style={{
+                width: 40,
+                height: 32,
+                padding: 0,
+                border: "1px solid #d6d3d1",
+                borderRadius: 6,
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            />
+          </label>
+          <span className="zone-editor-help" style={{ flex: 1 }}>
+            ID: <code>{selectedZona.id}</code> · apiId:{" "}
+            <code>{selectedZona.apiId || selectedZona.id}</code>
+          </span>
+        </div>
+      )}
 
       <div className="vivero-map-wrapper zone-editor-canvas">
         <img

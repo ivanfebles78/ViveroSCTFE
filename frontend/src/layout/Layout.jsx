@@ -5,11 +5,8 @@ import mapaVivero from "../assets/mapa-vivero.png";
 import zonasDefault from "../components/vivero/zonasConfig";
 import ZoneEditor from "../components/vivero/ZoneEditor";
 import {
-  loadZonas,
-  saveZonasDraft,
-  clearZonasDraft,
-  hasZonasDraft,
-  exportZonasAsJsFile,
+  loadZonasFromServer,
+  saveZonasToServer,
 } from "../components/vivero/zonesStorage";
 
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
@@ -769,44 +766,52 @@ function NotificationModal({ open, onClose, notifications, onMarkAsRead }) {
   );
 }
 
-function ZonaMapModal({ open, onClose }) {
+function ZonaMapModal({ open, onClose, isAdmin = false }) {
   const [selectedZone, setSelectedZone] = useState(null);
   const [zonaData, setZonaData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [zonaError, setZonaError] = useState("");
 
-  const [zonas, setZonas] = useState(() =>
-    ENABLE_ZONE_EDITOR ? loadZonas() : zonasDefault
-  );
-  const [draftActive, setDraftActive] = useState(() =>
-    ENABLE_ZONE_EDITOR ? hasZonasDraft() : false
-  );
+  // Arrancamos con los defaults estáticos para pintar instantáneamente.
+  // El useEffect refresca desde el servidor cuando el modal se abre.
+  const [zonas, setZonas] = useState(zonasDefault);
   const [editMode, setEditMode] = useState(false);
+  const [savingZonas, setSavingZonas] = useState(false);
+
+  const canEdit = ENABLE_ZONE_EDITOR && isAdmin;
 
   const zonePolygons = useMemo(
     () => (Array.isArray(zonas) ? zonas.filter((z) => !z.disabled) : []),
     [zonas]
   );
 
-  const handleEditorSave = (updatedZonas) => {
-    saveZonasDraft(updatedZonas);
-    exportZonasAsJsFile(updatedZonas);
-    setZonas(updatedZonas);
-    setDraftActive(true);
-    setEditMode(false);
-  };
+  // Cuando se abre el modal, recarga las zonas desde el servidor.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    loadZonasFromServer().then((data) => {
+      if (!cancelled) setZonas(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
-  const handleClearDraft = () => {
-    if (
-      !window.confirm(
-        "¿Descartar los cambios locales y volver a las zonas del fichero zonasConfig.js?"
-      )
-    ) {
-      return;
+  const handleEditorSave = async (updatedZonas) => {
+    setSavingZonas(true);
+    try {
+      const saved = await saveZonasToServer(updatedZonas);
+      setZonas(Array.isArray(saved) && saved.length > 0 ? saved : updatedZonas);
+      setEditMode(false);
+    } catch (err) {
+      console.error("Error guardando zonas en servidor:", err);
+      window.alert(
+        "No se pudo guardar la configuración de zonas en el servidor. " +
+          "Revisa la conexión y vuelve a intentarlo."
+      );
+    } finally {
+      setSavingZonas(false);
     }
-    clearZonasDraft();
-    setZonas(loadZonas());
-    setDraftActive(false);
   };
 
   const selectedZoneLabel =
@@ -844,7 +849,7 @@ function ZonaMapModal({ open, onClose }) {
 
   if (!open) return null;
 
-  if (editMode && ENABLE_ZONE_EDITOR) {
+  if (editMode && canEdit) {
     return (
       <div
         style={{
@@ -873,6 +878,7 @@ function ZonaMapModal({ open, onClose }) {
             zonas={zonas}
             onSave={handleEditorSave}
             onCancel={() => setEditMode(false)}
+            saving={savingZonas}
           />
         </div>
       </div>
@@ -922,38 +928,7 @@ function ZonaMapModal({ open, onClose }) {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              {ENABLE_ZONE_EDITOR && draftActive && (
-                <>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#92400e",
-                      background: "#fef3c7",
-                      border: "1px solid #fbbf24",
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                    }}
-                  >
-                    Borrador local
-                  </span>
-                  <button
-                    onClick={handleClearDraft}
-                    style={{
-                      padding: "8px 12px",
-                      background: "#ffffff",
-                      color: "#44403c",
-                      border: "1px solid #d6d3d1",
-                      borderRadius: 8,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Limpiar borrador
-                  </button>
-                </>
-              )}
-              {ENABLE_ZONE_EDITOR && (
+              {canEdit && (
                 <button
                   onClick={() => setEditMode(true)}
                   style={{
@@ -1528,7 +1503,7 @@ export default function Layout() {
         </main>
       </div>
 
-      <ZonaMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
+      <ZonaMapModal open={mapOpen} onClose={() => setMapOpen(false)} isAdmin={isAdmin} />
       {canSeeNotifications && (
         <NotificationModal
           open={notificationsOpen}

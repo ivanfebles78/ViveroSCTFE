@@ -1,6 +1,9 @@
 import zonasDefault from "./zonasConfig";
+import { getZonasConfig, updateZonasConfig } from "../../api/api";
 
-const STORAGE_KEY = "vivero-zonas-override";
+// Las zonas se persisten ahora en el servidor (tabla zona_polygons).
+// El fichero zonasConfig.js queda como fallback "factory defaults" si la
+// API no responde o devuelve la lista vacía (primer arranque).
 
 export const parsePoints = (puntosStr) => {
   if (!puntosStr) return [];
@@ -17,60 +20,44 @@ export const parsePoints = (puntosStr) => {
 export const pointsToString = (pointsArr) =>
   pointsArr.map(([x, y]) => `${Math.round(x)},${Math.round(y)}`).join(" ");
 
-export const loadZonas = () => {
+/**
+ * Carga la configuración de zonas desde el servidor.
+ * Si el servidor no responde o devuelve una lista vacía, cae al fichero
+ * estático zonasConfig.js.
+ *
+ * @returns {Promise<Array>} array de zonas {id, apiId, nombre, color, puntos}
+ */
+export const loadZonasFromServer = async () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return zonasDefault;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return zonasDefault;
-    return parsed;
-  } catch {
-    return zonasDefault;
+    const data = await getZonasConfig();
+    if (Array.isArray(data) && data.length > 0) {
+      return data;
+    }
+  } catch (err) {
+    console.warn("[zonesStorage] No se pudo cargar zonas del servidor, usando fallback estático", err);
   }
+  return zonasDefault;
 };
 
-export const saveZonasDraft = (zonas) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(zonas));
-  } catch {
-    // ignore quota errors
-  }
+/**
+ * Persiste la configuración de zonas en el servidor. Solo admin.
+ *
+ * @param {Array} zonas - lista de zonas a guardar
+ * @returns {Promise<Array>} lista de zonas tras el guardado (normalizada por el server)
+ */
+export const saveZonasToServer = async (zonas) => {
+  const payload = zonas.map((z) => ({
+    id: z.id,
+    apiId: z.apiId || z.api_id || z.id,
+    nombre: z.nombre,
+    color: z.color || "#cccccc",
+    puntos: z.puntos,
+  }));
+  return await updateZonasConfig(payload);
 };
 
-export const clearZonasDraft = () => {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-};
-
-export const hasZonasDraft = () => {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== null;
-  } catch {
-    return false;
-  }
-};
-
-export const exportZonasAsJsFile = (zonas) => {
-  const lines = zonas.map(
-    (z) =>
-      `  { id: ${JSON.stringify(z.id)}, apiId: ${JSON.stringify(
-        z.apiId
-      )}, nombre: ${JSON.stringify(z.nombre)}, color: ${JSON.stringify(
-        z.color
-      )}, puntos: ${JSON.stringify(z.puntos)} },`
-  );
-  const content = `const zonas = [\n${lines.join("\n")}\n];\n\nexport default zonas;\n`;
-
-  const blob = new Blob([content], { type: "text/javascript;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "zonasConfig.js";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+/**
+ * Defaults estáticos (para inicializar el estado antes de la primera carga
+ * asíncrona, y como fallback si la API falla).
+ */
+export const getDefaultZonas = () => zonasDefault;

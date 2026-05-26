@@ -221,6 +221,26 @@ class Movimiento(Base):
 
 
 # =========================
+# CONFIGURACIÓN DE ZONAS DEL MAPA
+# =========================
+class ZonaPolygon(Base):
+    __tablename__ = "zona_polygons"
+
+    # id lógico que usa el frontend (ej: "zona-3a"). Se usa como PK.
+    id = Column(String(40), primary_key=True, index=True)
+    api_id = Column(String(20), nullable=False)
+    nombre = Column(String(100), nullable=False)
+    color = Column(String(20), nullable=False, default="#cccccc")
+    puntos = Column(Text, nullable=False)
+
+    # Orden de aparición en el listado (admite reordenación futura).
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by = Column(String(50), nullable=True)
+
+
+# =========================
 # TOKENS DE CUENTA (activación, reset password, unlock)
 # =========================
 class AccountToken(Base):
