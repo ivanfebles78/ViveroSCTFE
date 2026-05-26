@@ -2459,7 +2459,8 @@ export default function Movimientos() {
           const ids = data
             .map((z) => z.apiId || z.id)
             .filter(Boolean)
-            .map((id) => String(id).replace(/^zona-/, ""));
+            // Acepta "zona-3a", "zona3a", "ZONA-3A", "3a" y los normaliza a "3a".
+            .map((id) => String(id).trim().toLowerCase().replace(/^zona[-_]?/i, ""));
           const seen = new Set();
           const unique = ids.filter((id) => {
             if (seen.has(id)) return false;
