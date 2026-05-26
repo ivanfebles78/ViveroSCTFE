@@ -15,6 +15,23 @@ const DEFAULT_ZONAS = [
   "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11", "12",
 ];
 
+// Orden natural: primero por número, luego por letra.
+// Ej: "1", "2", "3a", "3b", "4a", ..., "10a", "10b", "11", "12".
+function naturalSortZonas(zonas) {
+  const parse = (id) => {
+    const s = String(id).trim();
+    const m = s.match(/^(\d+)([a-z]*)$/i);
+    if (m) return [parseInt(m[1], 10), (m[2] || "").toLowerCase()];
+    return [Number.POSITIVE_INFINITY, s.toLowerCase()];
+  };
+  return [...zonas].sort((a, b) => {
+    const [na, la] = parse(a);
+    const [nb, lb] = parse(b);
+    if (na !== nb) return na - nb;
+    return la.localeCompare(lb);
+  });
+}
+
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
 const ORIGENES = [
@@ -2426,8 +2443,12 @@ export default function Movimientos() {
 
   // Lista de zonas reales del vivero, cargada dinámicamente desde el servidor
   // (donde el editor del mapa las persiste). Si la carga falla, se usa el
-  // fallback estático DEFAULT_ZONAS.
-  const [zonasDisponibles, setZonasDisponibles] = useState(DEFAULT_ZONAS);
+  // fallback estático DEFAULT_ZONAS. Siempre ordenadas de forma natural
+  // (1, 2, 3a, 3b, ..., 10a, 10b, 11, 12) independientemente del orden con
+  // que vengan del servidor.
+  const [zonasDisponibles, setZonasDisponibles] = useState(() =>
+    naturalSortZonas(DEFAULT_ZONAS)
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2439,18 +2460,19 @@ export default function Movimientos() {
             .map((z) => z.apiId || z.id)
             .filter(Boolean)
             .map((id) => String(id).replace(/^zona-/, ""));
-          // Quitamos duplicados y mantenemos el orden del servidor.
           const seen = new Set();
           const unique = ids.filter((id) => {
             if (seen.has(id)) return false;
             seen.add(id);
             return true;
           });
-          if (unique.length > 0) setZonasDisponibles(unique);
+          if (unique.length > 0) {
+            setZonasDisponibles(naturalSortZonas(unique));
+          }
         }
       })
       .catch(() => {
-        // Mantén el fallback estático.
+        // Mantén el fallback estático (ya ordenado).
       });
     return () => {
       cancelled = true;
