@@ -744,15 +744,17 @@ def get_productos(
     for p in productos:
         invs = inv_by_product.get(p.id, [])
 
-        # Stock total: solo lotes "disponibles" (fecha_disponibilidad <= hoy o NULL)
+        # Stock total: TODO el stock vivo del producto (sin filtrar por
+        # fecha_disponibilidad). Si una entrada M35 marcó una fecha futura,
+        # el stock se sigue contando aquí porque conceptualmente "está en el
+        # vivero". La distinción de "disponible para servir AHORA" se aplica
+        # en validaciones específicas de movimientos / pedidos, no en el
+        # listado general.
         stock_total = 0
         stock_by_size: dict[str, int] = {}
         for inv in invs:
             cantidad = int(inv.cantidad_disponible or 0)
             if cantidad <= 0:
-                continue
-            disp = inv.fecha_disponibilidad
-            if disp is not None and disp > today:
                 continue
             stock_total += cantidad
             tam = (inv.tamano or "").strip()

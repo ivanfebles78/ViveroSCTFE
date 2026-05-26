@@ -2413,6 +2413,7 @@ export default function Movimientos() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [detalleMovimiento, setDetalleMovimiento] = useState(null);
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState("success");
 
@@ -2769,9 +2770,10 @@ export default function Movimientos() {
                   <th style={{ ...thStyle(), width: "135px" }}>Origen</th>
                   <th style={{ ...thStyle(), width: "145px" }}>Destino</th>
                   <th style={{ ...thStyle(), width: "95px" }}>Préstamo</th>
-                  <th style={{ ...thStyle(), width: "120px" }}>Observaciones</th>
+                  <th style={{ ...thStyle(), width: "110px" }}>Usuario</th>
                   <th style={{ ...thStyle(), width: "110px" }}>UUID lote</th>
                   <th style={{ ...thStyle(), width: "75px" }}>Pedido</th>
+                  <th style={{ ...thStyle(), width: "80px" }}>Detalles</th>
                 </tr>
               </thead>
               <tbody>
@@ -2898,22 +2900,22 @@ export default function Movimientos() {
                           ...tdStyle(),
                           borderTop: "1px solid rgba(15,23,42,0.10)",
                           borderBottom: "1px solid rgba(15,23,42,0.10)",
-                          minWidth: 120,
-                          maxWidth: 120,
-                          width: 120,
+                          minWidth: 110,
+                          maxWidth: 110,
+                          width: 110,
                         }}
                       >
                         <div
-                          title={m.observaciones || m.nota || "—"}
+                          title={m.created_by || "—"}
                           style={{
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
-                            color: "#475569",
-                            fontWeight: 700,
+                            color: "#1e3a8a",
+                            fontWeight: 800,
                           }}
                         >
-                          {m.observaciones || m.nota || "—"}
+                          {m.created_by || "—"}
                         </div>
                       </td>
 
@@ -2980,15 +2982,42 @@ export default function Movimientos() {
                           ...tdStyle(),
                           borderTop: "1px solid rgba(15,23,42,0.10)",
                           borderBottom: "1px solid rgba(15,23,42,0.10)",
-                          borderRight: "1px solid rgba(15,23,42,0.10)",
-                          borderTopRightRadius: 14,
-                          borderBottomRightRadius: 14,
                           whiteSpace: "nowrap",
                         }}
                       >
                         <span style={{ fontWeight: 900, color: "#1e3a8a" }}>
                           {m.pedido_id ? `#${m.pedido_id}` : "—"}
                         </span>
+                      </td>
+
+                      <td
+                        style={{
+                          ...tdStyle(),
+                          borderTop: "1px solid rgba(15,23,42,0.10)",
+                          borderBottom: "1px solid rgba(15,23,42,0.10)",
+                          borderRight: "1px solid rgba(15,23,42,0.10)",
+                          borderTopRightRadius: 14,
+                          borderBottomRightRadius: 14,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setDetalleMovimiento(m)}
+                          title="Ver todos los detalles del movimiento"
+                          style={{
+                            border: "1px solid rgba(15,23,42,0.10)",
+                            background: "#0f5132",
+                            color: "#ffffff",
+                            borderRadius: 10,
+                            padding: "6px 10px",
+                            fontSize: 12,
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Ver
+                        </button>
                       </td>
                     </tr>
                   );
@@ -3008,6 +3037,138 @@ export default function Movimientos() {
         onSubmit={handleCreateMovimiento}
         saving={saving}
       />
+
+      <MovimientoDetalleModal
+        movimiento={detalleMovimiento}
+        onClose={() => setDetalleMovimiento(null)}
+      />
+    </div>
+  );
+}
+
+// =========================================================================
+// MOVIMIENTO DETALLE MODAL
+// =========================================================================
+function MovimientoDetalleModal({ movimiento, onClose }) {
+  if (!movimiento) return null;
+
+  const m = movimiento;
+  const tipo = m.tipo_movimiento || "—";
+  const fmt = (d) => (d ? new Date(d).toLocaleString("es-ES") : "—");
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("es-ES") : "—");
+
+  const Row = ({ label, value, mono = false }) => (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "180px 1fr",
+        gap: 12,
+        padding: "10px 0",
+        borderBottom: "1px solid rgba(15,23,42,0.06)",
+      }}
+    >
+      <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>{label}</div>
+      <div
+        style={{
+          color: "#0f172a",
+          fontWeight: 700,
+          fontSize: 14,
+          fontFamily: mono
+            ? "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+            : "inherit",
+          wordBreak: "break-word",
+        }}
+      >
+        {value || "—"}
+      </div>
+    </div>
+  );
+
+  const direccion = [m.direccion_destino, m.barrio_destino, m.distrito_destino, m.cp_destino]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.55)",
+        zIndex: 2500,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(680px, 96vw)",
+          maxHeight: "90vh",
+          overflow: "auto",
+          background: "white",
+          borderRadius: 20,
+          padding: 24,
+          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
+              Detalle del movimiento #{m.id}
+            </div>
+            <div style={{ color: "#64748b", fontWeight: 700, marginTop: 4 }}>
+              Registrado por <strong style={{ color: "#1e3a8a" }}>{m.created_by || "—"}</strong>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              border: 0,
+              background: "#0f5132",
+              color: "#fff",
+              padding: "8px 16px",
+              borderRadius: 10,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+
+        <div>
+          <Row label="Fecha movimiento" value={fmt(m.fecha_movimiento)} />
+          <Row label="Tipo" value={tipo} />
+          <Row label="Producto" value={m.producto_nombre_cientifico || m.nombre_cientifico || `Producto #${m.producto_id}`} />
+          <Row label="Cantidad" value={m.cantidad} />
+
+          <Row label="Origen" value={`${m.origen_tipo || "—"}${m.zona_origen ? " · Zona " + m.zona_origen : ""}${m.tamano_origen ? " · " + m.tamano_origen : ""}`} />
+          <Row label="Destino" value={`${m.destino_tipo || "—"}${m.zona_destino ? " · Zona " + m.zona_destino : ""}${m.tamano_destino ? " · " + m.tamano_destino : ""}`} />
+
+          {direccion && <Row label="Dirección destino" value={direccion} />}
+
+          <Row label="Préstamo" value={m.es_prestamo ? "Sí" : m.es_devolucion ? "Devolución" : "No"} />
+
+          <Row label="UUID lote" value={m.uuid_lote} mono />
+          <Row label="Pedido asociado" value={m.pedido_id ? `#${m.pedido_id}` : "—"} />
+
+          <Row label="Fecha caducidad" value={fmtDate(m.fecha_caducidad)} />
+          <Row label="Días caducidad aplicados" value={m.dias_caducidad_aplicados ?? "—"} />
+          <Row label="Fecha disponibilidad" value={fmtDate(m.fecha_disponibilidad)} />
+
+          <Row label="Observaciones" value={m.observaciones || m.nota || "—"} />
+        </div>
+      </div>
     </div>
   );
 }
