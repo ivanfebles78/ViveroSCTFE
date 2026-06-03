@@ -151,8 +151,14 @@ export default function ZoneEditor({ zonas, onSave, onCancel, saving = false }) 
       window.alert("Identificador vacío. Operación cancelada.");
       return;
     }
-    // Normalizamos: sin prefijo 'zona-' duplicado.
-    const apiId = cleaned.replace(/^zona-/, "");
+    // Normalizamos cualquier variante: "zona-9b", "zona9b", "9b", "ZONA_9B"
+    // se convierten todas a apiId="9b" / fullId="zona-9b". Sin esto,
+    // tecleando "zona9b" se acababa creando "zona-zona9b" (doble prefijo).
+    const apiId = cleaned.replace(/^zona[-_]?/i, "");
+    if (!apiId) {
+      window.alert("Identificador inválido. Operación cancelada.");
+      return;
+    }
     const fullId = `zona-${apiId}`;
 
     if (editedZonas.some((z) => z.id === fullId)) {

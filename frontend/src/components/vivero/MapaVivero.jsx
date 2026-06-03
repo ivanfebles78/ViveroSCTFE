@@ -11,7 +11,7 @@ const DEBUG_MAPA = false;
 // Cinturón de seguridad: si está en false, el editor está oculto para todos
 // (incluso admins). Para deshabilitar la funcionalidad por completo, ponerlo
 // a false y desplegar.
-const ENABLE_ZONE_EDITOR = true;
+const ENABLE_ZONE_EDITOR = false;
 
 const readUserFromStorage = () => {
   try {
