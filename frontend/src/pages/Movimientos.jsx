@@ -200,12 +200,15 @@ function buildStockKey(productoId, zona, tamano) {
 }
 
 function getProductDisplayName(p) {
-  // ESTRICTO: solo nombre_cientifico para no confundir con el común.
-  return (
-    p?.nombre_cientifico ||
-    p?.producto_nombre_cientifico ||
-    `Producto #${p?.id || p?.producto_id || "—"}`
-  );
+  // Muestra ambos nombres concatenados ("Latín — Común") cuando difieren,
+  // para que el usuario pueda distinguir entre productos con el mismo nombre
+  // genérico (p.ej. varias especies de "Acalifa"). Si solo hay uno, lo usa.
+  const cient = (p?.nombre_cientifico || p?.producto_nombre_cientifico || "").trim();
+  const natural = (p?.nombre_natural || "").trim();
+  if (cient && natural && cient.toLowerCase() !== natural.toLowerCase()) {
+    return `${cient} — ${natural}`;
+  }
+  return cient || natural || `Producto #${p?.id || p?.producto_id || "—"}`;
 }
 
 function isExternalDestination(value) {
