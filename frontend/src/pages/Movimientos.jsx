@@ -7,6 +7,7 @@ import {
 } from "../api/api";
 import { loadZonasFromServer } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
+import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
 
 // Fallback hardcoded por si la API de configuración de zonas falla.
 // La lista real se carga dinámicamente desde el servidor en el componente
@@ -344,13 +345,21 @@ function buildStockByProductZoneSize(movimientos) {
   return map;
 }
 
-function getFormErrors(form) {
+function getFormErrors(form, formatoConfig = null) {
   const errs = [];
 
   if (!form.producto_id) errs.push("Debes seleccionar un producto.");
-  if (!form.cantidad || Number(form.cantidad) <= 0) errs.push("La cantidad debe ser mayor que 0.");
+  // Cantidad: solo se exige si el formato lo muestra (no en fitosanitarios/fertilizantes).
+  if (formatoConfig?.showCantidad !== false) {
+    if (!form.cantidad || Number(form.cantidad) <= 0) errs.push("La cantidad debe ser mayor que 0.");
+  }
   if (!form.origen_tipo) errs.push("Debes seleccionar un origen.");
   if (!form.destino_tipo) errs.push("Debes seleccionar un destino.");
+
+  // Para fitosanitarios/fertilizantes, observaciones es obligatorio.
+  if (formatoConfig?.observacionesRequired && !(form.observaciones || "").trim()) {
+    errs.push("Para fitosanitarios y fertilizantes debes indicar la cantidad y el envase en observaciones.");
+  }
 
   if (form.origen_tipo === form.destino_tipo && form.origen_tipo !== "Vivero") {
     errs.push("No se permite mover entre el mismo origen y destino salvo traslado interno en vivero.");
@@ -869,6 +878,48 @@ function MovimientoModal({
 
   const selectedProducto = productos.find((p) => String(p.id) === String(form.producto_id));
 
+  // Configuración de control de tamaño/formato/cantidad según la categoría del
+  // producto seleccionado. Centraliza la lógica de:
+  //   - Plantas → "Tamaño" (Semillero/M12/M20/M35)
+  //   - Fitosanitarios/Fertilizantes → "Formato" (Polvo/Líquido/...) sin cantidad
+  //   - Áridos/Material Vegetal → "Formato" fijo "metros cúbicos"
+  //   - Ferretería (alambre/malla/cinturones) → "Formato" fijo "metros"
+  //   - Ferretería resto → "Formato" fijo "unidades"
+  const formatoConfig = useMemo(
+    () => getProductFormatoConfig(selectedProducto),
+    [selectedProducto]
+  );
+
+  // Para formato_fijo: cuando el usuario elige un producto que tiene formato
+  // fijo, autocompleta tamano_origen y tamano_destino al valor fijado.
+  // Para formato_dropdown: si el formato actual no es válido (p.ej. cambió de
+  // un producto Plantas a uno Fitosanitarios), lo resetea.
+  useEffect(() => {
+    if (!selectedProducto) return;
+
+    if (formatoConfig.kind === "formato_fijo") {
+      setForm((prev) => ({
+        ...prev,
+        tamano_origen: formatoConfig.value,
+        tamano_destino: formatoConfig.value,
+      }));
+      return;
+    }
+
+    // Para tamano (plantas) y formato_dropdown (fito/fert): si el valor actual
+    // no está entre las opciones válidas, resetea ambos.
+    const valid = new Set(formatoConfig.options || []);
+    setForm((prev) => {
+      const t_origen = valid.has(prev.tamano_origen) ? prev.tamano_origen : "";
+      const t_destino = valid.has(prev.tamano_destino) ? prev.tamano_destino : "";
+      if (t_origen === prev.tamano_origen && t_destino === prev.tamano_destino) {
+        return prev;
+      }
+      return { ...prev, tamano_origen: t_origen, tamano_destino: t_destino };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProducto?.id, formatoConfig.kind, formatoConfig.value]);
+
   // Lista de productos filtrada por el texto de búsqueda. Siempre incluye el
   // producto actualmente seleccionado aunque no encaje con la búsqueda,
   // para que el <select> no parezca vacío al elegir y empezar a tipear.
@@ -891,32 +942,39 @@ function MovimientoModal({
   const availableOriginZones = useMemo(() => {
     if (form.origen_tipo !== "Vivero" || !form.producto_id) return ZONAS;
 
+    // Opciones de formato/tamaño válidas para este producto (según su categoría).
+    const formatoOptions = getFormatoOptions(formatoConfig);
+
     return ZONAS.filter((zona) => {
       if (form.tamano_origen) {
         const key = buildStockKey(form.producto_id, zona, form.tamano_origen);
         return Number(stockByProductZoneSize.get(key) || 0) > 0;
       }
 
-      return TAMANOS.some((tamano) => {
+      return formatoOptions.some((tamano) => {
         const key = buildStockKey(form.producto_id, zona, tamano);
         return Number(stockByProductZoneSize.get(key) || 0) > 0;
       });
     });
-  }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize]);
+  }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize, formatoConfig]);
 
   const availableOriginSizes = useMemo(() => {
-    if (form.origen_tipo !== "Vivero" || !form.producto_id) return TAMANOS;
+    // Opciones según el producto (plantas: TAMANOS clásicos; fito/fert: formatos;
+    // áridos/ferretería: el valor fijo único).
+    const formatoOptions = getFormatoOptions(formatoConfig);
+
+    if (form.origen_tipo !== "Vivero" || !form.producto_id) return formatoOptions;
 
     // Si hay zona seleccionada, filtra tamaños con stock en esa zona concreta.
     // Si no, muestra tamaños con stock en CUALQUIER zona (para el picker multi-zona).
-    return TAMANOS.filter((tamano) => {
+    return formatoOptions.filter((tamano) => {
       if (form.zona_origen) {
         const key = buildStockKey(form.producto_id, form.zona_origen, tamano);
         return Number(stockByProductZoneSize.get(key) || 0) > 0;
       }
       return ZONAS.some((z) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, tamano)) || 0) > 0);
     });
-  }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize]);
+  }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize, formatoConfig]);
 
   useEffect(() => {
     if (
@@ -1130,7 +1188,7 @@ function MovimientoModal({
 
   // Devuelve { ok, payloads, errors } sin mutar estado
   const buildCurrentPayloads = () => {
-    const foundErrors = getFormErrors(form);
+    const foundErrors = getFormErrors(form, formatoConfig);
     let filtered = foundErrors;
 
     if (distribucionActiva) {
@@ -1189,11 +1247,17 @@ function MovimientoModal({
           cantidad: Number(q),
         }));
     } else {
+      // Para fitosanitarios/fertilizantes la cantidad no se muestra en el form.
+      // Internamente enviamos 1 (un "lote registrado"). El detalle real va en
+      // observaciones.
+      const cantidadFinal = formatoConfig.showCantidad
+        ? Number(form.cantidad)
+        : 1;
       payloads = [
         {
           ...basePayload,
           zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null,
-          cantidad: Number(form.cantidad),
+          cantidad: cantidadFinal,
         },
       ];
     }
@@ -1628,62 +1692,76 @@ function MovimientoModal({
                 )}
               </div>
 
-              {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ */}
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Cantidad {distribucionActiva ? "(calculada)" : ""}
-                </div>
-                {distribucionActiva ? (
-                  <div
-                    style={{
-                      ...inputStyle(),
-                      background: "#f1f5f9",
-                      color: "#0f172a",
-                      fontWeight: 900,
-                    }}
-                  >
-                    {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+              {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ.
+                  Para fitosanitarios/fertilizantes se OCULTA — la cantidad va en
+                  observaciones porque hay demasiadas presentaciones (5L, 500g, etc.). */}
+              {formatoConfig.showCantidad && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                    {formatoConfig.cantidadLabel || "Cantidad"} {distribucionActiva ? "(calculada)" : ""}
                   </div>
-                ) : (
-                  <input
-                    type="number"
-                    min={1}
-                    value={form.cantidad}
-                    onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                    style={inputStyle()}
-                    placeholder="0"
-                  />
-                )}
-              </div>
+                  {distribucionActiva ? (
+                    <div
+                      style={{
+                        ...inputStyle(),
+                        background: "#f1f5f9",
+                        color: "#0f172a",
+                        fontWeight: 900,
+                      }}
+                    >
+                      {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.cantidad}
+                      onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                      style={inputStyle()}
+                      placeholder="0"
+                    />
+                  )}
+                </div>
+              )}
 
               {form.origen_tipo === "Vivero" ? (
                 <>
-                  {/* Tamaño origen siempre visible */}
+                  {/* Tamaño / Formato origen — se adapta a la categoría del producto */}
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Tamaño origen
+                      {formatoConfig.label} origen
                     </div>
-                    <select
-                      value={form.tamano_origen}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
-                      }
-                      style={inputStyle()}
-                      disabled={!form.producto_id || availableOriginSizes.length === 0}
-                    >
-                      <option value="">
-                        {!form.producto_id
-                          ? "Primero selecciona un producto"
-                          : availableOriginSizes.length === 0
-                          ? "No hay tamaños disponibles"
-                          : "Seleccionar tamaño"}
-                      </option>
-                      {availableOriginSizes.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
+                    {formatoConfig.kind === "formato_fijo" ? (
+                      <input
+                        type="text"
+                        value={form.tamano_origen || formatoConfig.value}
+                        readOnly
+                        disabled
+                        style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
+                      />
+                    ) : (
+                      <select
+                        value={form.tamano_origen}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
+                        }
+                        style={inputStyle()}
+                        disabled={!form.producto_id || availableOriginSizes.length === 0}
+                      >
+                        <option value="">
+                          {!form.producto_id
+                            ? "Primero selecciona un producto"
+                            : availableOriginSizes.length === 0
+                            ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
+                            : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
                         </option>
-                      ))}
-                    </select>
+                        {availableOriginSizes.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
                   {/* Zona origen SOLO se muestra si no está el picker */}
@@ -1832,20 +1910,30 @@ function MovimientoModal({
 
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Tamaño destino
+                      {formatoConfig.label} destino
                     </div>
-                    <select
-                      value={form.tamano_destino}
-                      onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Seleccionar tamaño</option>
-                      {TAMANOS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
+                    {formatoConfig.kind === "formato_fijo" ? (
+                      <input
+                        type="text"
+                        value={form.tamano_destino || formatoConfig.value}
+                        readOnly
+                        disabled
+                        style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
+                      />
+                    ) : (
+                      <select
+                        value={form.tamano_destino}
+                        onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
+                        {getFormatoOptions(formatoConfig).map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 </>
               ) : null}
@@ -1968,7 +2056,7 @@ function MovimientoModal({
 
               <div style={{ gridColumn: "span 2" }}>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Observaciones
+                  Observaciones {formatoConfig.observacionesRequired && <span style={{ color: "#dc2626" }}>*</span>}
                 </div>
                 <textarea
                   value={form.observaciones}
@@ -1977,9 +2065,20 @@ function MovimientoModal({
                     ...inputStyle(),
                     minHeight: 100,
                     resize: "vertical",
+                    ...(formatoConfig.observacionesRequired && !form.observaciones?.trim()
+                      ? { borderColor: "#dc2626", background: "#fef2f2" }
+                      : {}),
                   }}
-                  placeholder="Información adicional del movimiento"
+                  placeholder={
+                    formatoConfig.observacionesHint ||
+                    "Información adicional del movimiento"
+                  }
                 />
+                {formatoConfig.observacionesHint && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", fontWeight: 700 }}>
+                    💡 {formatoConfig.observacionesHint}
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
 import { formatUsername } from "../utils/format";
+import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
 import {
   getPedidos,
   getProductos,
@@ -665,7 +666,13 @@ function PedidoModal({
 
     return safeArray(productos)
       .filter((p) => {
-        const tieneStock = TAMANOS.some((t) => (stockByProductSize.get(lineKey(p.id, t)) || 0) > 0);
+        // Las opciones válidas dependen de la categoría del producto:
+        // plantas → tamaños de maceta; fito/fert → formatos de polvo/líquido;
+        // áridos/material vegetal → "metros cúbicos"; ferretería → "metros" o "unidades".
+        const formatoOptions = getFormatoOptions(getProductFormatoConfig(p));
+        const tieneStock = formatoOptions.some(
+          (t) => (stockByProductSize.get(lineKey(p.id, t)) || 0) > 0
+        );
         if (!tieneStock) return false;
         if (!texto) return true;
 
@@ -691,7 +698,8 @@ function PedidoModal({
 
   const selectedProductSizes = useMemo(() => {
     if (!selectedProduct) return [];
-    return TAMANOS.map((tamano) => {
+    const formatoOptions = getFormatoOptions(getProductFormatoConfig(selectedProduct));
+    return formatoOptions.map((tamano) => {
       const key = lineKey(selectedProduct.id, tamano);
       const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
       const enCesta = Number(cart[key] || 0);
@@ -911,7 +919,8 @@ function PedidoModal({
             ) : (
               productosDisponibles.map((p) => {
                 const active = String(selectedProductId) === String(p.id);
-                const total = TAMANOS.reduce(
+                const formatoOptionsP = getFormatoOptions(getProductFormatoConfig(p));
+                const total = formatoOptionsP.reduce(
                   (acc, t) => acc + Math.max(0, Number(stockByProductSize.get(lineKey(p.id, t)) || 0)),
                   0
                 );
@@ -1510,7 +1519,7 @@ function PedidoDetalleCellOld({
             </div>
           ) : (
             productosDisponiblesParaEdicion.flatMap((prod) =>
-              TAMANOS.map((tam) => {
+              getFormatoOptions(getProductFormatoConfig(prod)).map((tam) => {
                 const key = lineKey(prod.id, tam);
                 const disponible = Number(prod._stockBySize?.[tam] || 0);
                 if (editQty[key] != null || disponible <= 0) return null;
@@ -2059,13 +2068,15 @@ export default function Pedidos() {
   const productosConStock = useMemo(() => {
     return productos
       .map((p) => {
+        // Opciones válidas por categoría del producto.
+        const formatoOptions = getFormatoOptions(getProductFormatoConfig(p));
         const stockBySize = {};
-        TAMANOS.forEach((t) => {
+        formatoOptions.forEach((t) => {
           stockBySize[t] = Math.max(0, Number(stockByProductSize.get(lineKey(p.id, t)) || 0));
         });
-        return { ...p, _stockBySize: stockBySize };
+        return { ...p, _stockBySize: stockBySize, _formatoOptions: formatoOptions };
       })
-      .filter((p) => TAMANOS.some((t) => Number(p._stockBySize[t] || 0) > 0));
+      .filter((p) => (p._formatoOptions || []).some((t) => Number(p._stockBySize[t] || 0) > 0));
   }, [productos, stockByProductSize]);
 
   const mapProdName = useMemo(() => {
