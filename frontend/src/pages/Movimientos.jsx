@@ -200,7 +200,12 @@ function buildStockKey(productoId, zona, tamano) {
 }
 
 function getProductDisplayName(p) {
-  return p?.nombre_cientifico || p?.producto_nombre_cientifico || p?.nombre || p?.nombre_natural || `Producto #${p?.id || p?.producto_id || "—"}`;
+  // ESTRICTO: solo nombre_cientifico para no confundir con el común.
+  return (
+    p?.nombre_cientifico ||
+    p?.producto_nombre_cientifico ||
+    `Producto #${p?.id || p?.producto_id || "—"}`
+  );
 }
 
 function isExternalDestination(value) {
@@ -1672,7 +1677,12 @@ function MovimientoModal({
                 />
                 <select
                   value={form.producto_id}
-                  onChange={(e) => setForm((prev) => ({ ...prev, producto_id: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, producto_id: e.target.value }));
+                    // Al elegir un producto, limpiamos la búsqueda para que el
+                    // select se colapse (size=1 cuando no hay búsqueda activa).
+                    if (e.target.value) setProductoSearch("");
+                  }}
                   style={inputStyle()}
                   size={productoSearch.trim() ? Math.min(Math.max(filteredProductos.length + 1, 4), 10) : 1}
                 >

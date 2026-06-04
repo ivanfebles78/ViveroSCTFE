@@ -26,11 +26,13 @@ function norm(s) {
 }
 
 function productScientificName(producto) {
-  return producto?.nombre_cientifico || producto?.nombre || producto?.nombre_natural || "-";
+  // ESTRICTO: solo nombre_cientifico. Sin fallback a nombre_natural para que
+  // la columna "Nombre científico" muestre siempre lo que dice la cabecera.
+  return producto?.nombre_cientifico || "-";
 }
 
 function productCommonName(producto) {
-  return producto?.nombre_natural || producto?.nombre_comun || "-";
+  return producto?.nombre_natural || "-";
 }
 
 function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
