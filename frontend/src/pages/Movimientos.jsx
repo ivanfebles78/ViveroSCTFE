@@ -10,32 +10,89 @@ import { formatUsername } from "../utils/format";
 import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
 import { formatCantidad } from "../utils/numero";
 
+// Zonas especiales (no numéricas) — dedicadas a categorías concretas.
+const ZONA_ALMACEN = "Almacén";
+const ZONA_COMPOSTAJE = "Zona Compostaje";
+const ZONAS_ESPECIALES = [ZONA_ALMACEN, ZONA_COMPOSTAJE];
+
 // Fallback hardcoded por si la API de configuración de zonas falla.
 // La lista real se carga dinámicamente desde el servidor en el componente
-// principal y se pasa como prop a los hijos.
+// principal y se pasa como prop a los hijos. Las zonas especiales siempre
+// están disponibles aunque el servidor no las devuelva.
 const DEFAULT_ZONAS = [
   "1", "2", "3a", "3b", "4a", "4b",
   "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11", "12",
+  ZONA_ALMACEN,
+  ZONA_COMPOSTAJE,
 ];
 
-// Orden natural: primero por número, luego por letra.
-// Ej: "1", "2", "3a", "3b", "4a", ..., "10a", "10b", "11", "12".
+// Orden natural: primero las zonas numéricas (por número, luego letra),
+// y al final las zonas especiales (Almacén, Zona Compostaje).
+// Ej: "1", "2", "3a", "3b", ..., "12", "Almacén", "Zona Compostaje".
 function naturalSortZonas(zonas) {
   const parse = (id) => {
     const s = String(id).trim();
     const m = s.match(/^(\d+)([a-z]*)$/i);
-    if (m) return [parseInt(m[1], 10), (m[2] || "").toLowerCase()];
-    return [Number.POSITIVE_INFINITY, s.toLowerCase()];
+    if (m) return [0, parseInt(m[1], 10), (m[2] || "").toLowerCase()];
+    // Zonas no numéricas (Almacén, Zona Compostaje) van al final, alfabéticas.
+    return [1, 0, s.toLowerCase()];
   };
   return [...zonas].sort((a, b) => {
-    const [na, la] = parse(a);
-    const [nb, lb] = parse(b);
+    const [ga, na, la] = parse(a);
+    const [gb, nb, lb] = parse(b);
+    if (ga !== gb) return ga - gb;
     if (na !== nb) return na - nb;
     return la.localeCompare(lb);
   });
 }
 
+// Garantiza que las zonas especiales aparezcan siempre, aunque el servidor
+// devuelva solo zonas numéricas. Mantiene el orden natural.
+function ensureZonasEspeciales(zonas) {
+  const set = new Set(zonas.map((z) => String(z).trim()));
+  const out = [...zonas];
+  for (const z of ZONAS_ESPECIALES) {
+    if (!set.has(z)) out.push(z);
+  }
+  return naturalSortZonas(out);
+}
+
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
+
+// Devuelve las zonas en las que un producto puede entrar/salir según su
+// categoría. Reglas:
+//   - Áridos / Material Vegetal → solo "Zona Compostaje".
+//   - Ferretería / Fitosanitario / Fertilizante → solo "Almacén".
+//   - Plantas (y cualquier otra categoría) → solo zonas numéricas.
+function getZonasPermitidasParaCategoria(producto, todasLasZonas) {
+  if (!producto) return safeArray(todasLasZonas);
+
+  const normalize = (s) =>
+    (s || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .trim();
+
+  const cat = normalize(producto.categoria);
+  const isCompostaje = cat === "arido" || cat === "aridos" || cat === "material vegetal" || cat === "materiales vegetales";
+  const isAlmacen =
+    cat === "ferreteria" ||
+    cat === "fitosanitario" || cat === "fitosanitarios" ||
+    cat === "fertilizante" || cat === "fertilizantes";
+
+  const zonas = safeArray(todasLasZonas);
+
+  if (isCompostaje) {
+    return zonas.filter((z) => normalize(z) === normalize(ZONA_COMPOSTAJE));
+  }
+  if (isAlmacen) {
+    return zonas.filter((z) => normalize(z) === normalize(ZONA_ALMACEN));
+  }
+  // Plantas y demás: zonas numéricas (excluir las especiales).
+  return zonas.filter((z) => !ZONAS_ESPECIALES.some((esp) => normalize(esp) === normalize(z)));
+}
 
 const ORIGENES = [
   "Empresa Externa",
@@ -444,6 +501,49 @@ function inputStyle() {
   };
 }
 
+// Contenedor visual de cada bloque del formulario (Origen/Destino, Producto,
+// Detalles del producto). Agrupa visualmente los campos relacionados.
+function sectionStyle() {
+  return {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 18,
+    background: "rgba(255,255,255,0.92)",
+    border: "1px solid rgba(15,23,42,0.08)",
+  };
+}
+
+function sectionTitleStyle() {
+  return {
+    fontSize: 13,
+    fontWeight: 900,
+    color: "#0f172a",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottom: "1px solid rgba(15,23,42,0.06)",
+  };
+}
+
+function fieldLabelStyle() {
+  return {
+    fontSize: 12,
+    fontWeight: 900,
+    color: "#64748b",
+    textTransform: "uppercase",
+    marginBottom: 6,
+  };
+}
+
+function gridTwoCols() {
+  return {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 14,
+  };
+}
+
 function closeButtonStyle() {
   return {
     padding: "10px 16px",
@@ -762,6 +862,9 @@ function MovimientoModal({
   const [batchPayloads, setBatchPayloads] = useState([]);
   // Texto de búsqueda libre para filtrar el desplegable de productos.
   const [productoSearch, setProductoSearch] = useState("");
+  // Filtros de categoría/subcategoría para acotar la lista de productos.
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -792,6 +895,8 @@ function MovimientoModal({
       setDistribucion({});
       setBatchPayloads([]);
       setProductoSearch("");
+      setFiltroCategoria("");
+      setFiltroSubcategoria("");
     }
   }, [open]);
 
@@ -929,14 +1034,59 @@ function MovimientoModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProducto?.id, formatoConfig.kind, formatoConfig.value]);
 
-  // Lista de productos filtrada por el texto de búsqueda. Siempre incluye el
-  // producto actualmente seleccionado aunque no encaje con la búsqueda,
-  // para que el <select> no parezca vacío al elegir y empezar a tipear.
+  // Si la subcategoría seleccionada no pertenece a la categoría actual, resetea.
+  useEffect(() => {
+    if (!filtroCategoria) {
+      if (filtroSubcategoria !== "") setFiltroSubcategoria("");
+      return;
+    }
+    const valid = new Set(
+      safeArray(productos)
+        .filter((p) => String(p?.categoria || "").trim() === filtroCategoria)
+        .map((p) => String(p?.subcategoria || "").trim())
+        .filter(Boolean)
+    );
+    if (filtroSubcategoria && !valid.has(filtroSubcategoria)) {
+      setFiltroSubcategoria("");
+    }
+  }, [filtroCategoria, productos, filtroSubcategoria]);
+
+  // Categorías únicas disponibles (extraídas de la lista de productos).
+  const categoriasDisponibles = useMemo(() => {
+    const set = new Set();
+    for (const p of safeArray(productos)) {
+      const c = String(p?.categoria || "").trim();
+      if (c) set.add(c);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos]);
+
+  // Subcategorías para la categoría seleccionada (vacía si no hay categoría).
+  const subcategoriasDisponibles = useMemo(() => {
+    if (!filtroCategoria) return [];
+    const set = new Set();
+    for (const p of safeArray(productos)) {
+      if (String(p?.categoria || "").trim() !== filtroCategoria) continue;
+      const s = String(p?.subcategoria || "").trim();
+      if (s) set.add(s);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos, filtroCategoria]);
+
+  // Lista de productos filtrada por categoría, subcategoría y texto de búsqueda.
+  // Siempre incluye el producto actualmente seleccionado aunque no encaje con
+  // los filtros, para que el <select> no parezca vacío al elegir y filtrar.
   const filteredProductos = useMemo(() => {
     const needle = productoSearch.trim().toLowerCase();
-    if (!needle) return productos;
-    return productos.filter((p) => {
+    return safeArray(productos).filter((p) => {
       if (String(p.id) === String(form.producto_id)) return true;
+      if (filtroCategoria && String(p?.categoria || "").trim() !== filtroCategoria) {
+        return false;
+      }
+      if (filtroSubcategoria && String(p?.subcategoria || "").trim() !== filtroSubcategoria) {
+        return false;
+      }
+      if (!needle) return true;
       const display = String(getProductDisplayName(p) || "").toLowerCase();
       const natural = String(p.nombre_natural || "").toLowerCase();
       const cientifico = String(p.nombre_cientifico || "").toLowerCase();
@@ -946,15 +1096,21 @@ function MovimientoModal({
         cientifico.includes(needle)
       );
     });
-  }, [productos, productoSearch, form.producto_id]);
+  }, [productos, productoSearch, form.producto_id, filtroCategoria, filtroSubcategoria]);
+
+  // Zonas permitidas por la categoría del producto seleccionado (sin tener en
+  // cuenta stock). Se usa tanto para origen como para destino.
+  const zonasPermitidasPorCategoria = useMemo(() => {
+    return getZonasPermitidasParaCategoria(selectedProducto, ZONAS);
+  }, [selectedProducto, ZONAS]);
 
   const availableOriginZones = useMemo(() => {
-    if (form.origen_tipo !== "Vivero" || !form.producto_id) return ZONAS;
+    if (form.origen_tipo !== "Vivero" || !form.producto_id) return zonasPermitidasPorCategoria;
 
     // Opciones de formato/tamaño válidas para este producto (según su categoría).
     const formatoOptions = getFormatoOptions(formatoConfig);
 
-    return ZONAS.filter((zona) => {
+    return zonasPermitidasPorCategoria.filter((zona) => {
       if (form.tamano_origen) {
         const key = buildStockKey(form.producto_id, zona, form.tamano_origen);
         return Number(stockByProductZoneSize.get(key) || 0) > 0;
@@ -965,7 +1121,7 @@ function MovimientoModal({
         return Number(stockByProductZoneSize.get(key) || 0) > 0;
       });
     });
-  }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize, formatoConfig]);
+  }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize, formatoConfig, zonasPermitidasPorCategoria]);
 
   const availableOriginSizes = useMemo(() => {
     // Opciones según el producto (plantas: TAMANOS clásicos; fito/fert: formatos;
@@ -975,15 +1131,17 @@ function MovimientoModal({
     if (form.origen_tipo !== "Vivero" || !form.producto_id) return formatoOptions;
 
     // Si hay zona seleccionada, filtra tamaños con stock en esa zona concreta.
-    // Si no, muestra tamaños con stock en CUALQUIER zona (para el picker multi-zona).
+    // Si no, muestra tamaños con stock en CUALQUIER zona permitida por la categoría.
     return formatoOptions.filter((tamano) => {
       if (form.zona_origen) {
         const key = buildStockKey(form.producto_id, form.zona_origen, tamano);
         return Number(stockByProductZoneSize.get(key) || 0) > 0;
       }
-      return ZONAS.some((z) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, tamano)) || 0) > 0);
+      return zonasPermitidasPorCategoria.some(
+        (z) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, tamano)) || 0) > 0
+      );
     });
-  }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize, formatoConfig]);
+  }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize, formatoConfig, zonasPermitidasPorCategoria]);
 
   useEffect(() => {
     if (
@@ -998,6 +1156,50 @@ function MovimientoModal({
       }));
     }
   }, [form.origen_tipo, form.zona_origen, availableOriginZones]);
+
+  // Para productos con zona forzada (Áridos/Material Vegetal → Compostaje,
+  // Ferretería/Fitosanitario/Fertilizante → Almacén), preselecciona
+  // automáticamente la única zona válida.
+  //   - destino_tipo=Vivero → siempre asigna (no depende de stock).
+  //   - origen_tipo=Vivero → solo si la zona aparece en availableOriginZones
+  //     (es decir, hay stock); si no, el otro efecto la habría limpiado al
+  //     instante y crearíamos un bucle visual.
+  useEffect(() => {
+    if (!selectedProducto) return;
+    if (zonasPermitidasPorCategoria.length !== 1) return;
+    const zonaUnica = zonasPermitidasPorCategoria[0];
+    setForm((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      if (
+        prev.origen_tipo === "Vivero" &&
+        prev.zona_origen !== zonaUnica &&
+        availableOriginZones.includes(zonaUnica)
+      ) {
+        next.zona_origen = zonaUnica;
+        changed = true;
+      }
+      if (prev.destino_tipo === "Vivero" && prev.zona_destino !== zonaUnica) {
+        next.zona_destino = zonaUnica;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [selectedProducto, zonasPermitidasPorCategoria, form.origen_tipo, form.destino_tipo, availableOriginZones]);
+
+  // Si la zona destino actual ya no está permitida para la categoría del
+  // producto (p.ej. el usuario eligió zona "5" y luego cambió a Áridos),
+  // la resetea.
+  useEffect(() => {
+    if (
+      form.destino_tipo === "Vivero" &&
+      form.zona_destino &&
+      selectedProducto &&
+      !zonasPermitidasPorCategoria.includes(form.zona_destino)
+    ) {
+      setForm((prev) => ({ ...prev, zona_destino: "" }));
+    }
+  }, [form.destino_tipo, form.zona_destino, selectedProducto, zonasPermitidasPorCategoria]);
 
   useEffect(() => {
     if (
@@ -1020,17 +1222,18 @@ function MovimientoModal({
   const distribucionActiva =
     form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen;
 
-  // Mapa { zona: cantidadDisponible } para el producto y tamaño seleccionados
+  // Mapa { zona: cantidadDisponible } para el producto y tamaño seleccionados.
+  // Solo considera zonas permitidas por la categoría del producto.
   const distribucionDisponible = useMemo(() => {
     if (!distribucionActiva) return {};
     const out = {};
-    for (const z of ZONAS) {
+    for (const z of zonasPermitidasPorCategoria) {
       const key = buildStockKey(form.producto_id, z, form.tamano_origen);
       const qty = Number(stockByProductZoneSize.get(key) || 0);
       if (qty > 0) out[z] = qty;
     }
     return out;
-  }, [distribucionActiva, form.producto_id, form.tamano_origen, stockByProductZoneSize]);
+  }, [distribucionActiva, form.producto_id, form.tamano_origen, stockByProductZoneSize, zonasPermitidasPorCategoria]);
 
   const totalDistribucion = useMemo(
     () => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0),
@@ -1595,99 +1798,409 @@ function MovimientoModal({
               </div>
             ) : null}
 
-            <div
-              style={{
-                marginTop: 18,
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 14,
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Origen
+            {/* === SECCIÓN 1: ORIGEN / DESTINO ============================== */}
+            <div style={sectionStyle()}>
+              <div style={sectionTitleStyle()}>Origen y destino</div>
+
+              <div style={gridTwoCols()}>
+                <div>
+                  <div style={fieldLabelStyle()}>Origen</div>
+                  <select
+                    value={form.origen_tipo}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        origen_tipo: e.target.value,
+                        destino_tipo: "",
+                        zona_origen: "",
+                        tamano_origen: "",
+                        zona_destino: "",
+                        tamano_destino: "",
+                        distrito_destino: "",
+                        barrio_destino: "",
+                        direccion_destino: "",
+                        cp_destino: "",
+                        prestamo: false,
+                      }))
+                    }
+                    style={inputStyle()}
+                  >
+                    <option value="">Seleccionar origen</option>
+                    {ORIGENES.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <select
-                  value={form.origen_tipo}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      origen_tipo: e.target.value,
-                      destino_tipo: "",
-                      zona_origen: "",
-                      tamano_origen: "",
-                      zona_destino: "",
-                      tamano_destino: "",
-                      distrito_destino: "",
-                      barrio_destino: "",
-                      direccion_destino: "",
-                      cp_destino: "",
-                      prestamo: false,
-                    }))
-                  }
-                  style={inputStyle()}
-                >
-                  <option value="">Seleccionar origen</option>
-                  {ORIGENES.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
+
+                <div>
+                  <div style={fieldLabelStyle()}>Destino</div>
+                  <select
+                    value={form.destino_tipo}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        destino_tipo: e.target.value,
+                        zona_destino: "",
+                        tamano_destino: "",
+                        distrito_destino: "",
+                        barrio_destino: "",
+                        direccion_destino: "",
+                        cp_destino: "",
+                        prestamo: false,
+                      }))
+                    }
+                    style={inputStyle()}
+                    disabled={!form.origen_tipo}
+                  >
+                    <option value="">Seleccionar destino</option>
+                    {allowedDestinos.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Zona origen (cuando origen=Vivero y no hay picker multi-zona) */}
+                {form.origen_tipo === "Vivero" && !distribucionActiva ? (
+                  <div>
+                    <div style={fieldLabelStyle()}>Zona origen</div>
+                    <select
+                      value={form.zona_origen}
+                      onChange={(e) => setForm((prev) => ({ ...prev, zona_origen: e.target.value }))}
+                      style={inputStyle()}
+                      disabled={!form.producto_id || availableOriginZones.length === 0}
+                    >
+                      <option value="">
+                        {!form.producto_id
+                          ? "Primero selecciona un producto"
+                          : availableOriginZones.length === 0
+                          ? "No hay zonas con stock para este producto"
+                          : "Seleccionar zona"}
+                      </option>
+                      {availableOriginZones.map((z) => (
+                        <option key={z} value={z}>
+                          {z}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                {/* Zona destino (cuando destino=Vivero) */}
+                {form.destino_tipo === "Vivero" ? (
+                  <div>
+                    <div style={fieldLabelStyle()}>Zona destino</div>
+                    <select
+                      value={form.zona_destino}
+                      onChange={(e) => setForm((prev) => ({ ...prev, zona_destino: e.target.value }))}
+                      style={inputStyle()}
+                      disabled={!form.producto_id || zonasPermitidasPorCategoria.length === 0}
+                    >
+                      <option value="">
+                        {!form.producto_id
+                          ? "Primero selecciona un producto"
+                          : zonasPermitidasPorCategoria.length === 0
+                          ? "No hay zonas permitidas para esta categoría"
+                          : "Seleccionar zona"}
+                      </option>
+                      {zonasPermitidasPorCategoria.map((z) => (
+                        <option key={z} value={z}>
+                          {z}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                {/* PICKER multi-zona: solo cuando origen=Vivero + producto + tamaño */}
+                {distribucionActiva ? (
+                  <div style={{ gridColumn: "span 2" }}>
+                    <div style={fieldLabelStyle()}>
+                      Distribución en el vivero — {form.tamano_origen}
+                    </div>
+                    <div
+                      style={{
+                        border: "1px solid rgba(15,23,42,0.10)",
+                        borderRadius: 14,
+                        background: "#fbfdff",
+                        padding: 12,
+                        display: "grid",
+                        gap: 8,
+                      }}
+                    >
+                      {Object.keys(distribucionDisponible).length === 0 ? (
+                        <div style={{ color: "#64748b", fontWeight: 700 }}>
+                          No hay stock de este producto en tamaño {form.tamano_origen}.
+                        </div>
+                      ) : (
+                        Object.entries(distribucionDisponible).map(([zona, disp]) => {
+                          const valor = distribucion[zona] ?? "";
+                          const invalid = Number(valor) > disp;
+                          return (
+                            <div
+                              key={zona}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "140px 1fr 110px",
+                                gap: 10,
+                                alignItems: "center",
+                                padding: "8px 10px",
+                                borderRadius: 10,
+                                background: "white",
+                                border: invalid
+                                  ? "1px solid rgba(239,68,68,0.30)"
+                                  : "1px solid rgba(15,23,42,0.06)",
+                              }}
+                            >
+                              <div style={{ fontWeight: 900, color: "#0f172a" }}>Zona {zona}</div>
+                              <div style={{ color: "#334155", fontWeight: 700 }}>
+                                Disponible: <span style={{ color: "#0f172a", fontWeight: 900 }}>{disp}</span>
+                              </div>
+                              <input
+                                type="number"
+                                min={0}
+                                max={disp}
+                                value={valor}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setDistribucion((prev) => {
+                                    const nx = { ...prev };
+                                    if (v === "" || Number(v) <= 0) delete nx[zona];
+                                    else nx[zona] = Math.min(Number(v), disp);
+                                    return nx;
+                                  });
+                                }}
+                                placeholder="0"
+                                style={{
+                                  padding: "8px 10px",
+                                  borderRadius: 10,
+                                  border: "1px solid rgba(15,23,42,0.12)",
+                                  fontWeight: 900,
+                                  textAlign: "center",
+                                  color: "#0f172a",
+                                }}
+                              />
+                            </div>
+                          );
+                        })
+                      )}
+                      <div
+                        style={{
+                          marginTop: 4,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "8px 4px",
+                          borderTop: "1px dashed rgba(15,23,42,0.10)",
+                        }}
+                      >
+                        <span style={{ color: "#64748b", fontWeight: 700 }}>
+                          {Object.keys(distribucion).filter((k) => Number(distribucion[k]) > 0).length} zona(s) seleccionada(s)
+                        </span>
+                        <span style={{ color: "#0f172a", fontWeight: 900 }}>Total: {totalDistribucion}</span>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
+                      Si eliges varias zonas, se creará un movimiento por cada una.
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Distrito / Barrio / Dirección (destino externo) */}
+                {isExternalDestination(form.destino_tipo) ? (
+                  <>
+                    <div>
+                      <div style={fieldLabelStyle()}>Distrito</div>
+                      <select
+                        value={form.distrito_destino}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            distrito_destino: e.target.value,
+                            barrio_destino: "",
+                          }))
+                        }
+                        style={inputStyle()}
+                      >
+                        <option value="">Seleccionar distrito</option>
+                        {Object.keys(DISTRITO_BARRIOS).map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div style={fieldLabelStyle()}>Barrio</div>
+                      <select
+                        value={form.barrio_destino}
+                        onChange={(e) => setForm((prev) => ({ ...prev, barrio_destino: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">Seleccionar barrio</option>
+                        {barriosDisponibles.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ gridColumn: "span 2" }}>
+                      <div style={fieldLabelStyle()}>Dirección</div>
+                      <input
+                        value={form.direccion_destino}
+                        onChange={(e) => setForm((prev) => ({ ...prev, direccion_destino: e.target.value }))}
+                        style={inputStyle()}
+                        placeholder="Introduce la dirección"
+                      />
+                    </div>
+                  </>
+                ) : null}
+
+                {/* Fecha disponibilidad (M35 en vivero) */}
+                {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" ? (
+                  <div style={{ gridColumn: "span 2" }}>
+                    <div style={fieldLabelStyle()}>
+                      Fecha de disponibilidad (opcional, tamaño M35)
+                    </div>
+                    <input
+                      type="date"
+                      value={form.fecha_disponibilidad}
+                      onChange={(e) => setForm((prev) => ({ ...prev, fecha_disponibilidad: e.target.value }))}
+                      style={inputStyle()}
+                    />
+                    <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
+                      Si se indica, el producto no estará disponible para movimientos hasta superar esta fecha. Debe ser futura y no posterior a la fecha de caducidad.
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Préstamo checkbox */}
+                {form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? (
+                  <div style={{ gridColumn: "span 2" }}>
+                    <label
+                      style={{
+                        display: "flex",
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "12px 14px",
+                        borderRadius: 14,
+                        border: "1px solid rgba(59,130,246,0.18)",
+                        background: "rgba(59,130,246,0.08)",
+                        fontWeight: 800,
+                        color: "#1e3a8a",
+                        cursor: "pointer",
+                        userSelect: "none",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!form.prestamo}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            prestamo: e.target.checked,
+                          }))
+                        }
+                        style={{
+                          width: 18,
+                          height: 18,
+                          margin: 0,
+                          flexShrink: 0,
+                          cursor: "pointer",
+                          accentColor: "#1d4ed8",
+                        }}
+                      />
+                      <span style={{ lineHeight: 1, paddingTop: 1 }}>Marcar como préstamo</span>
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* === SECCIÓN 2: PRODUCTO ====================================== */}
+            <div style={sectionStyle()}>
+              <div style={sectionTitleStyle()}>Producto</div>
+
+              {/* Categoría + Subcategoría + Buscador, todos en la misma línea */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1.4fr",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div style={fieldLabelStyle()}>Categoría</div>
+                  <select
+                    value={filtroCategoria}
+                    onChange={(e) => setFiltroCategoria(e.target.value)}
+                    style={inputStyle()}
+                  >
+                    <option value="">Todas</option>
+                    {categoriasDisponibles.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={fieldLabelStyle()}>Subcategoría</div>
+                  <select
+                    value={filtroSubcategoria}
+                    onChange={(e) => setFiltroSubcategoria(e.target.value)}
+                    style={inputStyle()}
+                    disabled={!filtroCategoria || subcategoriasDisponibles.length === 0}
+                  >
+                    <option value="">
+                      {!filtroCategoria
+                        ? "Elige primero una categoría"
+                        : subcategoriasDisponibles.length === 0
+                        ? "Sin subcategorías"
+                        : "Todas"}
                     </option>
-                  ))}
-                </select>
+                    {subcategoriasDisponibles.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={fieldLabelStyle()}>Buscar producto</div>
+                  <input
+                    type="search"
+                    placeholder="🔍  Nombre científico o natural..."
+                    value={productoSearch}
+                    onChange={(e) => setProductoSearch(e.target.value)}
+                    style={inputStyle()}
+                  />
+                </div>
               </div>
 
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Destino
-                </div>
-                <select
-                  value={form.destino_tipo}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      destino_tipo: e.target.value,
-                      zona_destino: "",
-                      tamano_destino: "",
-                      distrito_destino: "",
-                      barrio_destino: "",
-                      direccion_destino: "",
-                      cp_destino: "",
-                      prestamo: false,
-                    }))
-                  }
-                  style={inputStyle()}
-                  disabled={!form.origen_tipo}
-                >
-                  <option value="">Seleccionar destino</option>
-                  {allowedDestinos.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Producto
-                </div>
-                <input
-                  type="search"
-                  placeholder="🔍  Buscar por nombre científico o natural..."
-                  value={productoSearch}
-                  onChange={(e) => setProductoSearch(e.target.value)}
-                  style={{ ...inputStyle(), marginBottom: 6 }}
-                />
+              {/* Select de producto (en línea aparte, ocupando todo el ancho) */}
+              <div style={{ marginTop: 12 }}>
                 <select
                   value={form.producto_id}
                   onChange={(e) => {
                     setForm((prev) => ({ ...prev, producto_id: e.target.value }));
-                    // Al elegir un producto, limpiamos la búsqueda para que el
-                    // select se colapse (size=1 cuando no hay búsqueda activa).
                     if (e.target.value) setProductoSearch("");
                   }}
                   style={inputStyle()}
-                  size={productoSearch.trim() ? Math.min(Math.max(filteredProductos.length + 1, 4), 10) : 1}
+                  size={
+                    productoSearch.trim() || filtroCategoria || filtroSubcategoria
+                      ? Math.min(Math.max(filteredProductos.length + 1, 4), 10)
+                      : 1
+                  }
                 >
                   <option value="">Seleccionar producto</option>
                   {filteredProductos.map((p) => (
@@ -1696,309 +2209,103 @@ function MovimientoModal({
                     </option>
                   ))}
                 </select>
-                {productoSearch.trim() && (
+                {(productoSearch.trim() || filtroCategoria || filtroSubcategoria) && (
                   <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, fontWeight: 700 }}>
                     {filteredProductos.length === 0
-                      ? "Ningún producto coincide con la búsqueda."
+                      ? "Ningún producto coincide con los filtros."
                       : `${filteredProductos.length} ${filteredProductos.length === 1 ? "producto coincide" : "productos coinciden"}.`}
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ.
-                  Para fitosanitarios/fertilizantes (kind=formato_dropdown) la cantidad
-                  se renderiza INLINE junto al formato (más abajo en este JSX) para
-                  que aparezca pegada al Formato y no en el primer cuadro del formulario.
-                  Aquí solo se renderiza para plantas y formato_fijo. */}
-              {formatoConfig.showCantidad && formatoConfig.kind !== "formato_dropdown" && (
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                    {formatoConfig.cantidadLabel || "Cantidad"} {distribucionActiva ? "(calculada)" : ""}
-                  </div>
-                  {distribucionActiva ? (
-                    <div
-                      style={{
-                        ...inputStyle(),
-                        background: "#f1f5f9",
-                        color: "#0f172a",
-                        fontWeight: 900,
-                      }}
-                    >
-                      {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
-                    </div>
-                  ) : (
-                    <input
-                      type="number"
-                      min={formatoConfig.allowDecimals ? "0.001" : 1}
-                      step={formatoConfig.allowDecimals ? "0.001" : "1"}
-                      value={form.cantidad}
-                      onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                      style={inputStyle()}
-                      placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
-                    />
-                  )}
-                </div>
-              )}
+            {/* === SECCIÓN 3: DETALLES DEL PRODUCTO ========================= */}
+            {form.producto_id ? (
+              <div style={sectionStyle()}>
+                <div style={sectionTitleStyle()}>Detalles del producto</div>
 
-              {form.origen_tipo === "Vivero" ? (
-                <>
-                  {/* Tamaño / Formato origen — se adapta a la categoría del producto */}
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      {formatoConfig.label} origen
-                    </div>
-                    {formatoConfig.kind === "formato_fijo" ? (
-                      <input
-                        type="text"
-                        value={form.tamano_origen || formatoConfig.value}
-                        readOnly
-                        disabled
-                        style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
-                      />
-                    ) : (
-                      <select
-                        value={form.tamano_origen}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
-                        }
-                        style={inputStyle()}
-                        disabled={!form.producto_id || availableOriginSizes.length === 0}
-                      >
-                        <option value="">
-                          {!form.producto_id
-                            ? "Primero selecciona un producto"
-                            : availableOriginSizes.length === 0
-                            ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
-                            : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
-                        </option>
-                        {availableOriginSizes.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Cantidad inline para fitosanitarios/fertilizantes cuando origen=Vivero.
-                      Aparece sólo cuando hay formato origen seleccionado Y destino NO es Vivero
-                      (si destino es Vivero, la cantidad inline aparece en el bloque destino).
-                      Esto evita duplicar el input en traslados internos. */}
-                  {formatoConfig.kind === "formato_dropdown" &&
-                    formatoConfig.showCantidad &&
-                    form.tamano_origen &&
-                    form.destino_tipo !== "Vivero" &&
-                    (() => {
-                      const cantidadLabelDinamico =
-                        typeof formatoConfig.getCantidadLabel === "function"
-                          ? formatoConfig.getCantidadLabel(form.tamano_origen)
-                          : formatoConfig.cantidadLabel || "Cantidad";
-                      return (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                            {cantidadLabelDinamico}
-                          </div>
-                          <input
-                            type="number"
-                            min={formatoConfig.allowDecimals ? "0.001" : 1}
-                            step={formatoConfig.allowDecimals ? "0.001" : "1"}
-                            value={form.cantidad}
-                            onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                            style={inputStyle()}
-                            placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
-                          />
-                        </div>
-                      );
-                    })()}
-
-                  {/* Zona origen SOLO se muestra si no está el picker */}
-                  {!distribucionActiva ? (
+                <div style={gridTwoCols()}>
+                  {/* Formato/Tamaño origen — solo si origen=Vivero */}
+                  {form.origen_tipo === "Vivero" ? (
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                        Zona origen
-                      </div>
-                      <select
-                        value={form.zona_origen}
-                        onChange={(e) => setForm((prev) => ({ ...prev, zona_origen: e.target.value }))}
-                        style={inputStyle()}
-                        disabled={!form.producto_id || availableOriginZones.length === 0}
-                      >
-                        <option value="">
-                          {!form.producto_id
-                            ? "Primero selecciona un producto"
-                            : availableOriginZones.length === 0
-                            ? "No hay zonas con stock para este producto"
-                            : "Seleccionar zona"}
-                        </option>
-                        {availableOriginZones.map((z) => (
-                          <option key={z} value={z}>
-                            {z}
+                      <div style={fieldLabelStyle()}>{formatoConfig.label} origen</div>
+                      {formatoConfig.kind === "formato_fijo" ? (
+                        <input
+                          type="text"
+                          value={form.tamano_origen || formatoConfig.value}
+                          readOnly
+                          disabled
+                          style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
+                        />
+                      ) : (
+                        <select
+                          value={form.tamano_origen}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
+                          }
+                          style={inputStyle()}
+                          disabled={!form.producto_id || availableOriginSizes.length === 0}
+                        >
+                          <option value="">
+                            {availableOriginSizes.length === 0
+                              ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
+                              : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
                           </option>
-                        ))}
-                      </select>
+                          {availableOriginSizes.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   ) : null}
-                </>
-              ) : null}
 
-              {/* PICKER multi-zona: solo cuando origen=Vivero + producto + tamaño */}
-              {distribucionActiva ? (
-                <div style={{ gridColumn: "span 2" }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                    Distribución en el vivero — {form.tamano_origen}
-                  </div>
-                  <div
-                    style={{
-                      border: "1px solid rgba(15,23,42,0.10)",
-                      borderRadius: 14,
-                      background: "#fbfdff",
-                      padding: 12,
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    {Object.keys(distribucionDisponible).length === 0 ? (
-                      <div style={{ color: "#64748b", fontWeight: 700 }}>
-                        No hay stock de este producto en tamaño {form.tamano_origen}.
-                      </div>
-                    ) : (
-                      Object.entries(distribucionDisponible).map(([zona, disp]) => {
-                        const valor = distribucion[zona] ?? "";
-                        const invalid = Number(valor) > disp;
-                        return (
-                          <div
-                            key={zona}
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "100px 1fr 110px",
-                              gap: 10,
-                              alignItems: "center",
-                              padding: "8px 10px",
-                              borderRadius: 10,
-                              background: "white",
-                              border: invalid
-                                ? "1px solid rgba(239,68,68,0.30)"
-                                : "1px solid rgba(15,23,42,0.06)",
-                            }}
-                          >
-                            <div style={{ fontWeight: 900, color: "#0f172a" }}>Zona {zona}</div>
-                            <div style={{ color: "#334155", fontWeight: 700 }}>
-                              Disponible: <span style={{ color: "#0f172a", fontWeight: 900 }}>{disp}</span>
-                            </div>
-                            <input
-                              type="number"
-                              min={0}
-                              max={disp}
-                              value={valor}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setDistribucion((prev) => {
-                                  const nx = { ...prev };
-                                  if (v === "" || Number(v) <= 0) delete nx[zona];
-                                  else nx[zona] = Math.min(Number(v), disp);
-                                  return nx;
-                                });
-                              }}
-                              placeholder="0"
-                              style={{
-                                padding: "8px 10px",
-                                borderRadius: 10,
-                                border: "1px solid rgba(15,23,42,0.12)",
-                                fontWeight: 900,
-                                textAlign: "center",
-                                color: "#0f172a",
-                              }}
-                            />
-                          </div>
-                        );
-                      })
-                    )}
-                    <div
-                      style={{
-                        marginTop: 4,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "8px 4px",
-                        borderTop: "1px dashed rgba(15,23,42,0.10)",
-                      }}
-                    >
-                      <span style={{ color: "#64748b", fontWeight: 700 }}>
-                        {Object.keys(distribucion).filter((k) => Number(distribucion[k]) > 0).length} zona(s) seleccionada(s)
-                      </span>
-                      <span style={{ color: "#0f172a", fontWeight: 900 }}>Total: {totalDistribucion}</span>
+                  {/* Formato/Tamaño destino — solo si destino=Vivero */}
+                  {form.destino_tipo === "Vivero" ? (
+                    <div>
+                      <div style={fieldLabelStyle()}>{formatoConfig.label} destino</div>
+                      {formatoConfig.kind === "formato_fijo" ? (
+                        <input
+                          type="text"
+                          value={form.tamano_destino || formatoConfig.value}
+                          readOnly
+                          disabled
+                          style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
+                        />
+                      ) : (
+                        <select
+                          value={form.tamano_destino}
+                          onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
+                          style={inputStyle()}
+                        >
+                          <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
+                          {getFormatoOptions(formatoConfig).map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
-                  </div>
-                  <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
-                    Si eliges varias zonas, se creará un movimiento por cada una.
-                  </div>
-                </div>
-              ) : null}
+                  ) : null}
 
-              {form.destino_tipo === "Vivero" ? (
-                <>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Zona destino
-                    </div>
-                    <select
-                      value={form.zona_destino}
-                      onChange={(e) => setForm((prev) => ({ ...prev, zona_destino: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Seleccionar zona</option>
-                      {ZONAS.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      {formatoConfig.label} destino
-                    </div>
-                    {formatoConfig.kind === "formato_fijo" ? (
-                      <input
-                        type="text"
-                        value={form.tamano_destino || formatoConfig.value}
-                        readOnly
-                        disabled
-                        style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
-                      />
-                    ) : (
-                      <select
-                        value={form.tamano_destino}
-                        onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
-                        style={inputStyle()}
-                      >
-                        <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
-                        {getFormatoOptions(formatoConfig).map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Cantidad inline para fitosanitarios/fertilizantes:
-                      aparece JUSTO DESPUÉS del selector de Formato y SOLO
-                      cuando ya se ha elegido un formato. La etiqueta cambia
-                      dinámicamente entre "Litros" (Líquido) y "Kg" (resto). */}
+                  {/* Kg / Litros para fitosanitarios/fertilizantes — etiqueta dinámica.
+                      Usa el formato de destino si destino=Vivero, sino el de origen. */}
                   {formatoConfig.kind === "formato_dropdown" &&
                     formatoConfig.showCantidad &&
-                    form.tamano_destino && (() => {
+                    (form.tamano_destino || form.tamano_origen) && (() => {
+                      const formatoActivo = form.destino_tipo === "Vivero"
+                        ? form.tamano_destino
+                        : form.tamano_origen;
+                      if (!formatoActivo) return null;
                       const cantidadLabelDinamico =
                         typeof formatoConfig.getCantidadLabel === "function"
-                          ? formatoConfig.getCantidadLabel(form.tamano_destino)
+                          ? formatoConfig.getCantidadLabel(formatoActivo)
                           : formatoConfig.cantidadLabel || "Cantidad";
                       return (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                            {cantidadLabelDinamico}
-                          </div>
+                        <div style={{ gridColumn: "span 2" }}>
+                          <div style={fieldLabelStyle()}>{cantidadLabelDinamico}</div>
                           <input
                             type="number"
                             min={formatoConfig.allowDecimals ? "0.001" : 1}
@@ -2007,157 +2314,72 @@ function MovimientoModal({
                             onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
                             style={inputStyle()}
                             placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
-                            autoFocus
                           />
                         </div>
                       );
                     })()}
-                </>
-              ) : null}
 
-              {isExternalDestination(form.destino_tipo) ? (
-                <>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Distrito
+                  {/* Cantidad para plantas y formato_fijo (NO fitosanitarios) */}
+                  {formatoConfig.showCantidad && formatoConfig.kind !== "formato_dropdown" && (
+                    <div style={{ gridColumn: "span 2" }}>
+                      <div style={fieldLabelStyle()}>
+                        {formatoConfig.cantidadLabel || "Cantidad"} {distribucionActiva ? "(calculada)" : ""}
+                      </div>
+                      {distribucionActiva ? (
+                        <div
+                          style={{
+                            ...inputStyle(),
+                            background: "#f1f5f9",
+                            color: "#0f172a",
+                            fontWeight: 900,
+                          }}
+                        >
+                          {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          min={formatoConfig.allowDecimals ? "0.001" : 1}
+                          step={formatoConfig.allowDecimals ? "0.001" : "1"}
+                          value={form.cantidad}
+                          onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                          style={inputStyle()}
+                          placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
+                        />
+                      )}
                     </div>
-                    <select
-                      value={form.distrito_destino}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          distrito_destino: e.target.value,
-                          barrio_destino: "",
-                        }))
-                      }
-                      style={inputStyle()}
-                    >
-                      <option value="">Seleccionar distrito</option>
-                      {Object.keys(DISTRITO_BARRIOS).map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  )}
 
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Barrio
-                    </div>
-                    <select
-                      value={form.barrio_destino}
-                      onChange={(e) => setForm((prev) => ({ ...prev, barrio_destino: e.target.value }))}
-                      style={inputStyle()}
-                    >
-                      <option value="">Seleccionar barrio</option>
-                      {barriosDisponibles.map((b) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
+                  {/* Observaciones */}
                   <div style={{ gridColumn: "span 2" }}>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      Dirección
+                    <div style={fieldLabelStyle()}>
+                      Observaciones {formatoConfig.observacionesRequired && <span style={{ color: "#dc2626" }}>*</span>}
                     </div>
-                    <input
-                      value={form.direccion_destino}
-                      onChange={(e) => setForm((prev) => ({ ...prev, direccion_destino: e.target.value }))}
-                      style={inputStyle()}
-                      placeholder="Introduce la dirección"
-                    />
-                  </div>
-                </>
-              ) : null}
-
-              {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" ? (
-                <div style={{ gridColumn: "span 2" }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                    Fecha de disponibilidad (opcional, tamaño M35)
-                  </div>
-                  <input
-                    type="date"
-                    value={form.fecha_disponibilidad}
-                    onChange={(e) => setForm((prev) => ({ ...prev, fecha_disponibilidad: e.target.value }))}
-                    style={inputStyle()}
-                  />
-                  <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
-                    Si se indica, el producto no estará disponible para movimientos hasta superar esta fecha. Debe ser futura y no posterior a la fecha de caducidad.
-                  </div>
-                </div>
-              ) : null}
-
-              {form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? (
-                <div style={{ gridColumn: "span 2" }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "12px 14px",
-                      borderRadius: 14,
-                      border: "1px solid rgba(59,130,246,0.18)",
-                      background: "rgba(59,130,246,0.08)",
-                      fontWeight: 800,
-                      color: "#1e3a8a",
-                      cursor: "pointer",
-                      userSelect: "none",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={!!form.prestamo}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          prestamo: e.target.checked,
-                        }))
-                      }
+                    <textarea
+                      value={form.observaciones}
+                      onChange={(e) => setForm((prev) => ({ ...prev, observaciones: e.target.value }))}
                       style={{
-                        width: 18,
-                        height: 18,
-                        margin: 0,
-                        flexShrink: 0,
-                        cursor: "pointer",
-                        accentColor: "#1d4ed8",
+                        ...inputStyle(),
+                        minHeight: 100,
+                        resize: "vertical",
+                        ...(formatoConfig.observacionesRequired && !form.observaciones?.trim()
+                          ? { borderColor: "#dc2626", background: "#fef2f2" }
+                          : {}),
                       }}
+                      placeholder={
+                        formatoConfig.observacionesHint ||
+                        "Información adicional del movimiento"
+                      }
                     />
-                    <span style={{ lineHeight: 1, paddingTop: 1 }}>Marcar como préstamo</span>
-                  </label>
-                </div>
-              ) : null}
-
-              <div style={{ gridColumn: "span 2" }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                  Observaciones {formatoConfig.observacionesRequired && <span style={{ color: "#dc2626" }}>*</span>}
-                </div>
-                <textarea
-                  value={form.observaciones}
-                  onChange={(e) => setForm((prev) => ({ ...prev, observaciones: e.target.value }))}
-                  style={{
-                    ...inputStyle(),
-                    minHeight: 100,
-                    resize: "vertical",
-                    ...(formatoConfig.observacionesRequired && !form.observaciones?.trim()
-                      ? { borderColor: "#dc2626", background: "#fef2f2" }
-                      : {}),
-                  }}
-                  placeholder={
-                    formatoConfig.observacionesHint ||
-                    "Información adicional del movimiento"
-                  }
-                />
-                {formatoConfig.observacionesHint && (
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", fontWeight: 700 }}>
-                    💡 {formatoConfig.observacionesHint}
+                    {formatoConfig.observacionesHint && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", fontWeight: 700 }}>
+                        💡 {formatoConfig.observacionesHint}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
 
           <div
@@ -2661,7 +2883,7 @@ export default function Movimientos() {
   // (1, 2, 3a, 3b, ..., 10a, 10b, 11, 12) independientemente del orden con
   // que vengan del servidor.
   const [zonasDisponibles, setZonasDisponibles] = useState(() =>
-    naturalSortZonas(DEFAULT_ZONAS)
+    ensureZonasEspeciales(DEFAULT_ZONAS)
   );
 
   useEffect(() => {
@@ -2682,12 +2904,14 @@ export default function Movimientos() {
             return true;
           });
           if (unique.length > 0) {
-            setZonasDisponibles(naturalSortZonas(unique));
+            // ensureZonasEspeciales añade Almacén y Zona Compostaje si no
+            // vienen del servidor, garantizando que estén siempre disponibles.
+            setZonasDisponibles(ensureZonasEspeciales(unique));
           }
         }
       })
       .catch(() => {
-        // Mantén el fallback estático (ya ordenado).
+        // Mantén el fallback estático (ya ordenado, con zonas especiales).
       });
     return () => {
       cancelled = true;
