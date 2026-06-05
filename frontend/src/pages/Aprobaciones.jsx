@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
 import { getPedidos, aprobarPedido, denegarPedido } from "../api/api";
 import { formatUsername } from "../utils/format";
+import { formatCantidad } from "../utils/numero";
 
 const ESTADO_FILTERS = [
   { value: "TODOS", label: "Todos" },
@@ -292,10 +293,10 @@ function DetallePedidoModal({ pedido, onClose }) {
                             `Producto #${it.producto_id}`}
                         </td>
                         <td style={tdStyle()}>{it.tamano || "—"}</td>
-                        <td style={{ ...tdStyle(), fontWeight: 900 }}>{cantidad}</td>
-                        <td style={{ ...tdStyle(), color: "#065f46", fontWeight: 900 }}>{servida}</td>
+                        <td style={{ ...tdStyle(), fontWeight: 900 }}>{formatCantidad(cantidad) || "0"}</td>
+                        <td style={{ ...tdStyle(), color: "#065f46", fontWeight: 900 }}>{formatCantidad(servida) || "0"}</td>
                         <td style={{ ...tdStyle(), color: pendiente > 0 ? "#92400e" : "#64748b", fontWeight: 900 }}>
-                          {pendiente}
+                          {formatCantidad(pendiente) || "0"}
                         </td>
                       </tr>
                     );

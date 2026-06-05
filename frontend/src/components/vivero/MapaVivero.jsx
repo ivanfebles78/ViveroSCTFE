@@ -6,6 +6,7 @@ import { getMe, getZonaItems } from "../../api/api";
 import zonasDefault from "./zonasConfig";
 import ZoneEditor from "./ZoneEditor";
 import { loadZonasFromServer, saveZonasToServer } from "./zonesStorage";
+import { formatCantidad } from "../../utils/numero";
 
 const DEBUG_MAPA = false;
 // Cinturón de seguridad: si está en false, el editor está oculto para todos
@@ -185,7 +186,7 @@ export default function MapaVivero() {
                       "Producto"}
                   </strong>
                   <br />
-                  Cantidad: {item.cantidad || item.total || 0}
+                  Cantidad: {formatCantidad(item.cantidad || item.total || 0) || "0"}
                   {item.tamano && (
                     <>
                       <br />

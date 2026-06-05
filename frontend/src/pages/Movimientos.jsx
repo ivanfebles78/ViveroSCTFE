@@ -8,6 +8,7 @@ import {
 import { loadZonasFromServer } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
 import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
+import { formatCantidad } from "../utils/numero";
 
 // Fallback hardcoded por si la API de configuración de zonas falla.
 // La lista real se carga dinámicamente desde el servidor en el componente
@@ -703,7 +704,7 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
                           {it.producto_nombre || `Producto #${it.producto_id}`}
                         </div>
                         <div style={{ color: "#64748b", fontWeight: 800 }}>
-                          Tamaño: {it.tamano || "—"} · Cantidad: {it.cantidad || 0}
+                          Tamaño: {it.tamano || "—"} · Cantidad: {formatCantidad(it.cantidad) || "0"}
                         </div>
                       </div>
                     ))}
@@ -1255,11 +1256,10 @@ function MovimientoModal({
           cantidad: Number(q),
         }));
     } else {
-      // Para fitosanitarios/fertilizantes la cantidad no se muestra en el form.
-      // Internamente enviamos 1 (un "lote registrado"). El detalle real va en
-      // observaciones.
+      // Cantidad: parseFloat para soportar decimales (fitosanitarios/fertilizantes
+      // en litros o kilos pueden ser 0.5, 2.5, etc.).
       const cantidadFinal = formatoConfig.showCantidad
-        ? Number(form.cantidad)
+        ? parseFloat(form.cantidad)
         : 1;
       payloads = [
         {
@@ -1495,7 +1495,7 @@ function MovimientoModal({
                               {linea.producto_nombre || `Producto #${linea.producto_id}`}
                             </div>
                             <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700 }}>
-                              Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}
+                              Tamaño: {linea.tamano || "—"} · Cantidad: {formatCantidad(linea.cantidad) || "0"}
                               {disabled
                                 ? linea._razon_bloqueo === "ya_en_lote"
                                   ? ` · En el lote (${linea._cantidad_en_lote})`
@@ -1706,36 +1706,47 @@ function MovimientoModal({
               </div>
 
               {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ.
-                  Para fitosanitarios/fertilizantes se OCULTA — la cantidad va en
-                  observaciones porque hay demasiadas presentaciones (5L, 500g, etc.). */}
-              {formatoConfig.showCantidad && (
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                    {formatoConfig.cantidadLabel || "Cantidad"} {distribucionActiva ? "(calculada)" : ""}
-                  </div>
-                  {distribucionActiva ? (
-                    <div
-                      style={{
-                        ...inputStyle(),
-                        background: "#f1f5f9",
-                        color: "#0f172a",
-                        fontWeight: 900,
-                      }}
-                    >
-                      {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                  Para fitosanitarios/fertilizantes la etiqueta cambia dinámicamente
+                  según el formato seleccionado (Líquido → Litros, otros → Kg). */}
+              {formatoConfig.showCantidad && (() => {
+                // Etiqueta dinámica si el formatoConfig provee getCantidadLabel.
+                // El "formato actual" es el destino si existe, si no el origen.
+                const formatoActual = form.tamano_destino || form.tamano_origen || "";
+                const cantidadLabelDinamico =
+                  typeof formatoConfig.getCantidadLabel === "function"
+                    ? formatoConfig.getCantidadLabel(formatoActual)
+                    : formatoConfig.cantidadLabel || "Cantidad";
+                const stepDecimal = formatoConfig.allowDecimals ? "0.001" : "1";
+                return (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                      {cantidadLabelDinamico} {distribucionActiva ? "(calculada)" : ""}
                     </div>
-                  ) : (
-                    <input
-                      type="number"
-                      min={1}
-                      value={form.cantidad}
-                      onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                      style={inputStyle()}
-                      placeholder="0"
-                    />
-                  )}
-                </div>
-              )}
+                    {distribucionActiva ? (
+                      <div
+                        style={{
+                          ...inputStyle(),
+                          background: "#f1f5f9",
+                          color: "#0f172a",
+                          fontWeight: 900,
+                        }}
+                      >
+                        {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        min={formatoConfig.allowDecimals ? "0.001" : 1}
+                        step={stepDecimal}
+                        value={form.cantidad}
+                        onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                        style={inputStyle()}
+                        placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
+                      />
+                    )}
+                  </div>
+                );
+              })()}
 
               {form.origen_tipo === "Vivero" ? (
                 <>
@@ -2168,7 +2179,7 @@ function MovimientoModal({
 
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 900 }}>Cantidad</div>
-                    <div style={{ fontWeight: 800 }}>{form.cantidad || "—"}</div>
+                    <div style={{ fontWeight: 800 }}>{form.cantidad ? formatCantidad(form.cantidad) : "—"}</div>
                   </div>
 
                   <div>
@@ -2220,7 +2231,7 @@ function MovimientoModal({
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ fontWeight: 900, color: "white" }}>
                     Lote: {batchPayloads.length} línea{batchPayloads.length === 1 ? "" : "s"} ·{" "}
-                    Total unidades: {batchPayloads.reduce((s, p) => s + Number(p.cantidad || 0), 0)}
+                    Total unidades: {formatCantidad(batchPayloads.reduce((s, p) => s + Number(p.cantidad || 0), 0))}
                   </div>
                   <button
                     onClick={clearBatch}
@@ -2261,7 +2272,7 @@ function MovimientoModal({
                       >
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {idx + 1}. {nombre} · {p.tamano_origen || p.tamano_destino || "—"} ·{" "}
-                          {p.cantidad} ud {p.zona_origen ? `· zona ${p.zona_origen}` : ""}
+                          {formatCantidad(p.cantidad)} ud {p.zona_origen ? `· zona ${p.zona_origen}` : ""}
                         </span>
                         <button
                           onClick={() => removeBatchItem(idx)}
@@ -3053,7 +3064,7 @@ export default function Movimientos() {
                           borderBottom: "1px solid rgba(15,23,42,0.10)",
                         }}
                       >
-                        {m.cantidad}
+                        {formatCantidad(m.cantidad)}
                       </td>
 
                       <td
@@ -3364,7 +3375,7 @@ function MovimientoDetalleModal({ movimiento, onClose }) {
           <Row label="Fecha movimiento" value={fmt(m.fecha_movimiento)} />
           <Row label="Tipo" value={tipo} />
           <Row label="Producto" value={m.producto_nombre_cientifico || m.nombre_cientifico || `Producto #${m.producto_id}`} />
-          <Row label="Cantidad" value={m.cantidad} />
+          <Row label="Cantidad" value={formatCantidad(m.cantidad)} />
 
           <Row label="Origen" value={`${m.origen_tipo || "—"}${m.zona_origen ? " · Zona " + m.zona_origen : ""}${m.tamano_origen ? " · " + m.tamano_origen : ""}`} />
           <Row label="Destino" value={`${m.destino_tipo || "—"}${m.zona_destino ? " · Zona " + m.zona_destino : ""}${m.tamano_destino ? " · " + m.tamano_destino : ""}`} />

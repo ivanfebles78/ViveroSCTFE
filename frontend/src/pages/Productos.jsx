@@ -9,6 +9,7 @@ import {
   deleteProducto,
   importarProductos,
 } from "../api/api";
+import { formatCantidad } from "../utils/numero";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -1115,7 +1116,7 @@ export default function Productos() {
                       </td>
                       <td>{p.categoria ?? "-"}</td>
                       <td>{p.subcategoria ?? "-"}</td>
-                      <td style={{ textAlign: "center", fontWeight: 800 }}>{stock}</td>
+                      <td style={{ textAlign: "center", fontWeight: 800 }}>{formatCantidad(stock) || "0"}</td>
                       {!esEmpresaExterna && (
                         <td style={{ textAlign: "center" }}>{p.stock_minimo ?? "-"}</td>
                       )}

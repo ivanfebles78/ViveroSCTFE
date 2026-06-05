@@ -5,6 +5,7 @@ import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
 import { formatUsername } from "../utils/format";
 import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
+import { formatCantidad } from "../utils/numero";
 import {
   getPedidos,
   getProductos,
@@ -696,6 +697,13 @@ function PedidoModal({
     [productosDisponibles, selectedProductId]
   );
 
+  // FormatoConfig del producto seleccionado — usado para decidir si la cantidad
+  // admite decimales (fitosanitarios/fertilizantes) o solo enteros.
+  const selectedFormatoConfig = useMemo(
+    () => getProductFormatoConfig(selectedProduct),
+    [selectedProduct]
+  );
+
   const selectedProductSizes = useMemo(() => {
     if (!selectedProduct) return [];
     const formatoOptions = getFormatoOptions(getProductFormatoConfig(selectedProduct));
@@ -1069,7 +1077,7 @@ function PedidoModal({
                       <div>
                         <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 18 }}>{row.tamano}</div>
                         <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 12 }}>
-                          En cesta: {row.enCesta} · Restante tras pedido: {row.restante}
+                          En cesta: {formatCantidad(row.enCesta)} · Restante tras pedido: {formatCantidad(row.restante)}
                         </div>
                       </div>
 
@@ -1085,7 +1093,7 @@ function PedidoModal({
                           textAlign: "center",
                         }}
                       >
-                        {row.restante}
+                        {formatCantidad(row.restante)}
                       </div>
 
                       <div style={{ display: "flex", justifyContent: "center" }}>
@@ -1093,6 +1101,7 @@ function PedidoModal({
                           type="number"
                           min={0}
                           max={row.restante}
+                          step={selectedFormatoConfig?.allowDecimals ? "0.001" : "1"}
                           value={qtyInput[key] ?? ""}
                           onChange={(e) =>
                             setQtyInput((prev) => ({
@@ -1100,7 +1109,7 @@ function PedidoModal({
                               [key]: clampNumber(e.target.value, 0, row.restante),
                             }))
                           }
-                          placeholder="0"
+                          placeholder={selectedFormatoConfig?.allowDecimals ? "0.00" : "0"}
                           style={{
                             width: 104,
                             padding: "10px 12px",
@@ -1275,7 +1284,7 @@ function PedidoModal({
                       <div>
                         <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 17 }}>{line.nombre}</div>
                         <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 800 }}>
-                          Tamaño: {line.tamano} · Stock real: {line.disponible} · Restante: {remainingAfterThisLine}
+                          Tamaño: {line.tamano} · Stock real: {formatCantidad(line.disponible)} · Restante: {formatCantidad(remainingAfterThisLine)}
                         </div>
                       </div>
 
@@ -1419,7 +1428,7 @@ function PedidoDetalleCellOld({
                     {it.tamano || "—"}
                   </div>
                   <div style={{ textAlign: "right", fontWeight: 900, color: "#0f172a" }}>
-                    {it.cantidad ?? 0}
+                    {formatCantidad(it.cantidad ?? 0) || "0"}
                   </div>
                 </div>
               );

@@ -9,6 +9,7 @@ import {
   saveZonasToServer,
 } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
+import { formatCantidad } from "../utils/numero";
 
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
 const ENABLE_ZONE_EDITOR = true;
@@ -1066,7 +1067,7 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
                   </div>
 
                   <div style={{ marginTop: 8, fontWeight: 900, color: "#0f172a" }}>
-                    Cantidad total: {item.cantidad ?? 0}
+                    Cantidad total: {formatCantidad(item.cantidad ?? 0) || "0"}
                   </div>
 
                   <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1086,7 +1087,7 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
                             fontSize: 12,
                           }}
                         >
-                          {t.tamano}: {t.cantidad}
+                          {t.tamano}: {formatCantidad(t.cantidad)}
                         </span>
                       ))
                     )}
