@@ -151,7 +151,7 @@ export function getProductFormatoConfig(product) {
       label: "Formato",
       value: "unidades",
       showCantidad: true,
-      cantidadLabel: "Cantidad",
+      cantidadLabel: "Cantidad (unidades)",
       observacionesRequired: false,
       observacionesHint: null,
     };

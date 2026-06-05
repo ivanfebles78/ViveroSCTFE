@@ -1073,13 +1073,38 @@ function MovimientoModal({
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
   }, [productos, filtroCategoria]);
 
-  // Lista de productos filtrada por categoría, subcategoría y texto de búsqueda.
-  // Siempre incluye el producto actualmente seleccionado aunque no encaje con
-  // los filtros, para que el <select> no parezca vacío al elegir y filtrar.
+  // Set de IDs de producto con stock disponible cuando origen=Vivero.
+  // null = no se aplica filtro por stock (origen externo o sin elegir aún).
+  // Si hay zona/tamaño origen elegidos, restringe la búsqueda a esa combinación.
+  const productosConStockOrigen = useMemo(() => {
+    if (form.origen_tipo !== "Vivero") return null;
+    const set = new Set();
+    const zonaFiltro = form.zona_origen ? String(form.zona_origen).toLowerCase() : null;
+    const tamanoFiltro = form.tamano_origen ? normalizeTamanoForStock(form.tamano_origen) : null;
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      if (parts.length < 3) continue;
+      const [productoIdStr, zonaLower, tamano] = parts;
+      if (zonaFiltro && zonaLower !== zonaFiltro) continue;
+      if (tamanoFiltro && tamano !== tamanoFiltro) continue;
+      set.add(Number(productoIdStr));
+    }
+    return set;
+  }, [form.origen_tipo, form.zona_origen, form.tamano_origen, stockByProductZoneSize]);
+
+  // Lista de productos filtrada por stock (si origen=Vivero), categoría,
+  // subcategoría y texto de búsqueda. Siempre incluye el producto actualmente
+  // seleccionado aunque no encaje con los filtros, para que el <select> no
+  // parezca vacío al elegir y filtrar.
   const filteredProductos = useMemo(() => {
     const needle = productoSearch.trim().toLowerCase();
     return safeArray(productos).filter((p) => {
       if (String(p.id) === String(form.producto_id)) return true;
+      // Si origen=Vivero, solo productos con stock real.
+      if (productosConStockOrigen && !productosConStockOrigen.has(Number(p.id))) {
+        return false;
+      }
       if (filtroCategoria && String(p?.categoria || "").trim() !== filtroCategoria) {
         return false;
       }
@@ -1096,7 +1121,7 @@ function MovimientoModal({
         cientifico.includes(needle)
       );
     });
-  }, [productos, productoSearch, form.producto_id, filtroCategoria, filtroSubcategoria]);
+  }, [productos, productoSearch, form.producto_id, filtroCategoria, filtroSubcategoria, productosConStockOrigen]);
 
   // Zonas permitidas por la categoría del producto seleccionado (sin tener en
   // cuenta stock). Se usa tanto para origen como para destino.
@@ -1186,6 +1211,24 @@ function MovimientoModal({
       return changed ? next : prev;
     });
   }, [selectedProducto, zonasPermitidasPorCategoria, form.origen_tipo, form.destino_tipo, availableOriginZones]);
+
+  // Si origen=Vivero y el producto actualmente seleccionado ya no tiene stock
+  // (porque el usuario cambió origen→Vivero, o cambió zona/tamaño origen y
+  // ahora no hay stock con esa combinación), lo resetea junto con los filtros
+  // dependientes para que el usuario vuelva a elegir uno con stock.
+  useEffect(() => {
+    if (!form.producto_id) return;
+    if (!productosConStockOrigen) return; // origen no es Vivero, no aplica
+    if (productosConStockOrigen.has(Number(form.producto_id))) return; // sigue teniendo stock
+    setForm((prev) => ({
+      ...prev,
+      producto_id: "",
+      tamano_origen: prev.origen_tipo === "Vivero" ? "" : prev.tamano_origen,
+      zona_origen: prev.origen_tipo === "Vivero" ? "" : prev.zona_origen,
+      tamano_destino: prev.destino_tipo === "Vivero" ? "" : prev.tamano_destino,
+      zona_destino: prev.destino_tipo === "Vivero" ? "" : prev.zona_destino,
+    }));
+  }, [form.producto_id, productosConStockOrigen]);
 
   // Si la zona destino actual ya no está permitida para la categoría del
   // producto (p.ej. el usuario eligió zona "5" y luego cambió a Áridos),
@@ -2192,30 +2235,62 @@ function MovimientoModal({
                 <select
                   value={form.producto_id}
                   onChange={(e) => {
-                    setForm((prev) => ({ ...prev, producto_id: e.target.value }));
-                    if (e.target.value) setProductoSearch("");
+                    const newId = e.target.value;
+                    setForm((prev) => ({ ...prev, producto_id: newId }));
+                    if (newId) {
+                      // Auto-rellenar categoría/subcategoría con las del producto
+                      // elegido, para que el usuario vea reflejada su elección en
+                      // los filtros de arriba aunque no los hubiese tocado.
+                      const prod = safeArray(productos).find(
+                        (p) => String(p.id) === String(newId)
+                      );
+                      const cat = String(prod?.categoria || "").trim();
+                      const sub = String(prod?.subcategoria || "").trim();
+                      if (cat) setFiltroCategoria(cat);
+                      if (sub) setFiltroSubcategoria(sub);
+                      // Limpiar la búsqueda libre para que el select se colapse.
+                      setProductoSearch("");
+                    }
                   }}
                   style={inputStyle()}
                   size={
-                    productoSearch.trim() || filtroCategoria || filtroSubcategoria
+                    // Una vez hay producto seleccionado, colapsa siempre el select.
+                    // Si no hay selección pero el usuario está filtrando (texto
+                    // libre, categoría o subcategoría), expándelo para facilitar
+                    // la búsqueda visual.
+                    !form.producto_id &&
+                    (productoSearch.trim() || filtroCategoria || filtroSubcategoria)
                       ? Math.min(Math.max(filteredProductos.length + 1, 4), 10)
                       : 1
                   }
+                  disabled={!form.origen_tipo || !form.destino_tipo}
                 >
-                  <option value="">Seleccionar producto</option>
+                  <option value="">
+                    {!form.origen_tipo || !form.destino_tipo
+                      ? "Primero elige origen y destino"
+                      : form.origen_tipo === "Vivero" && filteredProductos.length === 0
+                      ? "No hay productos con stock disponible"
+                      : "Seleccionar producto"}
+                  </option>
                   {filteredProductos.map((p) => (
                     <option key={p.id} value={p.id}>
                       {getProductDisplayName(p)}
                     </option>
                   ))}
                 </select>
-                {(productoSearch.trim() || filtroCategoria || filtroSubcategoria) && (
+                {!form.origen_tipo || !form.destino_tipo ? (
+                  <div style={{ fontSize: 12, color: "#92400e", marginTop: 4, fontWeight: 700 }}>
+                    💡 Elige primero el origen y el destino del movimiento.
+                  </div>
+                ) : (productoSearch.trim() || filtroCategoria || filtroSubcategoria) ? (
                   <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, fontWeight: 700 }}>
                     {filteredProductos.length === 0
-                      ? "Ningún producto coincide con los filtros."
+                      ? form.origen_tipo === "Vivero"
+                        ? "Ningún producto con stock coincide con los filtros."
+                        : "Ningún producto coincide con los filtros."
                       : `${filteredProductos.length} ${filteredProductos.length === 1 ? "producto coincide" : "productos coinciden"}.`}
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 
@@ -2225,68 +2300,52 @@ function MovimientoModal({
                 <div style={sectionTitleStyle()}>Detalles del producto</div>
 
                 <div style={gridTwoCols()}>
-                  {/* Formato/Tamaño origen — solo si origen=Vivero */}
-                  {form.origen_tipo === "Vivero" ? (
+                  {/* Tamaño/Formato origen — solo si origen=Vivero Y el producto
+                      necesita seleccionar tamaño/formato (plantas, fito/fert).
+                      Para formato_fijo (Áridos, Material Vegetal, Ferretería)
+                      se omite el campo y se rellena automáticamente bajo el
+                      capó; el usuario solo verá la cantidad con la unidad. */}
+                  {form.origen_tipo === "Vivero" && formatoConfig.kind !== "formato_fijo" ? (
                     <div>
                       <div style={fieldLabelStyle()}>{formatoConfig.label} origen</div>
-                      {formatoConfig.kind === "formato_fijo" ? (
-                        <input
-                          type="text"
-                          value={form.tamano_origen || formatoConfig.value}
-                          readOnly
-                          disabled
-                          style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
-                        />
-                      ) : (
-                        <select
-                          value={form.tamano_origen}
-                          onChange={(e) =>
-                            setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
-                          }
-                          style={inputStyle()}
-                          disabled={!form.producto_id || availableOriginSizes.length === 0}
-                        >
-                          <option value="">
-                            {availableOriginSizes.length === 0
-                              ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
-                              : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
+                      <select
+                        value={form.tamano_origen}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
+                        }
+                        style={inputStyle()}
+                        disabled={!form.producto_id || availableOriginSizes.length === 0}
+                      >
+                        <option value="">
+                          {availableOriginSizes.length === 0
+                            ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
+                            : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
+                        </option>
+                        {availableOriginSizes.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
                           </option>
-                          {availableOriginSizes.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                        ))}
+                      </select>
                     </div>
                   ) : null}
 
-                  {/* Formato/Tamaño destino — solo si destino=Vivero */}
-                  {form.destino_tipo === "Vivero" ? (
+                  {/* Tamaño/Formato destino — mismo criterio que origen. */}
+                  {form.destino_tipo === "Vivero" && formatoConfig.kind !== "formato_fijo" ? (
                     <div>
                       <div style={fieldLabelStyle()}>{formatoConfig.label} destino</div>
-                      {formatoConfig.kind === "formato_fijo" ? (
-                        <input
-                          type="text"
-                          value={form.tamano_destino || formatoConfig.value}
-                          readOnly
-                          disabled
-                          style={{ ...inputStyle(), background: "#f1f5f9", color: "#0f172a", fontWeight: 700 }}
-                        />
-                      ) : (
-                        <select
-                          value={form.tamano_destino}
-                          onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
-                          style={inputStyle()}
-                        >
-                          <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
-                          {getFormatoOptions(formatoConfig).map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      <select
+                        value={form.tamano_destino}
+                        onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
+                        style={inputStyle()}
+                      >
+                        <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
+                        {getFormatoOptions(formatoConfig).map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   ) : null}
 
