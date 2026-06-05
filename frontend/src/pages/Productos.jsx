@@ -9,7 +9,8 @@ import {
   deleteProducto,
   importarProductos,
 } from "../api/api";
-import { formatCantidad } from "../utils/numero";
+import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
+import { getUnidadProducto } from "../utils/formato";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -1116,9 +1117,15 @@ export default function Productos() {
                       </td>
                       <td>{p.categoria ?? "-"}</td>
                       <td>{p.subcategoria ?? "-"}</td>
-                      <td style={{ textAlign: "center", fontWeight: 800 }}>{formatCantidad(stock) || "0"}</td>
+                      <td style={{ textAlign: "center", fontWeight: 800 }}>
+                        {formatCantidadConUnidad(stock, getUnidadProducto(p)) || "0"}
+                      </td>
                       {!esEmpresaExterna && (
-                        <td style={{ textAlign: "center" }}>{p.stock_minimo ?? "-"}</td>
+                        <td style={{ textAlign: "center" }}>
+                          {p.stock_minimo === null || p.stock_minimo === undefined
+                            ? "-"
+                            : formatCantidadConUnidad(p.stock_minimo, getUnidadProducto(p))}
+                        </td>
                       )}
                       {puedeMarcarInterno && (
                         <td style={{ textAlign: "center" }}>

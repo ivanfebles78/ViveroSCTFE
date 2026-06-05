@@ -170,6 +170,42 @@ export function getProductFormatoConfig(product) {
 }
 
 /**
+ * Sufijo de unidad para mostrar el stock agregado de un producto en listados
+ * (la tabla de productos, por ejemplo). Como el stock se agrega sin tener en
+ * cuenta el formato concreto:
+ *   - Plantas → "ud"
+ *   - Fitosanitario / Fertilizante → "kg/lt" (puede contener ambos formatos)
+ *   - Áridos / Material Vegetal → "m³"
+ *   - Ferretería en metros (alambre 4.8, malla gallinero verde, cinturones
+ *     3.5) → "m"; resto de ferretería → "ud"
+ *
+ * Espera un objeto con al menos `categoria` y, para discriminar ferretería,
+ * `nombre_cientifico` o `nombre_natural`.
+ */
+export function getUnidadProducto(producto) {
+  if (!producto) return "";
+  const cat = normalize(producto.categoria);
+
+  if (categoryIs(cat, "planta")) return "ud";
+
+  if (categoryIs(cat, "fitosanitario", "fertilizante")) return "kg/lt";
+
+  if (categoryIs(cat, "arido", "material vegetal")) return "m³";
+
+  if (categoryIs(cat, "ferreteria")) {
+    const nombre =
+      producto.nombre_cientifico ||
+      producto.nombre_natural ||
+      producto.nombre ||
+      "";
+    if (nameMatchesAny(nombre, FERRETERIA_EN_METROS_NEEDLES)) return "m";
+    return "ud";
+  }
+
+  return "";
+}
+
+/**
  * Sufijo de unidad para mostrar la cantidad de un movimiento ya guardado.
  *   - Plantas → "ud"
  *   - Fitosanitario / Fertilizante → "kg" o "lt" según el formato registrado

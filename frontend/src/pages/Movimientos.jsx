@@ -505,28 +505,42 @@ function inputStyle() {
   };
 }
 
+// Paleta de tonos sutiles para diferenciar las secciones del modal:
+//   - "azul"  → Origen / Destino (sugiere flujo, traslado)
+//   - "verde" → Producto (vivero, naturaleza)
+//   - "ambar" → Detalles del producto (información complementaria)
+const SECTION_PALETTE = {
+  neutro: { bg: "rgba(255,255,255,0.92)", border: "rgba(15,23,42,0.10)", title: "#0f172a", divider: "rgba(15,23,42,0.06)" },
+  azul:   { bg: "rgba(59,130,246,0.06)",  border: "rgba(59,130,246,0.22)", title: "#1d4ed8", divider: "rgba(59,130,246,0.16)" },
+  verde:  { bg: "rgba(16,185,129,0.06)",  border: "rgba(16,185,129,0.22)", title: "#065f46", divider: "rgba(16,185,129,0.16)" },
+  ambar:  { bg: "rgba(245,158,11,0.06)",  border: "rgba(245,158,11,0.25)", title: "#92400e", divider: "rgba(245,158,11,0.18)" },
+};
+
 // Contenedor visual de cada bloque del formulario (Origen/Destino, Producto,
-// Detalles del producto). Agrupa visualmente los campos relacionados.
-function sectionStyle() {
+// Detalles del producto). Agrupa visualmente los campos relacionados y
+// usa un tono sutil para que cada sección sea distinguible a simple vista.
+function sectionStyle(tono = "neutro") {
+  const p = SECTION_PALETTE[tono] || SECTION_PALETTE.neutro;
   return {
     marginTop: 16,
     padding: 16,
     borderRadius: 18,
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid rgba(15,23,42,0.08)",
+    background: p.bg,
+    border: `1px solid ${p.border}`,
   };
 }
 
-function sectionTitleStyle() {
+function sectionTitleStyle(tono = "neutro") {
+  const p = SECTION_PALETTE[tono] || SECTION_PALETTE.neutro;
   return {
     fontSize: 13,
     fontWeight: 900,
-    color: "#0f172a",
+    color: p.title,
     textTransform: "uppercase",
     letterSpacing: "0.04em",
     marginBottom: 12,
     paddingBottom: 8,
-    borderBottom: "1px solid rgba(15,23,42,0.06)",
+    borderBottom: `1px solid ${p.divider}`,
   };
 }
 
@@ -1875,8 +1889,8 @@ function MovimientoModal({
             ) : null}
 
             {/* === SECCIÓN 1: ORIGEN / DESTINO ============================== */}
-            <div style={sectionStyle()}>
-              <div style={sectionTitleStyle()}>Origen y destino</div>
+            <div style={sectionStyle("azul")}>
+              <div style={sectionTitleStyle("azul")}>Origen y destino</div>
 
               {/* Fila compacta: Origen, Zona origen (si aplica), Destino, Zona
                   destino (si aplica). El número de columnas se ajusta para que
@@ -2240,8 +2254,8 @@ function MovimientoModal({
             </div>
 
             {/* === SECCIÓN 2: PRODUCTO ====================================== */}
-            <div style={sectionStyle()}>
-              <div style={sectionTitleStyle()}>Producto</div>
+            <div style={sectionStyle("verde")}>
+              <div style={sectionTitleStyle("verde")}>Producto</div>
 
               {/* Categoría + Subcategoría + Buscador, todos en la misma línea */}
               <div
@@ -2421,8 +2435,8 @@ function MovimientoModal({
               const mostrarFormato = formatoConfig.kind !== "formato_fijo";
 
               return (
-                <div style={sectionStyle()}>
-                  <div style={sectionTitleStyle()}>Detalles del producto</div>
+                <div style={sectionStyle("ambar")}>
+                  <div style={sectionTitleStyle("ambar")}>Detalles del producto</div>
 
                   {/* Formato + Cantidad en la misma fila (2 columnas).
                       Si no hay campo Formato (formato_fijo), la cantidad ocupa
