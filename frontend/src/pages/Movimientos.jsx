@@ -1706,47 +1706,39 @@ function MovimientoModal({
               </div>
 
               {/* Cantidad: input libre cuando NO hay picker; total calculado cuando SÍ.
-                  Para fitosanitarios/fertilizantes la etiqueta cambia dinámicamente
-                  según el formato seleccionado (Líquido → Litros, otros → Kg). */}
-              {formatoConfig.showCantidad && (() => {
-                // Etiqueta dinámica si el formatoConfig provee getCantidadLabel.
-                // El "formato actual" es el destino si existe, si no el origen.
-                const formatoActual = form.tamano_destino || form.tamano_origen || "";
-                const cantidadLabelDinamico =
-                  typeof formatoConfig.getCantidadLabel === "function"
-                    ? formatoConfig.getCantidadLabel(formatoActual)
-                    : formatoConfig.cantidadLabel || "Cantidad";
-                const stepDecimal = formatoConfig.allowDecimals ? "0.001" : "1";
-                return (
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-                      {cantidadLabelDinamico} {distribucionActiva ? "(calculada)" : ""}
-                    </div>
-                    {distribucionActiva ? (
-                      <div
-                        style={{
-                          ...inputStyle(),
-                          background: "#f1f5f9",
-                          color: "#0f172a",
-                          fontWeight: 900,
-                        }}
-                      >
-                        {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
-                      </div>
-                    ) : (
-                      <input
-                        type="number"
-                        min={formatoConfig.allowDecimals ? "0.001" : 1}
-                        step={stepDecimal}
-                        value={form.cantidad}
-                        onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                        style={inputStyle()}
-                        placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
-                      />
-                    )}
+                  Para fitosanitarios/fertilizantes (kind=formato_dropdown) la cantidad
+                  se renderiza INLINE junto al formato (más abajo en este JSX) para
+                  que aparezca pegada al Formato y no en el primer cuadro del formulario.
+                  Aquí solo se renderiza para plantas y formato_fijo. */}
+              {formatoConfig.showCantidad && formatoConfig.kind !== "formato_dropdown" && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                    {formatoConfig.cantidadLabel || "Cantidad"} {distribucionActiva ? "(calculada)" : ""}
                   </div>
-                );
-              })()}
+                  {distribucionActiva ? (
+                    <div
+                      style={{
+                        ...inputStyle(),
+                        background: "#f1f5f9",
+                        color: "#0f172a",
+                        fontWeight: 900,
+                      }}
+                    >
+                      {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min={formatoConfig.allowDecimals ? "0.001" : 1}
+                      step={formatoConfig.allowDecimals ? "0.001" : "1"}
+                      value={form.cantidad}
+                      onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                      style={inputStyle()}
+                      placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
+                    />
+                  )}
+                </div>
+              )}
 
               {form.origen_tipo === "Vivero" ? (
                 <>
@@ -1787,6 +1779,37 @@ function MovimientoModal({
                       </select>
                     )}
                   </div>
+
+                  {/* Cantidad inline para fitosanitarios/fertilizantes cuando origen=Vivero.
+                      Aparece sólo cuando hay formato origen seleccionado Y destino NO es Vivero
+                      (si destino es Vivero, la cantidad inline aparece en el bloque destino).
+                      Esto evita duplicar el input en traslados internos. */}
+                  {formatoConfig.kind === "formato_dropdown" &&
+                    formatoConfig.showCantidad &&
+                    form.tamano_origen &&
+                    form.destino_tipo !== "Vivero" &&
+                    (() => {
+                      const cantidadLabelDinamico =
+                        typeof formatoConfig.getCantidadLabel === "function"
+                          ? formatoConfig.getCantidadLabel(form.tamano_origen)
+                          : formatoConfig.cantidadLabel || "Cantidad";
+                      return (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                            {cantidadLabelDinamico}
+                          </div>
+                          <input
+                            type="number"
+                            min={formatoConfig.allowDecimals ? "0.001" : 1}
+                            step={formatoConfig.allowDecimals ? "0.001" : "1"}
+                            value={form.cantidad}
+                            onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                            style={inputStyle()}
+                            placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
+                          />
+                        </div>
+                      );
+                    })()}
 
                   {/* Zona origen SOLO se muestra si no está el picker */}
                   {!distribucionActiva ? (
@@ -1959,6 +1982,36 @@ function MovimientoModal({
                       </select>
                     )}
                   </div>
+
+                  {/* Cantidad inline para fitosanitarios/fertilizantes:
+                      aparece JUSTO DESPUÉS del selector de Formato y SOLO
+                      cuando ya se ha elegido un formato. La etiqueta cambia
+                      dinámicamente entre "Litros" (Líquido) y "Kg" (resto). */}
+                  {formatoConfig.kind === "formato_dropdown" &&
+                    formatoConfig.showCantidad &&
+                    form.tamano_destino && (() => {
+                      const cantidadLabelDinamico =
+                        typeof formatoConfig.getCantidadLabel === "function"
+                          ? formatoConfig.getCantidadLabel(form.tamano_destino)
+                          : formatoConfig.cantidadLabel || "Cantidad";
+                      return (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                            {cantidadLabelDinamico}
+                          </div>
+                          <input
+                            type="number"
+                            min={formatoConfig.allowDecimals ? "0.001" : 1}
+                            step={formatoConfig.allowDecimals ? "0.001" : "1"}
+                            value={form.cantidad}
+                            onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
+                            style={inputStyle()}
+                            placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
+                            autoFocus
+                          />
+                        </div>
+                      );
+                    })()}
                 </>
               ) : null}
 
