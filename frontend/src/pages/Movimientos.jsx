@@ -50,13 +50,29 @@ function naturalSortZonas(zonas) {
   });
 }
 
-// Garantiza que las zonas especiales aparezcan siempre, aunque el servidor
-// devuelva solo zonas numéricas. Mantiene el orden natural.
+// Normaliza un id/nombre de zona para comparaciones tolerantes (sin tildes,
+// sin guiones/espacios, sin el prefijo "zona", lowercase). Igual que la
+// lógica del backend en _normalize_zona_id.
+function normalizeZonaCompare(s) {
+  return (s || "")
+    .toString()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[_\-\s]/g, "")
+    .replace(/^zona/i, "")
+    .trim();
+}
+
+// Garantiza que las zonas especiales (Almacén, Zona Compostaje) aparezcan
+// siempre, aunque el servidor devuelva solo zonas numéricas. La comparación
+// se hace normalizada para evitar duplicados si el servidor ya tiene la
+// zona pero con otro casing/tilde (p. ej. "almacen" vs "Almacén").
 function ensureZonasEspeciales(zonas) {
-  const set = new Set(zonas.map((z) => String(z).trim()));
-  const out = [...zonas];
+  const seen = new Set(safeArray(zonas).map(normalizeZonaCompare));
+  const out = [...safeArray(zonas)];
   for (const z of ZONAS_ESPECIALES) {
-    if (!set.has(z)) out.push(z);
+    if (!seen.has(normalizeZonaCompare(z))) out.push(z);
   }
   return naturalSortZonas(out);
 }
