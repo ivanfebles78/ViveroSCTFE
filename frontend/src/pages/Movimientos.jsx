@@ -2295,76 +2295,91 @@ function MovimientoModal({
             </div>
 
             {/* === SECCIÓN 3: DETALLES DEL PRODUCTO ========================= */}
-            {form.producto_id ? (
-              <div style={sectionStyle()}>
-                <div style={sectionTitleStyle()}>Detalles del producto</div>
+            {form.producto_id ? (() => {
+              // Valor unificado del formato/tamaño: lo que entra al vivero sale
+              // con el mismo formato, así que sólo necesitamos un campo. Damos
+              // preferencia a tamano_origen cuando origen=Vivero (es el que
+              // condiciona el stock); en entradas externas usamos tamano_destino.
+              const formatoUnificado = form.tamano_origen || form.tamano_destino || "";
 
-                <div style={gridTwoCols()}>
-                  {/* Tamaño/Formato origen — solo si origen=Vivero Y el producto
-                      necesita seleccionar tamaño/formato (plantas, fito/fert).
-                      Para formato_fijo (Áridos, Material Vegetal, Ferretería)
-                      se omite el campo y se rellena automáticamente bajo el
-                      capó; el usuario solo verá la cantidad con la unidad. */}
-                  {form.origen_tipo === "Vivero" && formatoConfig.kind !== "formato_fijo" ? (
-                    <div>
-                      <div style={fieldLabelStyle()}>{formatoConfig.label} origen</div>
-                      <select
-                        value={form.tamano_origen}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, tamano_origen: e.target.value, zona_origen: "" }))
-                        }
-                        style={inputStyle()}
-                        disabled={!form.producto_id || availableOriginSizes.length === 0}
-                      >
-                        <option value="">
-                          {availableOriginSizes.length === 0
-                            ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
-                            : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
-                        </option>
-                        {availableOriginSizes.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
+              // Opciones del select unificado:
+              //   - Si origen=Vivero (salida/traslado) → solo tamaños con stock.
+              //   - Sino (entrada al vivero desde externo) → opciones completas.
+              const opcionesFormato =
+                form.origen_tipo === "Vivero"
+                  ? availableOriginSizes
+                  : getFormatoOptions(formatoConfig);
+
+              // Etiqueta de cantidad: para fitosanitarios/fertilizantes depende
+              // del formato elegido (Líquido → Litros, resto → Kg); para el
+              // resto es estática (Cantidad, Cantidad (m³), Cantidad (m),
+              // Cantidad (unidades)…).
+              const cantidadLabel =
+                formatoConfig.kind === "formato_dropdown" &&
+                typeof formatoConfig.getCantidadLabel === "function"
+                  ? formatoConfig.getCantidadLabel(formatoUnificado)
+                  : formatoConfig.cantidadLabel || "Cantidad";
+
+              const cambiarFormato = (valor) => {
+                setForm((prev) => ({
+                  ...prev,
+                  tamano_origen: valor,
+                  tamano_destino: valor,
+                  zona_origen: "",
+                }));
+              };
+
+              const mostrarFormato = formatoConfig.kind !== "formato_fijo";
+
+              return (
+                <div style={sectionStyle()}>
+                  <div style={sectionTitleStyle()}>Detalles del producto</div>
+
+                  {/* Formato + Cantidad en la misma fila (2 columnas).
+                      Si no hay campo Formato (formato_fijo), la cantidad ocupa
+                      todo el ancho. */}
+                  <div style={gridTwoCols()}>
+                    {mostrarFormato ? (
+                      <div>
+                        <div style={fieldLabelStyle()}>{formatoConfig.label}</div>
+                        <select
+                          value={formatoUnificado}
+                          onChange={(e) => cambiarFormato(e.target.value)}
+                          style={inputStyle()}
+                          disabled={opcionesFormato.length === 0}
+                        >
+                          <option value="">
+                            {opcionesFormato.length === 0
+                              ? `No hay ${formatoConfig.label.toLowerCase()}s disponibles`
+                              : `Seleccionar ${formatoConfig.label.toLowerCase()}`}
                           </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
+                          {opcionesFormato.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
 
-                  {/* Tamaño/Formato destino — mismo criterio que origen. */}
-                  {form.destino_tipo === "Vivero" && formatoConfig.kind !== "formato_fijo" ? (
-                    <div>
-                      <div style={fieldLabelStyle()}>{formatoConfig.label} destino</div>
-                      <select
-                        value={form.tamano_destino}
-                        onChange={(e) => setForm((prev) => ({ ...prev, tamano_destino: e.target.value }))}
-                        style={inputStyle()}
-                      >
-                        <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
-                        {getFormatoOptions(formatoConfig).map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-
-                  {/* Kg / Litros para fitosanitarios/fertilizantes — etiqueta dinámica.
-                      Usa el formato de destino si destino=Vivero, sino el de origen. */}
-                  {formatoConfig.kind === "formato_dropdown" &&
-                    formatoConfig.showCantidad &&
-                    (form.tamano_destino || form.tamano_origen) && (() => {
-                      const formatoActivo = form.destino_tipo === "Vivero"
-                        ? form.tamano_destino
-                        : form.tamano_origen;
-                      if (!formatoActivo) return null;
-                      const cantidadLabelDinamico =
-                        typeof formatoConfig.getCantidadLabel === "function"
-                          ? formatoConfig.getCantidadLabel(formatoActivo)
-                          : formatoConfig.cantidadLabel || "Cantidad";
-                      return (
-                        <div style={{ gridColumn: "span 2" }}>
-                          <div style={fieldLabelStyle()}>{cantidadLabelDinamico}</div>
+                    {formatoConfig.showCantidad ? (
+                      <div style={mostrarFormato ? undefined : { gridColumn: "span 2" }}>
+                        <div style={fieldLabelStyle()}>
+                          {cantidadLabel}
+                          {distribucionActiva ? " (calculada)" : ""}
+                        </div>
+                        {distribucionActiva ? (
+                          <div
+                            style={{
+                              ...inputStyle(),
+                              background: "#f1f5f9",
+                              color: "#0f172a",
+                              fontWeight: 900,
+                            }}
+                          >
+                            {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                          </div>
+                        ) : (
                           <input
                             type="number"
                             min={formatoConfig.allowDecimals ? "0.001" : 1}
@@ -2374,71 +2389,41 @@ function MovimientoModal({
                             style={inputStyle()}
                             placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
                           />
-                        </div>
-                      );
-                    })()}
+                        )}
+                      </div>
+                    ) : null}
 
-                  {/* Cantidad para plantas y formato_fijo (NO fitosanitarios) */}
-                  {formatoConfig.showCantidad && formatoConfig.kind !== "formato_dropdown" && (
+                    {/* Observaciones */}
                     <div style={{ gridColumn: "span 2" }}>
                       <div style={fieldLabelStyle()}>
-                        {formatoConfig.cantidadLabel || "Cantidad"} {distribucionActiva ? "(calculada)" : ""}
+                        Observaciones {formatoConfig.observacionesRequired && <span style={{ color: "#dc2626" }}>*</span>}
                       </div>
-                      {distribucionActiva ? (
-                        <div
-                          style={{
-                            ...inputStyle(),
-                            background: "#f1f5f9",
-                            color: "#0f172a",
-                            fontWeight: 900,
-                          }}
-                        >
-                          {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
+                      <textarea
+                        value={form.observaciones}
+                        onChange={(e) => setForm((prev) => ({ ...prev, observaciones: e.target.value }))}
+                        style={{
+                          ...inputStyle(),
+                          minHeight: 100,
+                          resize: "vertical",
+                          ...(formatoConfig.observacionesRequired && !form.observaciones?.trim()
+                            ? { borderColor: "#dc2626", background: "#fef2f2" }
+                            : {}),
+                        }}
+                        placeholder={
+                          formatoConfig.observacionesHint ||
+                          "Información adicional del movimiento"
+                        }
+                      />
+                      {formatoConfig.observacionesHint && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", fontWeight: 700 }}>
+                          💡 {formatoConfig.observacionesHint}
                         </div>
-                      ) : (
-                        <input
-                          type="number"
-                          min={formatoConfig.allowDecimals ? "0.001" : 1}
-                          step={formatoConfig.allowDecimals ? "0.001" : "1"}
-                          value={form.cantidad}
-                          onChange={(e) => setForm((prev) => ({ ...prev, cantidad: e.target.value }))}
-                          style={inputStyle()}
-                          placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
-                        />
                       )}
                     </div>
-                  )}
-
-                  {/* Observaciones */}
-                  <div style={{ gridColumn: "span 2" }}>
-                    <div style={fieldLabelStyle()}>
-                      Observaciones {formatoConfig.observacionesRequired && <span style={{ color: "#dc2626" }}>*</span>}
-                    </div>
-                    <textarea
-                      value={form.observaciones}
-                      onChange={(e) => setForm((prev) => ({ ...prev, observaciones: e.target.value }))}
-                      style={{
-                        ...inputStyle(),
-                        minHeight: 100,
-                        resize: "vertical",
-                        ...(formatoConfig.observacionesRequired && !form.observaciones?.trim()
-                          ? { borderColor: "#dc2626", background: "#fef2f2" }
-                          : {}),
-                      }}
-                      placeholder={
-                        formatoConfig.observacionesHint ||
-                        "Información adicional del movimiento"
-                      }
-                    />
-                    {formatoConfig.observacionesHint && (
-                      <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", fontWeight: 700 }}>
-                        💡 {formatoConfig.observacionesHint}
-                      </div>
-                    )}
                   </div>
                 </div>
-              </div>
-            ) : null}
+              );
+            })() : null}
           </div>
 
           <div
