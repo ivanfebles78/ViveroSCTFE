@@ -2275,7 +2275,25 @@ function MovimientoModal({
                   value={form.producto_id}
                   onChange={(e) => {
                     const newId = e.target.value;
-                    setForm((prev) => ({ ...prev, producto_id: newId }));
+                    // Al cambiar de producto, todo lo que era específico del
+                    // producto anterior se queda obsoleto (tamaño/formato,
+                    // zonas con stock, cantidad, fecha de disponibilidad y
+                    // distribución multi-zona). Lo reseteamos para que el
+                    // usuario rellene los detalles del nuevo producto desde
+                    // cero. Los tipos de origen/destino y las preferencias de
+                    // destino externo (distrito, barrio, etc.) se conservan.
+                    setForm((prev) => ({
+                      ...prev,
+                      producto_id: newId,
+                      pedido_item_id: "",
+                      cantidad: "",
+                      tamano_origen: "",
+                      tamano_destino: "",
+                      zona_origen: "",
+                      zona_destino: "",
+                      fecha_disponibilidad: "",
+                    }));
+                    setDistribucion({});
                     if (newId) {
                       // Auto-rellenar categoría/subcategoría con las del producto
                       // elegido, para que el usuario vea reflejada su elección en
@@ -2293,12 +2311,11 @@ function MovimientoModal({
                   }}
                   style={inputStyle()}
                   size={
-                    // Una vez hay producto seleccionado, colapsa siempre el select.
-                    // Si no hay selección pero el usuario está filtrando (texto
-                    // libre, categoría o subcategoría), expándelo para facilitar
-                    // la búsqueda visual.
-                    !form.producto_id &&
-                    (productoSearch.trim() || filtroCategoria || filtroSubcategoria)
+                    // El select solo se auto-expande cuando el usuario está
+                    // tipeando texto libre en el buscador. Si filtra por
+                    // categoría/subcategoría, el dropdown queda colapsado como
+                    // un select normal y se despliega solo al hacer click.
+                    !form.producto_id && productoSearch.trim()
                       ? Math.min(Math.max(filteredProductos.length + 1, 4), 10)
                       : 1
                   }
