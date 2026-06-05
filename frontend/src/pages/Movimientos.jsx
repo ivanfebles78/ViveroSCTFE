@@ -1051,6 +1051,35 @@ function MovimientoModal({
     }
   }, [filtroCategoria, productos, filtroSubcategoria]);
 
+  // Si el producto seleccionado deja de cumplir los filtros (porque el usuario
+  // cambió la categoría o subcategoría), lo resetea junto con sus datos
+  // dependientes. Así no queda colgado un producto que ya no encaja con los
+  // filtros actuales.
+  useEffect(() => {
+    if (!form.producto_id) return;
+    const prod = safeArray(productos).find(
+      (p) => String(p.id) === String(form.producto_id)
+    );
+    if (!prod) return;
+    const prodCat = String(prod?.categoria || "").trim();
+    const prodSub = String(prod?.subcategoria || "").trim();
+    const catMismatch = filtroCategoria && prodCat !== filtroCategoria;
+    const subMismatch = filtroSubcategoria && prodSub !== filtroSubcategoria;
+    if (!catMismatch && !subMismatch) return;
+    setForm((prev) => ({
+      ...prev,
+      producto_id: "",
+      pedido_item_id: "",
+      cantidad: "",
+      tamano_origen: "",
+      tamano_destino: "",
+      zona_origen: "",
+      zona_destino: "",
+      fecha_disponibilidad: "",
+    }));
+    setDistribucion({});
+  }, [filtroCategoria, filtroSubcategoria, form.producto_id, productos]);
+
   // Categorías únicas disponibles (extraídas de la lista de productos).
   const categoriasDisponibles = useMemo(() => {
     const set = new Set();
