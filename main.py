@@ -2210,7 +2210,15 @@ def reporte_movimientos_externos(
 # INVENTARIO POR ZONA
 # =========================
 def _normalize_zona_id(value: str | None) -> str:
+    # Normalización tolerante: lowercase, sin tildes ni separadores, y sin
+    # los prefijos "zona"/"zonazona" que añade el editor de mapa. Permite que
+    # "Almacén", "almacen", "Zona-Almacen" y "zona_almacén" colapsen al
+    # mismo valor canónico al comparar contra inventario_lote.zona.
+    import unicodedata
+
     raw = (value or "").strip().lower()
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(c for c in raw if not unicodedata.combining(c))
     raw = raw.replace("_", "").replace("-", "").replace(" ", "")
     if raw.startswith("zonazona"):
         raw = raw[len("zonazona"):]
@@ -2223,21 +2231,18 @@ def _normalize_zona_id(value: str | None) -> str:
 def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
     zona_norm = _normalize_zona_id(zona_id)
 
-    q = (
+    # No filtramos por zona en SQL: el normalizador de Python ya elimina
+    # tildes/guiones/prefijos para comparar, pero los operadores SQL `=` e
+    # `ILIKE` son sensibles a acentos (sin extensión `unaccent`), así que
+    # "Almacén" guardado en BD no haría match con "almacen" en la URL. El
+    # filtrado se hace abajo en Python; el inventario del vivero es pequeño,
+    # así que el coste es despreciable.
+    inventarios = (
         db.query(InventarioLote, Producto)
         .join(Producto, Producto.id == InventarioLote.producto_id)
         .filter(InventarioLote.cantidad_disponible > 0)
+        .all()
     )
-
-    if zona_norm:
-        q = q.filter(
-            or_(
-                func.lower(InventarioLote.zona) == zona_norm,
-                InventarioLote.zona.ilike(f"%{zona_norm}%"),
-            )
-        )
-
-    inventarios = q.all()
 
     productos: dict[int, dict] = {}
 
