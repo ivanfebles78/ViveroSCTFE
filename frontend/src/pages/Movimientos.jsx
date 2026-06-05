@@ -1845,119 +1845,158 @@ function MovimientoModal({
             <div style={sectionStyle()}>
               <div style={sectionTitleStyle()}>Origen y destino</div>
 
-              <div style={gridTwoCols()}>
-                <div>
-                  <div style={fieldLabelStyle()}>Origen</div>
-                  <select
-                    value={form.origen_tipo}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        origen_tipo: e.target.value,
-                        destino_tipo: "",
-                        zona_origen: "",
-                        tamano_origen: "",
-                        zona_destino: "",
-                        tamano_destino: "",
-                        distrito_destino: "",
-                        barrio_destino: "",
-                        direccion_destino: "",
-                        cp_destino: "",
-                        prestamo: false,
-                      }))
-                    }
-                    style={inputStyle()}
+              {/* Fila compacta: Origen, Zona origen (si aplica), Destino, Zona
+                  destino (si aplica). El número de columnas se ajusta para que
+                  los 2-4 selects quepan en una sola línea. */}
+              {(() => {
+                const showZonaOrigen = form.origen_tipo === "Vivero" && !distribucionActiva;
+                const showZonaDestino = form.destino_tipo === "Vivero";
+                const cols = 2 + (showZonaOrigen ? 1 : 0) + (showZonaDestino ? 1 : 0);
+
+                // Al cambiar origen o destino se resetea el producto, los
+                // filtros (categoría/subcategoría/búsqueda), la cantidad y la
+                // distribución multi-zona, para que el usuario empiece desde
+                // cero la elección de producto bajo las nuevas reglas.
+                const resetSeleccionProducto = () => {
+                  setFiltroCategoria("");
+                  setFiltroSubcategoria("");
+                  setProductoSearch("");
+                  setDistribucion({});
+                };
+
+                return (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                      gap: 12,
+                    }}
                   >
-                    <option value="">Seleccionar origen</option>
-                    {ORIGENES.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <div>
+                      <div style={fieldLabelStyle()}>Origen</div>
+                      <select
+                        value={form.origen_tipo}
+                        onChange={(e) => {
+                          resetSeleccionProducto();
+                          setForm((prev) => ({
+                            ...prev,
+                            origen_tipo: e.target.value,
+                            destino_tipo: "",
+                            zona_origen: "",
+                            tamano_origen: "",
+                            zona_destino: "",
+                            tamano_destino: "",
+                            distrito_destino: "",
+                            barrio_destino: "",
+                            direccion_destino: "",
+                            cp_destino: "",
+                            prestamo: false,
+                            producto_id: "",
+                            pedido_item_id: "",
+                            cantidad: "",
+                          }));
+                        }}
+                        style={inputStyle()}
+                      >
+                        <option value="">Seleccionar origen</option>
+                        {ORIGENES.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div>
-                  <div style={fieldLabelStyle()}>Destino</div>
-                  <select
-                    value={form.destino_tipo}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        destino_tipo: e.target.value,
-                        zona_destino: "",
-                        tamano_destino: "",
-                        distrito_destino: "",
-                        barrio_destino: "",
-                        direccion_destino: "",
-                        cp_destino: "",
-                        prestamo: false,
-                      }))
-                    }
-                    style={inputStyle()}
-                    disabled={!form.origen_tipo}
-                  >
-                    <option value="">Seleccionar destino</option>
-                    {allowedDestinos.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    {showZonaOrigen ? (
+                      <div>
+                        <div style={fieldLabelStyle()}>Zona origen</div>
+                        <select
+                          value={form.zona_origen}
+                          onChange={(e) => setForm((prev) => ({ ...prev, zona_origen: e.target.value }))}
+                          style={inputStyle()}
+                          disabled={!form.producto_id || availableOriginZones.length === 0}
+                        >
+                          <option value="">
+                            {!form.producto_id
+                              ? "Primero producto"
+                              : availableOriginZones.length === 0
+                              ? "Sin stock"
+                              : "Seleccionar"}
+                          </option>
+                          {availableOriginZones.map((z) => (
+                            <option key={z} value={z}>
+                              {z}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
 
-                {/* Zona origen (cuando origen=Vivero y no hay picker multi-zona) */}
-                {form.origen_tipo === "Vivero" && !distribucionActiva ? (
-                  <div>
-                    <div style={fieldLabelStyle()}>Zona origen</div>
-                    <select
-                      value={form.zona_origen}
-                      onChange={(e) => setForm((prev) => ({ ...prev, zona_origen: e.target.value }))}
-                      style={inputStyle()}
-                      disabled={!form.producto_id || availableOriginZones.length === 0}
-                    >
-                      <option value="">
-                        {!form.producto_id
-                          ? "Primero selecciona un producto"
-                          : availableOriginZones.length === 0
-                          ? "No hay zonas con stock para este producto"
-                          : "Seleccionar zona"}
-                      </option>
-                      {availableOriginZones.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
+                    <div>
+                      <div style={fieldLabelStyle()}>Destino</div>
+                      <select
+                        value={form.destino_tipo}
+                        onChange={(e) => {
+                          resetSeleccionProducto();
+                          setForm((prev) => ({
+                            ...prev,
+                            destino_tipo: e.target.value,
+                            zona_destino: "",
+                            tamano_destino: "",
+                            distrito_destino: "",
+                            barrio_destino: "",
+                            direccion_destino: "",
+                            cp_destino: "",
+                            prestamo: false,
+                            producto_id: "",
+                            pedido_item_id: "",
+                            cantidad: "",
+                          }));
+                        }}
+                        style={inputStyle()}
+                        disabled={!form.origen_tipo}
+                      >
+                        <option value="">Seleccionar destino</option>
+                        {allowedDestinos.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {showZonaDestino ? (
+                      <div>
+                        <div style={fieldLabelStyle()}>Zona destino</div>
+                        <select
+                          value={form.zona_destino}
+                          onChange={(e) => setForm((prev) => ({ ...prev, zona_destino: e.target.value }))}
+                          style={inputStyle()}
+                          disabled={!form.producto_id || zonasPermitidasPorCategoria.length === 0}
+                        >
+                          <option value="">
+                            {!form.producto_id
+                              ? "Primero producto"
+                              : zonasPermitidasPorCategoria.length === 0
+                              ? "Sin zonas"
+                              : "Seleccionar"}
+                          </option>
+                          {zonasPermitidasPorCategoria.map((z) => (
+                            <option key={z} value={z}>
+                              {z}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                );
+              })()}
 
-                {/* Zona destino (cuando destino=Vivero) */}
-                {form.destino_tipo === "Vivero" ? (
-                  <div>
-                    <div style={fieldLabelStyle()}>Zona destino</div>
-                    <select
-                      value={form.zona_destino}
-                      onChange={(e) => setForm((prev) => ({ ...prev, zona_destino: e.target.value }))}
-                      style={inputStyle()}
-                      disabled={!form.producto_id || zonasPermitidasPorCategoria.length === 0}
-                    >
-                      <option value="">
-                        {!form.producto_id
-                          ? "Primero selecciona un producto"
-                          : zonasPermitidasPorCategoria.length === 0
-                          ? "No hay zonas permitidas para esta categoría"
-                          : "Seleccionar zona"}
-                      </option>
-                      {zonasPermitidasPorCategoria.map((z) => (
-                        <option key={z} value={z}>
-                          {z}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
+              {/* Bloque secundario (2 columnas): picker multi-zona, distrito/barrio/dirección,
+                  fecha M35 y checkbox de préstamo. Solo aparece cuando hay algún campo
+                  que mostrar. */}
+              <div style={{ ...gridTwoCols(), marginTop: 14 }}>
                 {/* PICKER multi-zona: solo cuando origen=Vivero + producto + tamaño */}
                 {distribucionActiva ? (
                   <div style={{ gridColumn: "span 2" }}>
