@@ -170,6 +170,40 @@ export function getProductFormatoConfig(product) {
 }
 
 /**
+ * Sufijo de unidad para mostrar la cantidad de un movimiento ya guardado.
+ *   - Plantas → "ud"
+ *   - Fitosanitario / Fertilizante → "kg" o "lt" según el formato registrado
+ *     (Líquido → lt, resto → kg).
+ *   - Áridos / Material Vegetal → "m³"
+ *   - Ferretería → "m" si el formato registrado es "metros", "ud" si no.
+ *
+ * Acepta un objeto con `producto_categoria` y `tamano_origen` / `tamano_destino`
+ * (es decir, un MovimientoOut tal y como llega del backend).
+ */
+export function getUnidadMovimiento(mov) {
+  if (!mov) return "ud";
+  const cat = normalize(mov.producto_categoria);
+  const tamano = normalize(mov.tamano_origen || mov.tamano_destino);
+
+  if (categoryIs(cat, "planta")) return "ud";
+
+  if (categoryIs(cat, "fitosanitario", "fertilizante")) {
+    return tamano === "liquido" ? "lt" : "kg";
+  }
+
+  if (categoryIs(cat, "arido", "material vegetal")) {
+    return "m³";
+  }
+
+  if (categoryIs(cat, "ferreteria")) {
+    if (tamano === "metros") return "m";
+    return "ud";
+  }
+
+  return "ud";
+}
+
+/**
  * Devuelve la lista de opciones que debería aparecer en un select de
  * tamaño/formato dado el formatoConfig. Útil para combinar con el filtrado
  * por stock.

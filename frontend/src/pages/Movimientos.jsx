@@ -7,8 +7,12 @@ import {
 } from "../api/api";
 import { loadZonasFromServer } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
-import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
-import { formatCantidad } from "../utils/numero";
+import {
+  getProductFormatoConfig,
+  getFormatoOptions,
+  getUnidadMovimiento,
+} from "../utils/formato";
+import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 
 // Zonas especiales (no numéricas) — dedicadas a categorías concretas.
 const ZONA_ALMACEN = "Almacén";
@@ -3470,7 +3474,7 @@ export default function Movimientos() {
                           borderBottom: "1px solid rgba(15,23,42,0.10)",
                         }}
                       >
-                        {formatCantidad(m.cantidad)}
+                        {formatCantidadConUnidad(m.cantidad, getUnidadMovimiento(m))}
                       </td>
 
                       <td
@@ -3781,7 +3785,7 @@ function MovimientoDetalleModal({ movimiento, onClose }) {
           <Row label="Fecha movimiento" value={fmt(m.fecha_movimiento)} />
           <Row label="Tipo" value={tipo} />
           <Row label="Producto" value={m.producto_nombre_cientifico || m.nombre_cientifico || `Producto #${m.producto_id}`} />
-          <Row label="Cantidad" value={formatCantidad(m.cantidad)} />
+          <Row label="Cantidad" value={formatCantidadConUnidad(m.cantidad, getUnidadMovimiento(m))} />
 
           <Row label="Origen" value={`${m.origen_tipo || "—"}${m.zona_origen ? " · Zona " + m.zona_origen : ""}${m.tamano_origen ? " · " + m.tamano_origen : ""}`} />
           <Row label="Destino" value={`${m.destino_tipo || "—"}${m.zona_destino ? " · Zona " + m.zona_destino : ""}${m.tamano_destino ? " · " + m.tamano_destino : ""}`} />
