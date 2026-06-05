@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Date, DateTime, Boolean, ForeignKey, Text, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from db import Base
@@ -69,7 +69,7 @@ class Lote(Base):
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
 
     tamano_inicial = Column(String(20), nullable=True)
-    cantidad_inicial = Column(Integer, nullable=False)
+    cantidad_inicial = Column(Numeric(12, 3), nullable=False)
 
     origen_tipo = Column(String(30), nullable=True)
     origen_referencia = Column(String(255), nullable=True)
@@ -96,7 +96,7 @@ class InventarioLote(Base):
     zona = Column(String(20), nullable=True)
     tamano = Column(String(20), nullable=True)
 
-    cantidad_disponible = Column(Integer, nullable=False)
+    cantidad_disponible = Column(Numeric(12, 3), nullable=False)
     fecha_disponibilidad = Column(Date, nullable=True)
 
     producto = relationship("Producto")
@@ -153,8 +153,8 @@ class PedidoItem(Base):
     pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False, index=True)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False, index=True)
     tamano = Column(String(30), nullable=True)
-    cantidad = Column(Integer, nullable=False)
-    cantidad_servida = Column(Integer, nullable=False, default=0)
+    cantidad = Column(Numeric(12, 3), nullable=False)
+    cantidad_servida = Column(Numeric(12, 3), nullable=False, default=0)
 
     pedido = relationship("Pedido", back_populates="items")
     producto = relationship("Producto")
@@ -193,7 +193,7 @@ class Movimiento(Base):
     tamano_origen = Column(String(20), nullable=True)
     tamano_destino = Column(String(20), nullable=True)
 
-    cantidad = Column(Integer, nullable=False)
+    cantidad = Column(Numeric(12, 3), nullable=False)
 
     distrito_destino = Column(String(100), nullable=True)
     barrio_destino = Column(String(100), nullable=True)
@@ -281,7 +281,7 @@ class MovimientoLoteDetalle(Base):
     tamano_origen = Column(String(20), nullable=True)
     tamano_destino = Column(String(20), nullable=True)
 
-    cantidad = Column(Integer, nullable=False)
+    cantidad = Column(Numeric(12, 3), nullable=False)
 
     movimiento = relationship("Movimiento", back_populates="detalles")
     producto = relationship("Producto")

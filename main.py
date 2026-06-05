@@ -93,7 +93,7 @@ class LoginResponse(BaseModel):
 class PedidoItemCreate(BaseModel):
     producto_id: int
     tamano: str
-    cantidad: int
+    cantidad: float
 
 
 class PedidoCreate(BaseModel):
@@ -114,7 +114,7 @@ class MovimientoCreate(BaseModel):
     uuid_lote: Optional[str] = None
 
     producto_id: int
-    cantidad: int
+    cantidad: float
     origen_tipo: str
     destino_tipo: str
 
@@ -144,7 +144,7 @@ class MovimientoOut(BaseModel):
     pedido_item_id: Optional[int] = None
     uuid_lote: Optional[str] = None
     producto_id: int
-    cantidad: int
+    cantidad: float
     tipo_movimiento: str
     origen_tipo: str
     destino_tipo: str
@@ -466,7 +466,7 @@ def _stock_total_producto(db: Session, producto_id: int) -> int:
         .filter(_disponible_filter())
         .all()
     )
-    return sum(int(r.cantidad_disponible or 0) for r in rows)
+    return sum(float(r.cantidad_disponible or 0) for r in rows)
 
 
 def _stock_en_zona_tamano(
@@ -491,7 +491,7 @@ def _stock_en_zona_tamano(
     if not include_no_disponibles:
         q = q.filter(_disponible_filter())
     rows = q.all()
-    return sum(int(r.cantidad_disponible or 0) for r in rows)
+    return sum(float(r.cantidad_disponible or 0) for r in rows)
 
 
 def _stock_por_tamano_producto(db: Session, producto_id: int) -> dict:
@@ -510,7 +510,7 @@ def _stock_por_tamano_producto(db: Session, producto_id: int) -> dict:
         tam = (r.tamano or "").strip()
         if not tam:
             continue
-        out[tam] = out.get(tam, 0) + int(r.cantidad_disponible or 0)
+        out[tam] = out.get(tam, 0) + float(r.cantidad_disponible or 0)
 
     return out
 
@@ -526,7 +526,7 @@ def _stock_total_producto_tamano(db: Session, producto_id: int, tamano: str) -> 
         .filter(_disponible_filter())
         .all()
     )
-    return sum(int(r.cantidad_disponible or 0) for r in rows)
+    return sum(float(r.cantidad_disponible or 0) for r in rows)
 
 
 def _transicionar_pedidos_caducados(db: Session) -> int:
@@ -760,7 +760,7 @@ def get_productos(
         stock_total = 0
         stock_by_size: dict[str, int] = {}
         for inv in invs:
-            cantidad = int(inv.cantidad_disponible or 0)
+            cantidad = float(inv.cantidad_disponible or 0)
             if cantidad <= 0:
                 continue
             stock_total += cantidad
@@ -772,7 +772,7 @@ def get_productos(
         lotes = []
         alertas_caducidad = []
         for inv in invs:
-            cantidad = int(inv.cantidad_disponible or 0)
+            cantidad = float(inv.cantidad_disponible or 0)
             if cantidad <= 0:
                 continue
             fecha_cad = cad_map.get((inv.uuid_lote, p.id, inv.zona, inv.tamano))
@@ -1202,9 +1202,14 @@ def create_pedido(
                     ),
                 )
 
-    # Empresa externa: pedido caduca a los 15 días
+    # Caducidad de pedido:
+    # Todos los pedidos de SALIDA caducan a los 15 días desde su creación,
+    # independientemente del rol del usuario que los creó. El material está
+    # destinado a salir del vivero; si nadie lo recoge en ese plazo, se libera
+    # el stock reservado automáticamente.
+    # Los pedidos de REPOSICIÓN no caducan (son internos al vivero).
     fecha_cad_pedido = None
-    if (current_user.rol or "").strip().lower() == "empresa_externa" and tipo_pedido == "salida":
+    if tipo_pedido == "salida":
         fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=15)
 
     pedido = Pedido(
@@ -1515,7 +1520,7 @@ def crear_movimiento(
                 detail="El tamaño del movimiento no coincide con el tamaño de la línea del pedido",
             )
 
-        pendiente = int(pedido_item.cantidad or 0) - int(pedido_item.cantidad_servida or 0)
+        pendiente = float(pedido_item.cantidad or 0) - float(pedido_item.cantidad_servida or 0)
         if payload.cantidad > pendiente:
             raise HTTPException(
                 status_code=400,
@@ -1664,7 +1669,7 @@ def crear_movimiento(
             if restante <= 0:
                 break
 
-            usar = min(int(inv.cantidad_disponible or 0), restante)
+            usar = min(float(inv.cantidad_disponible or 0), restante)
             if usar <= 0:
                 continue
 
@@ -1732,16 +1737,16 @@ def crear_movimiento(
     )
 
     if es_servicio_pedido:
-        pedido_item.cantidad_servida = int(pedido_item.cantidad_servida or 0) + int(payload.cantidad)
+        pedido_item.cantidad_servida = float(pedido_item.cantidad_servida or 0) + float(payload.cantidad)
 
-        if int(pedido_item.cantidad_servida or 0) > int(pedido_item.cantidad or 0):
+        if float(pedido_item.cantidad_servida or 0) > float(pedido_item.cantidad or 0):
             raise HTTPException(
                 status_code=400,
                 detail="La cantidad servida supera la cantidad pedida en la línea seleccionada",
             )
 
         todas_servidas = all(
-            int(it.cantidad_servida or 0) >= int(it.cantidad or 0)
+            float(it.cantidad_servida or 0) >= float(it.cantidad or 0)
             for it in pedido.items
         )
 

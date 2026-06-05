@@ -54,7 +54,7 @@ class MovimientoCreate(BaseModel):
     tamano_origen: Optional[TamanoType] = None
     tamano_destino: Optional[TamanoType] = None
 
-    cantidad: int = Field(gt=0)
+    cantidad: float = Field(gt=0)
 
     distrito_destino: Optional[str] = None
     barrio_destino: Optional[str] = None
@@ -81,7 +81,7 @@ class MovimientoOut(BaseModel):
     tamano_origen: Optional[str]
     tamano_destino: Optional[str]
 
-    cantidad: int
+    cantidad: float
 
     distrito_destino: Optional[str]
     barrio_destino: Optional[str]
@@ -167,7 +167,7 @@ class TokenOut(BaseModel):
 class PedidoItemCreate(BaseModel):
     producto_id: int
     tamano: TamanoType
-    cantidad: int = Field(gt=0)
+    cantidad: float = Field(gt=0)
 
 
 class PedidoCreate(BaseModel):
@@ -184,8 +184,8 @@ class PedidoItemOut(BaseModel):
     producto_id: int
     producto_nombre: Optional[str] = None
     tamano: Optional[str] = None
-    cantidad: int
-    cantidad_servida: int = 0
+    cantidad: float
+    cantidad_servida: float = 0
 
     class Config:
         from_attributes = True

@@ -109,11 +109,16 @@ export function getProductFormatoConfig(product) {
       kind: "formato_dropdown",
       label: "Formato",
       options: FORMATOS_FITOSANITARIO,
-      showCantidad: false,
-      cantidadLabel: null,
-      observacionesRequired: true,
+      showCantidad: true,
+      // La etiqueta de la cantidad depende del formato seleccionado en runtime.
+      // Líquido → Litros, todos los demás → Kg.
+      cantidadLabel: "Kg",
+      getCantidadLabel: (formato) =>
+        (formato || "").trim().toLowerCase() === "líquido" ? "Litros" : "Kg",
+      allowDecimals: true,
+      observacionesRequired: false,
       observacionesHint:
-        "Indica aquí la cantidad exacta y el envase (ej: 5L, 500g, 2 botes de 1kg).",
+        "Opcional. Útil para anotar nº y tamaño de envases (ej: 2 botellas de 5L).",
     };
   }
 
