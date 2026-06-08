@@ -10,6 +10,7 @@ import {
 } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
+import WelcomeModal, { shouldShowWelcomeOnStart } from "../components/welcome/WelcomeModal";
 
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
 const ENABLE_ZONE_EDITOR = true;
@@ -1111,9 +1112,25 @@ export default function Layout() {
   const [productos, setProductos] = useState([]);
   const [pedidosUsuario, setPedidosUsuario] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState(() =>
     getReadNotificationsFromStorage()
   );
+
+  // Modal de bienvenida: se abre automáticamente al entrar al Dashboard si:
+  //   - es la primera vez (no hay flag "viverapp_welcome_seen" en localStorage), o
+  //   - el usuario marcó "Mostrar al iniciar" en una visita anterior.
+  // En cualquier otro caso el usuario puede reabrirlo desde el botón "?" del header.
+  useEffect(() => {
+    if (location.pathname !== "/dashboard") return;
+    if (!me) return; // espera a tener al usuario cargado para no abrirlo antes de la sesión
+    if (shouldShowWelcomeOnStart()) {
+      setWelcomeOpen(true);
+    }
+    // Solo evaluamos al cambiar de ruta o al cargar al usuario; el modal queda
+    // bajo control manual a partir de ahí.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, me?.id]);
 
   useEffect(() => {
     const loadMe = async () => {
@@ -1486,6 +1503,30 @@ export default function Layout() {
             </div>
 
             <button
+              type="button"
+              onClick={() => setWelcomeOpen(true)}
+              title="Ver guía de bienvenida"
+              aria-label="Abrir guía de bienvenida"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 14,
+                border: "1px solid rgba(16,185,129,0.30)",
+                background: "rgba(16,185,129,0.10)",
+                color: "#065f46",
+                fontWeight: 900,
+                fontSize: 18,
+                cursor: "pointer",
+                boxShadow: "0 8px 18px rgba(2,6,23,0.04)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ?
+            </button>
+
+            <button
               onClick={() => {
                 clearStoredToken();
                 try {
@@ -1504,6 +1545,8 @@ export default function Layout() {
           <Outlet context={{ me, isAdmin, collapsed: false }} />
         </main>
       </div>
+
+      <WelcomeModal open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
 
       <ZonaMapModal open={mapOpen} onClose={() => setMapOpen(false)} isAdmin={isAdmin} />
       {canSeeNotifications && (
