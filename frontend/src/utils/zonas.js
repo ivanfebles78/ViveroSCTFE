@@ -19,16 +19,37 @@ export function normalizeZonaCompare(s) {
     .trim();
 }
 
+// Mapa interno: id canónico (normalizado) → display name legible.
+// Cubre las zonas especiales y sus variantes razonables. Para zonas
+// desconocidas devolvemos el id tal cual.
+const ZONA_DISPLAY_MAP = [
+  // Almacenes especializados (tres tras el split del almacén único).
+  { match: ["almacenfito", "almacenfitosanitario", "almacenfitosanitarios"], name: "Almacén Fitosanitarios" },
+  { match: ["almacengeneral", "almacenferreteria"], name: "Almacén General" },
+  { match: ["almacenfert", "almacenfertilizante", "almacenfertilizantes"], name: "Almacén Fertilizantes" },
+  // Compatibilidad temporal con la zona "almacen" antigua (pre-split).
+  { match: ["almacen"], name: "Almacén" },
+  // Zona compostaje.
+  { match: ["compostaje"], name: "Zona Compostaje" },
+];
+
+function lookupZonaDisplay(zonaId) {
+  const n = normalizeZonaCompare(zonaId);
+  for (const entry of ZONA_DISPLAY_MAP) {
+    if (entry.match.includes(n)) return entry.name;
+  }
+  return null;
+}
+
 // Nombre corto para usar dentro de selects/dropdowns.
-//   "almacen" / "Almacen" / "Almacén" → "Almacén"
-//   "compostaje" / "zonacompostaje" / "Zona Compostaje" → "Zona Compostaje"
+//   "almacen-fito"  / "almacenfito"  → "Almacén Fitosanitarios"
+//   "almacen-general" / "almacenferreteria" → "Almacén General"
+//   "almacen-fert" / "almacenfertilizantes" → "Almacén Fertilizantes"
+//   "compostaje" / "zonacompostaje" → "Zona Compostaje"
 //   "1" / "3a" / "10b" → tal cual (el dropdown ya tiene el contexto "Zona").
 export function getZonaDisplayName(zonaId) {
   if (zonaId === null || zonaId === undefined || zonaId === "") return "";
-  const n = normalizeZonaCompare(zonaId);
-  if (n === "almacen") return "Almacén";
-  if (n === "compostaje") return "Zona Compostaje";
-  return String(zonaId);
+  return lookupZonaDisplay(zonaId) || String(zonaId);
 }
 
 // Etiqueta completa para usar en frases largas tipo "Vivero · Zona X · …".
@@ -36,8 +57,7 @@ export function getZonaDisplayName(zonaId) {
 // su nombre completo tal cual (porque ya tienen un nombre propio).
 export function getZonaLabel(zonaId) {
   if (zonaId === null || zonaId === undefined || zonaId === "") return "";
-  const n = normalizeZonaCompare(zonaId);
-  if (n === "almacen") return "Almacén";
-  if (n === "compostaje") return "Zona Compostaje";
+  const special = lookupZonaDisplay(zonaId);
+  if (special) return special;
   return `Zona ${zonaId}`;
 }

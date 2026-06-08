@@ -20,9 +20,18 @@ import {
 } from "../utils/zonas";
 
 // Zonas especiales (no numéricas) — dedicadas a categorías concretas.
-const ZONA_ALMACEN = "Almacén";
+// El almacén general original se ha subdividido en tres almacenes
+// especializados: fitosanitarios, general (ferretería) y fertilizantes.
+const ZONA_ALMACEN_FITO = "almacen-fito";
+const ZONA_ALMACEN_GENERAL = "almacen-general";
+const ZONA_ALMACEN_FERT = "almacen-fert";
 const ZONA_COMPOSTAJE = "Zona Compostaje";
-const ZONAS_ESPECIALES = [ZONA_ALMACEN, ZONA_COMPOSTAJE];
+const ZONAS_ESPECIALES = [
+  ZONA_ALMACEN_FITO,
+  ZONA_ALMACEN_GENERAL,
+  ZONA_ALMACEN_FERT,
+  ZONA_COMPOSTAJE,
+];
 
 // Fallback hardcoded por si la API de configuración de zonas falla.
 // La lista real se carga dinámicamente desde el servidor en el componente
@@ -31,7 +40,9 @@ const ZONAS_ESPECIALES = [ZONA_ALMACEN, ZONA_COMPOSTAJE];
 const DEFAULT_ZONAS = [
   "1", "2", "3a", "3b", "4a", "4b",
   "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11", "12",
-  ZONA_ALMACEN,
+  ZONA_ALMACEN_FITO,
+  ZONA_ALMACEN_GENERAL,
+  ZONA_ALMACEN_FERT,
   ZONA_COMPOSTAJE,
 ];
 
@@ -73,36 +84,40 @@ const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 // Devuelve las zonas en las que un producto puede entrar/salir según su
 // categoría. Reglas:
 //   - Áridos / Material Vegetal → solo "Zona Compostaje".
-//   - Ferretería / Fitosanitario / Fertilizante → solo "Almacén".
-//   - Plantas (y cualquier otra categoría) → solo zonas numéricas.
+//   - Fitosanitario              → solo "Almacén Fitosanitarios".
+//   - Fertilizante               → solo "Almacén Fertilizantes".
+//   - Ferretería                 → solo "Almacén General".
+//   - Plantas (y cualquier otra) → solo zonas numéricas.
 function getZonasPermitidasParaCategoria(producto, todasLasZonas) {
   if (!producto) return safeArray(todasLasZonas);
 
-  const normalize = (s) =>
-    (s || "")
-      .toString()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .trim();
-
-  const cat = normalize(producto.categoria);
-  const isCompostaje = cat === "arido" || cat === "aridos" || cat === "material vegetal" || cat === "materiales vegetales";
-  const isAlmacen =
-    cat === "ferreteria" ||
-    cat === "fitosanitario" || cat === "fitosanitarios" ||
-    cat === "fertilizante" || cat === "fertilizantes";
+  // Usamos la normalización canónica de zonas (sin tildes, sin separadores,
+  // sin prefijo "zona") para tolerar variantes de casing/escritura.
+  const cat = (producto.categoria || "")
+    .toString()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
 
   const zonas = safeArray(todasLasZonas);
 
-  if (isCompostaje) {
-    return zonas.filter((z) => normalize(z) === normalize(ZONA_COMPOSTAJE));
+  if (cat === "arido" || cat === "aridos" || cat === "material vegetal" || cat === "materiales vegetales") {
+    return zonas.filter((z) => normalizeZonaCompare(z) === normalizeZonaCompare(ZONA_COMPOSTAJE));
   }
-  if (isAlmacen) {
-    return zonas.filter((z) => normalize(z) === normalize(ZONA_ALMACEN));
+  if (cat === "fitosanitario" || cat === "fitosanitarios") {
+    return zonas.filter((z) => normalizeZonaCompare(z) === normalizeZonaCompare(ZONA_ALMACEN_FITO));
+  }
+  if (cat === "fertilizante" || cat === "fertilizantes") {
+    return zonas.filter((z) => normalizeZonaCompare(z) === normalizeZonaCompare(ZONA_ALMACEN_FERT));
+  }
+  if (cat === "ferreteria") {
+    return zonas.filter((z) => normalizeZonaCompare(z) === normalizeZonaCompare(ZONA_ALMACEN_GENERAL));
   }
   // Plantas y demás: zonas numéricas (excluir las especiales).
-  return zonas.filter((z) => !ZONAS_ESPECIALES.some((esp) => normalize(esp) === normalize(z)));
+  return zonas.filter(
+    (z) => !ZONAS_ESPECIALES.some((esp) => normalizeZonaCompare(esp) === normalizeZonaCompare(z))
+  );
 }
 
 const ORIGENES = [
