@@ -7,6 +7,7 @@ import zonasDefault from "./zonasConfig";
 import ZoneEditor from "./ZoneEditor";
 import { loadZonasFromServer, saveZonasToServer } from "./zonesStorage";
 import { formatCantidad } from "../../utils/numero";
+import { getZonaDisplayName } from "../../utils/zonas";
 
 const DEBUG_MAPA = false;
 // Cinturón de seguridad: si está en false, el editor está oculto para todos
@@ -158,14 +159,14 @@ export default function MapaVivero() {
               style={{ "--zona-color": zona.color }}
               onClick={() => handleZonaClick(zona)}
             >
-              <title>{zona.nombre}</title>
+              <title>{getZonaDisplayName(zona.nombre || zona.apiId || zona.id)}</title>
             </polygon>
           ))}
         </svg>
 
         {zonaSeleccionada && (
           <Modal onClose={cerrarModal}>
-            <h2>{zonaSeleccionada.nombre}</h2>
+            <h2>{getZonaDisplayName(zonaSeleccionada.nombre || zonaSeleccionada.apiId || zonaSeleccionada.id)}</h2>
 
             {loading && <p>Cargando información...</p>}
 

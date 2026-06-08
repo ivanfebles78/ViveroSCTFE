@@ -13,6 +13,11 @@ import {
   getUnidadMovimiento,
 } from "../utils/formato";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
+import {
+  normalizeZonaCompare,
+  getZonaDisplayName,
+  getZonaLabel,
+} from "../utils/zonas";
 
 // Zonas especiales (no numéricas) — dedicadas a categorías concretas.
 const ZONA_ALMACEN = "Almacén";
@@ -48,20 +53,6 @@ function naturalSortZonas(zonas) {
     if (na !== nb) return na - nb;
     return la.localeCompare(lb);
   });
-}
-
-// Normaliza un id/nombre de zona para comparaciones tolerantes (sin tildes,
-// sin guiones/espacios, sin el prefijo "zona", lowercase). Igual que la
-// lógica del backend en _normalize_zona_id.
-function normalizeZonaCompare(s) {
-  return (s || "")
-    .toString()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[_\-\s]/g, "")
-    .replace(/^zona/i, "")
-    .trim();
 }
 
 // Garantiza que las zonas especiales (Almacén, Zona Compostaje) aparezcan
@@ -384,14 +375,14 @@ function tdStyle() {
 
 function buildLabelOrigen(m) {
   if (m?.origen_tipo === "Vivero") {
-    return `Vivero${m?.zona_origen ? ` · Zona ${m.zona_origen}` : ""}${m?.tamano_origen ? ` · ${m.tamano_origen}` : ""}`;
+    return `Vivero${m?.zona_origen ? ` · ${getZonaLabel(m.zona_origen)}` : ""}${m?.tamano_origen ? ` · ${m.tamano_origen}` : ""}`;
   }
   return m?.origen_tipo || "—";
 }
 
 function buildLabelDestino(m) {
   if (m?.destino_tipo === "Vivero") {
-    return `Vivero${m?.zona_destino ? ` · Zona ${m.zona_destino}` : ""}${m?.tamano_destino ? ` · ${m.tamano_destino}` : ""}`;
+    return `Vivero${m?.zona_destino ? ` · ${getZonaLabel(m.zona_destino)}` : ""}${m?.tamano_destino ? ` · ${m.tamano_destino}` : ""}`;
   }
 
   if (isExternalDestination(m?.destino_tipo)) {
@@ -1522,7 +1513,7 @@ function MovimientoModal({
       for (const [z, q] of zonasElegidas) {
         const disp = Number(distribucionDisponible[z] || 0);
         if (Number(q) > disp) {
-          filtered.push(`Zona ${z}: solicitado ${q} supera el disponible (${disp}).`);
+          filtered.push(`${getZonaLabel(z)}: solicitado ${q} supera el disponible (${disp}).`);
         }
       }
     }
@@ -1988,7 +1979,7 @@ function MovimientoModal({
                           </option>
                           {availableOriginZones.map((z) => (
                             <option key={z} value={z}>
-                              {z}
+                              {getZonaDisplayName(z)}
                             </option>
                           ))}
                         </select>
@@ -2046,7 +2037,7 @@ function MovimientoModal({
                           </option>
                           {zonasPermitidasPorCategoria.map((z) => (
                             <option key={z} value={z}>
-                              {z}
+                              {getZonaDisplayName(z)}
                             </option>
                           ))}
                         </select>
@@ -2100,7 +2091,7 @@ function MovimientoModal({
                                   : "1px solid rgba(15,23,42,0.06)",
                               }}
                             >
-                              <div style={{ fontWeight: 900, color: "#0f172a" }}>Zona {zona}</div>
+                              <div style={{ fontWeight: 900, color: "#0f172a" }}>{getZonaLabel(zona)}</div>
                               <div style={{ color: "#334155", fontWeight: 700 }}>
                                 Disponible: <span style={{ color: "#0f172a", fontWeight: 900 }}>{disp}</span>
                               </div>
@@ -2599,7 +2590,7 @@ function MovimientoModal({
                     <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 900 }}>Origen</div>
                     <div style={{ fontWeight: 800 }}>
                       {form.origen_tipo === "Vivero"
-                        ? `Vivero · Zona ${form.zona_origen || "—"} · ${form.tamano_origen || "—"}`
+                        ? `Vivero · ${form.zona_origen ? getZonaLabel(form.zona_origen) : "Zona —"} · ${form.tamano_origen || "—"}`
                         : form.origen_tipo || "—"}
                     </div>
                   </div>
@@ -2608,7 +2599,7 @@ function MovimientoModal({
                     <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 900 }}>Destino</div>
                     <div style={{ fontWeight: 800 }}>
                       {form.destino_tipo === "Vivero"
-                        ? `Vivero · Zona ${form.zona_destino || "—"} · ${form.tamano_destino || "—"}`
+                        ? `Vivero · ${form.zona_destino ? getZonaLabel(form.zona_destino) : "Zona —"} · ${form.tamano_destino || "—"}`
                         : isExternalDestination(form.destino_tipo)
                         ? `${form.destino_tipo} · ${form.distrito_destino || "—"} · ${form.barrio_destino || "—"} · ${form.direccion_destino || "—"}`
                         : form.destino_tipo || "—"}
@@ -3327,7 +3318,7 @@ export default function Movimientos() {
               <option value="">Todas</option>
               {zonasDisponibles.map((zona) => (
                 <option key={zona} value={zona}>
-                  {zona}
+                  {getZonaDisplayName(zona)}
                 </option>
               ))}
             </select>
