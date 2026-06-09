@@ -1,10 +1,14 @@
 from datetime import date, datetime, timedelta
 from typing import Optional
+import unicodedata
 import uuid
 
-from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File, Request
 import io
+import logging
+import traceback
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
@@ -51,6 +55,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger = logging.getLogger("viverapp")
+logging.basicConfig(level=logging.INFO)
+
+
+# Cuando un endpoint crashea con una excepción no controlada, FastAPI
+# devuelve un 500 cuyo cuerpo no pasa por el CORSMiddleware → el navegador
+# muestra un "CORS error" engañoso (net::ERR_FAILED). Este handler atrapa
+# cualquier excepción, registra el traceback completo en los logs de
+# Railway y devuelve un JSON con detalle útil que sí lleva los headers
+# CORS, así el frontend puede mostrar el mensaje real al usuario.
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        "[unhandled] %s %s\n%s",
+        request.method,
+        request.url.path,
+        traceback.format_exc(),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Error interno: {type(exc).__name__}: {str(exc)[:300]}",
+        },
+    )
 
 # =============================
 # CONFIG AUTH
@@ -1669,11 +1698,17 @@ def crear_movimiento(
             if restante <= 0:
                 break
 
-            usar = min(float(inv.cantidad_disponible or 0), restante)
+            # Importante: cantidad_disponible es NUMERIC(12, 3) en BD, por
+            # lo que SQLAlchemy lo devuelve como Decimal. No podemos mezclar
+            # Decimal con float en operaciones aritméticas (-=, +=) sin
+            # provocar TypeError. Trabajamos siempre en float y reasignamos
+            # con =, dejando que SQLAlchemy convierta a Decimal al persistir.
+            disponible_inv = float(inv.cantidad_disponible or 0)
+            usar = min(disponible_inv, restante)
             if usar <= 0:
                 continue
 
-            inv.cantidad_disponible -= usar
+            inv.cantidad_disponible = disponible_inv - usar
             uuids_asociados.append(inv.uuid_lote)
 
             if destino == "vivero":
@@ -1691,7 +1726,7 @@ def crear_movimiento(
                 fecha_disp_efectiva = fecha_disp if fecha_disp is not None else getattr(inv, "fecha_disponibilidad", None)
 
                 if destino_inv:
-                    destino_inv.cantidad_disponible += usar
+                    destino_inv.cantidad_disponible = float(destino_inv.cantidad_disponible or 0) + usar
                     if fecha_disp_efectiva is not None:
                         destino_inv.fecha_disponibilidad = fecha_disp_efectiva
                 else:
@@ -2214,8 +2249,6 @@ def _normalize_zona_id(value: str | None) -> str:
     # los prefijos "zona"/"zonazona" que añade el editor de mapa. Permite que
     # "Almacén", "almacen", "Zona-Almacen" y "zona_almacén" colapsen al
     # mismo valor canónico al comparar contra inventario_lote.zona.
-    import unicodedata
-
     raw = (value or "").strip().lower()
     raw = unicodedata.normalize("NFKD", raw)
     raw = "".join(c for c in raw if not unicodedata.combining(c))
