@@ -1174,7 +1174,7 @@ async def importar_productos(
 @app.get("/pedidos")
 def get_pedidos(
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero", "proveedor"])),
 ):
     # Transiciona pedidos vencidos antes de listar
     _transicionar_pedidos_caducados(db)
@@ -1196,6 +1196,17 @@ def get_pedidos(
                     func.lower(Pedido.tipo) == "reposicion",
                     func.upper(Pedido.estado).in_(("APROBADO", "SERVIDO")),
                 ),
+            )
+        )
+
+    # Proveedor: rol estrictamente de consulta. Solo ve los pedidos de
+    # REPOSICIÓN ya aprobados/servidos. Nunca pedidos de salida, ni
+    # pedidos de reposición pendientes de aprobación.
+    if rol == "proveedor":
+        q = q.filter(
+            and_(
+                func.lower(Pedido.tipo) == "reposicion",
+                func.upper(Pedido.estado).in_(("APROBADO", "SERVIDO")),
             )
         )
 
@@ -1484,7 +1495,7 @@ def denegar_pedido(
 def descargar_pedido_pdf(
     pedido_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero", "empresa_externa"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero", "empresa_externa", "proveedor"])),
 ):
     """
     Devuelve el PDF imprimible del pedido. Solo está disponible cuando el
@@ -1514,6 +1525,12 @@ def descargar_pedido_pdf(
         es_reposicion_publica = tipo == "reposicion" and estado in ("APROBADO", "SERVIDO")
         es_propio = (pedido.solicitante_username or "") == (current_user.username or "")
         if not (es_reposicion_publica or es_propio):
+            raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
+
+    # Proveedor: solo PDF de reposiciones aprobadas o servidas. Nada más.
+    if rol == "proveedor":
+        tipo = (pedido.tipo or "").strip().lower()
+        if not (tipo == "reposicion" and estado in ("APROBADO", "SERVIDO")):
             raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
 
     pdf_bytes = generar_pdf_pedido(pedido)
@@ -2416,7 +2433,7 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
 # =============================
 # GESTIÓN DE USUARIOS (ADMIN)
 # =============================
-ALLOWED_ROLES = {"admin", "manager", "tecnico", "gestor_vivero", "empresa_externa"}
+ALLOWED_ROLES = {"admin", "manager", "tecnico", "gestor_vivero", "empresa_externa", "proveedor"}
 ALLOWED_STATUSES_FOR_UPDATE = {"activo", "inactivo", "bloqueado", "pendiente"}
 
 

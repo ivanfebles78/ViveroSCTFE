@@ -1991,7 +1991,9 @@ export default function Pedidos() {
   const [expandedRows, setExpandedRows] = useState({});
 
   const role = me?.rol || me?.role;
-  const isReadOnly = role === "tecnico" || role === "gestor_vivero";
+  // Proveedor es estrictamente de lectura: no edita ni cancela ni crea.
+  const isProveedor = role === "proveedor";
+  const isReadOnly = role === "tecnico" || role === "gestor_vivero" || isProveedor;
   const isAdmin = role === "admin";
 
   const clearMsgTimer = () => {
@@ -2285,9 +2287,13 @@ export default function Pedidos() {
     <div style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h1 style={{ fontSize: 44, margin: 0, fontWeight: 900, color: "#0f172a" }}>Pedidos</h1>
+          <h1 style={{ fontSize: 44, margin: 0, fontWeight: 900, color: "#0f172a" }}>
+            {isProveedor ? "Pedidos de reposición" : "Pedidos"}
+          </h1>
           <div style={{ marginTop: 8, color: "#64748b", fontWeight: 700 }}>
-            Crea y gestiona pedidos con control de stock y destino final.
+            {isProveedor
+              ? "Listado de pedidos de reposición aprobados. Descarga o imprime el PDF para servir cada pedido."
+              : "Crea y gestiona pedidos con control de stock y destino final."}
           </div>
         </div>
 

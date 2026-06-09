@@ -59,6 +59,12 @@ function getVisibleNavItems(role) {
     );
   }
 
+  // Proveedor: rol de SOLO CONSULTA. Únicamente ve los pedidos de
+  // reposición aprobados y puede imprimirlos. Nada más en el menú.
+  if (role === "proveedor") {
+    return NAV_ITEMS.filter((i) => i.to === "/pedidos");
+  }
+
   return [];
 }
 
@@ -68,6 +74,7 @@ function getDefaultRouteForRole(role) {
   if (role === "manager") return "/dashboard";
   if (role === "gestor_vivero") return "/dashboard";
   if (role === "empresa_externa") return "/productos";
+  if (role === "proveedor") return "/pedidos";
   return "/dashboard";
 }
 
@@ -127,6 +134,11 @@ function isPathAllowedForRole(pathname, role) {
 
   if (role === "empresa_externa") {
     return ["/productos", "/pedidos"].includes(pathname);
+  }
+
+  // Proveedor: solo /pedidos.
+  if (role === "proveedor") {
+    return pathname === "/pedidos";
   }
 
   return false;

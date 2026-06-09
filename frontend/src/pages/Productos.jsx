@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   getProductos,
@@ -40,6 +40,102 @@ function productScientificName(producto) {
 function productCommonName(producto) {
   return producto?.nombre_natural || "-";
 }
+
+// Fila memoizada de producto: solo se re-renderiza cuando cambia su producto
+// o alguna de sus props funcionales. Sin memoización, al pulsar "Pedir más"
+// React re-renderiza las cientos de filas porque el padre cambia de estado.
+// Con memo + handlers estables (useCallback) cada fila se queda intacta, lo
+// que hace que el modal aparezca instantáneamente.
+const ProductoRow = memo(function ProductoRow({
+  p,
+  esEmpresaExterna,
+  puedeMarcarInterno,
+  puedePedirMas,
+  onToggleInterno,
+  onPedirMas,
+}) {
+  const stock = Number(p.stock ?? 0);
+  const min = p.stock_minimo;
+  const low =
+    !esEmpresaExterna &&
+    min !== null &&
+    min !== undefined &&
+    Number.isFinite(Number(min)) &&
+    stock < Number(min);
+  // Cacheamos la unidad por fila — antes se llamaba dos veces (stock y mínimo).
+  const unidad = getUnidadProducto(p);
+
+  return (
+    <tr style={low ? { color: "crimson", fontWeight: 800 } : undefined}>
+      <td>
+        <div style={{ fontWeight: 900 }}>{productScientificName(p)}</div>
+      </td>
+      <td>
+        <div style={{ color: "#475569", fontWeight: 700 }}>{productCommonName(p)}</div>
+      </td>
+      <td>{p.categoria ?? "-"}</td>
+      <td>{p.subcategoria ?? "-"}</td>
+      <td style={{ textAlign: "center", fontWeight: 800 }}>
+        {formatCantidadConUnidad(stock, unidad) || "0"}
+      </td>
+      {!esEmpresaExterna && (
+        <td style={{ textAlign: "center" }}>
+          {p.stock_minimo === null || p.stock_minimo === undefined
+            ? "-"
+            : formatCantidadConUnidad(p.stock_minimo, unidad)}
+        </td>
+      )}
+      {puedeMarcarInterno && (
+        <td style={{ textAlign: "center" }}>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              cursor: "pointer",
+              fontWeight: 700,
+              color: p.es_interno ? "#92400e" : "#475569",
+            }}
+            title={
+              p.es_interno
+                ? "Interno: oculto para Empresa Externa"
+                : "Visible para todos los roles"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={!!p.es_interno}
+              onChange={() => onToggleInterno(p)}
+              style={{ width: 16, height: 16, cursor: "pointer" }}
+            />
+            {p.es_interno ? "Sí" : "No"}
+          </label>
+        </td>
+      )}
+      {puedePedirMas && (
+        <td style={{ textAlign: "center" }}>
+          <button
+            onClick={() => onPedirMas(p)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 10,
+              border: "1px solid rgba(16,185,129,0.28)",
+              background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
+              color: "white",
+              fontWeight: 900,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+            title="Añadir este producto a la cesta de reposición"
+          >
+            Pedir más
+          </button>
+        </td>
+      )}
+    </tr>
+  );
+});
+
 
 function PedirMasModal({ open, producto, onClose, onAddToCart, saving }) {
   // El modal "pedir más" usa la lógica de formato/cantidad por categoría
@@ -1198,7 +1294,9 @@ export default function Productos() {
   const puedeMarcarInterno = rol === "admin" || rol === "manager";
   const puedeGestionar = rol === "admin" || rol === "manager";
 
-  const toggleEsInterno = async (producto) => {
+  // Memoizado para mantener la referencia estable y no romper el React.memo
+  // de las filas de ProductoRow.
+  const toggleEsInterno = useCallback(async (producto) => {
     const nuevoValor = !producto.es_interno;
     setProductos((prev) =>
       prev.map((p) => (p.id === producto.id ? { ...p, es_interno: nuevoValor } : p))
@@ -1213,7 +1311,15 @@ export default function Productos() {
       );
       setError(fmtErr(e));
     }
-  };
+  }, []);
+
+  // Handler estable para abrir el modal "Pedir más" desde cualquier fila.
+  // Es importante que la referencia no cambie en cada render del padre,
+  // porque las filas son memo y romperíamos la memoización si pasáramos
+  // una arrow function nueva en cada render.
+  const openPedirMas = useCallback((p) => {
+    setPedirProducto(p);
+  }, []);
 
   // Añadir un item a la cesta. Si ya existe el mismo producto+tamaño,
   // suma cantidades; si no, lo añade como nueva línea.
@@ -1501,87 +1607,17 @@ export default function Productos() {
                   </td>
                 </tr>
               ) : (
-                productosFiltrados.map((p) => {
-                  const stock = Number(p.stock ?? 0);
-                  const min = p.stock_minimo;
-
-                  const low =
-                    !esEmpresaExterna &&
-                    min !== null &&
-                    min !== undefined &&
-                    Number.isFinite(Number(min)) &&
-                    stock < Number(min);
-
-                  return (
-                    <tr key={p.id} style={low ? { color: "crimson", fontWeight: 800 } : undefined}>
-                      <td>
-                        <div style={{ fontWeight: 900 }}>{productScientificName(p)}</div>
-                      </td>
-                      <td>
-                        <div style={{ color: "#475569", fontWeight: 700 }}>{productCommonName(p)}</div>
-                      </td>
-                      <td>{p.categoria ?? "-"}</td>
-                      <td>{p.subcategoria ?? "-"}</td>
-                      <td style={{ textAlign: "center", fontWeight: 800 }}>
-                        {formatCantidadConUnidad(stock, getUnidadProducto(p)) || "0"}
-                      </td>
-                      {!esEmpresaExterna && (
-                        <td style={{ textAlign: "center" }}>
-                          {p.stock_minimo === null || p.stock_minimo === undefined
-                            ? "-"
-                            : formatCantidadConUnidad(p.stock_minimo, getUnidadProducto(p))}
-                        </td>
-                      )}
-                      {puedeMarcarInterno && (
-                        <td style={{ textAlign: "center" }}>
-                          <label
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              cursor: "pointer",
-                              fontWeight: 700,
-                              color: p.es_interno ? "#92400e" : "#475569",
-                            }}
-                            title={
-                              p.es_interno
-                                ? "Interno: oculto para Empresa Externa"
-                                : "Visible para todos los roles"
-                            }
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!p.es_interno}
-                              onChange={() => toggleEsInterno(p)}
-                              style={{ width: 16, height: 16, cursor: "pointer" }}
-                            />
-                            {p.es_interno ? "Sí" : "No"}
-                          </label>
-                        </td>
-                      )}
-                      {puedePedirMas && (
-                        <td style={{ textAlign: "center" }}>
-                          <button
-                            onClick={() => setPedirProducto(p)}
-                            style={{
-                              padding: "6px 12px",
-                              borderRadius: 10,
-                              border: "1px solid rgba(16,185,129,0.28)",
-                              background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
-                              color: "white",
-                              fontWeight: 900,
-                              cursor: "pointer",
-                              fontSize: 13,
-                            }}
-                            title="Crear pedido de reposición desde Empresa Externa"
-                          >
-                            Pedir más
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
+                productosFiltrados.map((p) => (
+                  <ProductoRow
+                    key={p.id}
+                    p={p}
+                    esEmpresaExterna={esEmpresaExterna}
+                    puedeMarcarInterno={puedeMarcarInterno}
+                    puedePedirMas={puedePedirMas}
+                    onToggleInterno={toggleEsInterno}
+                    onPedirMas={openPedirMas}
+                  />
+                ))
               )}
             </tbody>
           </table>
