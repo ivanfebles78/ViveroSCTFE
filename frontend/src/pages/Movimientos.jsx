@@ -2066,99 +2066,10 @@ function MovimientoModal({
                   fecha M35 y checkbox de préstamo. Solo aparece cuando hay algún campo
                   que mostrar. */}
               <div style={{ ...gridTwoCols(), marginTop: 14 }}>
-                {/* PICKER multi-zona: solo cuando origen=Vivero + producto + tamaño */}
-                {distribucionActiva ? (
-                  <div style={{ gridColumn: "span 2" }}>
-                    <div style={fieldLabelStyle()}>
-                      Distribución en el vivero — {form.tamano_origen}
-                    </div>
-                    <div
-                      style={{
-                        border: "1px solid rgba(15,23,42,0.10)",
-                        borderRadius: 14,
-                        background: "#fbfdff",
-                        padding: 12,
-                        display: "grid",
-                        gap: 8,
-                      }}
-                    >
-                      {Object.keys(distribucionDisponible).length === 0 ? (
-                        <div style={{ color: "#64748b", fontWeight: 700 }}>
-                          No hay stock de este producto en tamaño {form.tamano_origen}.
-                        </div>
-                      ) : (
-                        Object.entries(distribucionDisponible).map(([zona, disp]) => {
-                          const valor = distribucion[zona] ?? "";
-                          const invalid = Number(valor) > disp;
-                          return (
-                            <div
-                              key={zona}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "140px 1fr 110px",
-                                gap: 10,
-                                alignItems: "center",
-                                padding: "8px 10px",
-                                borderRadius: 10,
-                                background: "white",
-                                border: invalid
-                                  ? "1px solid rgba(239,68,68,0.30)"
-                                  : "1px solid rgba(15,23,42,0.06)",
-                              }}
-                            >
-                              <div style={{ fontWeight: 900, color: "#0f172a" }}>{getZonaLabel(zona)}</div>
-                              <div style={{ color: "#334155", fontWeight: 700 }}>
-                                Disponible: <span style={{ color: "#0f172a", fontWeight: 900 }}>{disp}</span>
-                              </div>
-                              <input
-                                type="number"
-                                min={0}
-                                max={disp}
-                                value={valor}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  setDistribucion((prev) => {
-                                    const nx = { ...prev };
-                                    if (v === "" || Number(v) <= 0) delete nx[zona];
-                                    else nx[zona] = Math.min(Number(v), disp);
-                                    return nx;
-                                  });
-                                }}
-                                placeholder="0"
-                                style={{
-                                  padding: "8px 10px",
-                                  borderRadius: 10,
-                                  border: "1px solid rgba(15,23,42,0.12)",
-                                  fontWeight: 900,
-                                  textAlign: "center",
-                                  color: "#0f172a",
-                                }}
-                              />
-                            </div>
-                          );
-                        })
-                      )}
-                      <div
-                        style={{
-                          marginTop: 4,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "8px 4px",
-                          borderTop: "1px dashed rgba(15,23,42,0.10)",
-                        }}
-                      >
-                        <span style={{ color: "#64748b", fontWeight: 700 }}>
-                          {Object.keys(distribucion).filter((k) => Number(distribucion[k]) > 0).length} zona(s) seleccionada(s)
-                        </span>
-                        <span style={{ color: "#0f172a", fontWeight: 900 }}>Total: {totalDistribucion}</span>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 6, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
-                      Si eliges varias zonas, se creará un movimiento por cada una.
-                    </div>
-                  </div>
-                ) : null}
+                {/* El picker multi-zona vive ahora en la Sección 3 (Detalles
+                    del producto), pegado a la cantidad — así el usuario no
+                    tiene que hacer scroll de Sección 3 a Sección 1 para
+                    repartir el stock entre zonas. */}
 
                 {/* Distrito / Barrio / Dirección (destino externo) */}
                 {isExternalDestination(form.destino_tipo) ? (
@@ -2491,7 +2402,7 @@ function MovimientoModal({
                       <div style={mostrarFormato ? undefined : { gridColumn: "span 2" }}>
                         <div style={fieldLabelStyle()}>
                           {cantidadLabel}
-                          {distribucionActiva ? " (calculada)" : ""}
+                          {distribucionActiva ? " (suma de zonas)" : ""}
                         </div>
                         {distribucionActiva ? (
                           <div
@@ -2501,6 +2412,7 @@ function MovimientoModal({
                               color: "#0f172a",
                               fontWeight: 900,
                             }}
+                            title="Esta cantidad es la suma de lo asignado en cada zona del picker. Modifícala desde el picker de abajo."
                           >
                             {totalDistribucion} {totalDistribucion === 1 ? "unidad" : "unidades"}
                           </div>
@@ -2515,6 +2427,102 @@ function MovimientoModal({
                             placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
                           />
                         )}
+                      </div>
+                    ) : null}
+
+                    {/* Picker multi-zona: aparece aquí, en Sección 3, pegado a
+                        la cantidad. Solo activo cuando origen=Vivero +
+                        producto + tamaño/formato. */}
+                    {distribucionActiva ? (
+                      <div style={{ gridColumn: "span 2" }}>
+                        <div style={fieldLabelStyle()}>
+                          De qué zonas sale — {form.tamano_origen}
+                        </div>
+                        <div
+                          style={{
+                            border: "1px solid rgba(245,158,11,0.30)",
+                            borderRadius: 14,
+                            background: "rgba(245,158,11,0.04)",
+                            padding: 12,
+                            display: "grid",
+                            gap: 8,
+                          }}
+                        >
+                          {Object.keys(distribucionDisponible).length === 0 ? (
+                            <div style={{ color: "#64748b", fontWeight: 700 }}>
+                              No hay stock de este producto en tamaño {form.tamano_origen}.
+                            </div>
+                          ) : (
+                            Object.entries(distribucionDisponible).map(([zona, disp]) => {
+                              const valor = distribucion[zona] ?? "";
+                              const invalid = Number(valor) > disp;
+                              return (
+                                <div
+                                  key={zona}
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "140px 1fr 110px",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    padding: "8px 10px",
+                                    borderRadius: 10,
+                                    background: "white",
+                                    border: invalid
+                                      ? "1px solid rgba(239,68,68,0.30)"
+                                      : "1px solid rgba(15,23,42,0.06)",
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 900, color: "#0f172a" }}>{getZonaLabel(zona)}</div>
+                                  <div style={{ color: "#334155", fontWeight: 700 }}>
+                                    Disponible: <span style={{ color: "#0f172a", fontWeight: 900 }}>{disp}</span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={disp}
+                                    value={valor}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      setDistribucion((prev) => {
+                                        const nx = { ...prev };
+                                        if (v === "" || Number(v) <= 0) delete nx[zona];
+                                        else nx[zona] = Math.min(Number(v), disp);
+                                        return nx;
+                                      });
+                                    }}
+                                    placeholder="0"
+                                    style={{
+                                      padding: "8px 10px",
+                                      borderRadius: 10,
+                                      border: "1px solid rgba(15,23,42,0.12)",
+                                      fontWeight: 900,
+                                      textAlign: "center",
+                                      color: "#0f172a",
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })
+                          )}
+                          <div
+                            style={{
+                              marginTop: 4,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "8px 4px",
+                              borderTop: "1px dashed rgba(245,158,11,0.30)",
+                            }}
+                          >
+                            <span style={{ color: "#64748b", fontWeight: 700 }}>
+                              {Object.keys(distribucion).filter((k) => Number(distribucion[k]) > 0).length} zona(s) seleccionada(s)
+                            </span>
+                            <span style={{ color: "#0f172a", fontWeight: 900 }}>Total: {totalDistribucion}</span>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 6, color: "#92400e", fontSize: 12, fontWeight: 700 }}>
+                          💡 Reparte la cantidad entre las zonas con stock. Se generará un movimiento por cada zona seleccionada.
+                        </div>
                       </div>
                     ) : null}
 
