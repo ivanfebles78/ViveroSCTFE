@@ -2053,15 +2053,36 @@ export default function Pedidos() {
     setMsg("");
 
     try {
-      const [prods, movs, peds] = await Promise.all([
-        getProductos(),
-        getMovimientos(),
-        getPedidos(),
-      ]);
-
-      setProductos(safeArray(prods));
-      setMovimientos(safeArray(movs));
-      setPedidos(safeArray(peds));
+      // El rol 'proveedor' es de SOLO consulta y no tiene permiso sobre
+      // /productos ni /movimientos (devolverían 403). Para ese rol solo
+      // pedimos /pedidos; el resto de roles pide los tres en paralelo.
+      // Usamos Promise.allSettled para que un fallo aislado en productos
+      // o movimientos no aborte la carga de pedidos (antes Promise.all
+      // hacía que un 403 vaciara toda la lista).
+      if (isProveedor) {
+        const peds = await getPedidos();
+        setProductos([]);
+        setMovimientos([]);
+        setPedidos(safeArray(peds));
+      } else {
+        const [prodsRes, movsRes, pedsRes] = await Promise.allSettled([
+          getProductos(),
+          getMovimientos(),
+          getPedidos(),
+        ]);
+        if (prodsRes.status === "fulfilled") setProductos(safeArray(prodsRes.value));
+        if (movsRes.status === "fulfilled") setMovimientos(safeArray(movsRes.value));
+        if (pedsRes.status === "fulfilled") {
+          setPedidos(safeArray(pedsRes.value));
+        } else {
+          // Si lo único que ha fallado es /pedidos sí avisamos al usuario.
+          const e = pedsRes.reason;
+          showTimedMessage(
+            e?.response?.data?.detail || e?.message || "Error cargando pedidos",
+            "error"
+          );
+        }
+      }
     } catch (e) {
       showTimedMessage(
         e?.response?.data?.detail || e?.message || "Error cargando pedidos",
