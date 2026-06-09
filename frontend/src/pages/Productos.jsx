@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   getProductos,
-  createPedidoReposicion,
+  createPedido,
   updateProductoInterno,
   createProducto,
   updateProducto,
@@ -10,7 +10,11 @@ import {
   importarProductos,
 } from "../api/api";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
-import { getUnidadProducto } from "../utils/formato";
+import {
+  getUnidadProducto,
+  getProductFormatoConfig,
+  getFormatoOptions,
+} from "../utils/formato";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -37,22 +41,48 @@ function productCommonName(producto) {
   return producto?.nombre_natural || "-";
 }
 
-function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
-  const [tamano, setTamano] = useState("M12");
-  const [cantidad, setCantidad] = useState(1);
+function PedirMasModal({ open, producto, onClose, onAddToCart, saving }) {
+  // El modal "pedir más" usa la lógica de formato/cantidad por categoría
+  // (la misma que en Movimientos) para que fitosanitarios pidan formato
+  // (Líquido/Polvo/…) en lugar de "M12", y áridos/ferretería rellenen su
+  // unidad automáticamente.
+  const formatoConfig = useMemo(
+    () => getProductFormatoConfig(producto),
+    [producto]
+  );
+  const opcionesFormato = useMemo(
+    () => getFormatoOptions(formatoConfig),
+    [formatoConfig]
+  );
+
+  const valorPorDefectoFormato = () => {
+    if (formatoConfig.kind === "formato_fijo") return formatoConfig.value;
+    return ""; // que el usuario elija explícitamente
+  };
+
+  const [tamano, setTamano] = useState(valorPorDefectoFormato());
+  const [cantidad, setCantidad] = useState("");
   const [nota, setNota] = useState("");
   const [err, setErr] = useState("");
 
   useEffect(() => {
     if (open) {
-      setTamano("M12");
-      setCantidad(1);
+      setTamano(valorPorDefectoFormato());
+      setCantidad("");
       setNota("");
       setErr("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, producto?.id]);
 
   if (!open || !producto) return null;
+
+  // Etiqueta dinámica de cantidad (Líquido → "Litros"; resto fito → "Kg";
+  // áridos → "Cantidad (m³)", etc.).
+  const cantidadLabel =
+    formatoConfig.kind === "formato_dropdown" && typeof formatoConfig.getCantidadLabel === "function"
+      ? formatoConfig.getCantidadLabel(tamano)
+      : formatoConfig.cantidadLabel || "Cantidad";
 
   const submit = async () => {
     setErr("");
@@ -61,14 +91,17 @@ function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
       setErr("La cantidad debe ser mayor que 0.");
       return;
     }
-    if (!tamano) {
-      setErr("Selecciona un tamaño.");
+    if (!tamano && formatoConfig.kind !== "formato_fijo") {
+      setErr(`Selecciona ${formatoConfig.label.toLowerCase()}.`);
       return;
     }
+    const tamanoEfectivo = tamano || formatoConfig.value || "";
     try {
-      await onSubmit({
+      await onAddToCart({
         producto_id: producto.id,
-        tamano,
+        producto_nombre: producto.nombre_cientifico || producto.nombre_natural || `Producto #${producto.id}`,
+        producto_categoria: producto.categoria,
+        tamano: tamanoEfectivo,
         cantidad: q,
         nota,
       });
@@ -101,10 +134,10 @@ function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
         }}
       >
         <div style={{ fontSize: 24, fontWeight: 900, color: "#0f172a" }}>
-          Pedir más producto
+          Añadir a la cesta
         </div>
         <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
-          Se generará un pedido interno de reposición que deberá aprobar un responsable (manager o admin).
+          Selecciona formato y cantidad. Podrás añadir más productos antes de finalizar el pedido de reposición.
         </div>
 
         <div
@@ -131,41 +164,47 @@ function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
         </div>
 
         <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
-              Tamaño
+          {formatoConfig.kind !== "formato_fijo" ? (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+                {formatoConfig.label}
+              </div>
+              <select
+                value={tamano}
+                onChange={(e) => setTamano(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(15,23,42,0.12)",
+                  fontWeight: 700,
+                }}
+              >
+                <option value="">{`Seleccionar ${formatoConfig.label.toLowerCase()}`}</option>
+                {opcionesFormato.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
             </div>
-            <select
-              value={tamano}
-              onChange={(e) => setTamano(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(15,23,42,0.12)",
-                fontWeight: 700,
-              }}
-            >
-              {TAMANOS.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-          <div>
+          ) : null}
+          <div style={formatoConfig.kind === "formato_fijo" ? { gridColumn: "span 2" } : undefined}>
             <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
-              Cantidad
+              {cantidadLabel}
             </div>
             <input
               type="number"
-              min={1}
+              min={formatoConfig.allowDecimals ? "0.001" : 1}
+              step={formatoConfig.allowDecimals ? "0.001" : "1"}
               value={cantidad}
               onChange={(e) => setCantidad(e.target.value)}
+              placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
               style={{
                 width: "100%",
                 padding: "10px 12px",
                 borderRadius: 12,
                 border: "1px solid rgba(15,23,42,0.12)",
                 fontWeight: 700,
+                boxSizing: "border-box",
               }}
             />
           </div>
@@ -237,13 +276,270 @@ function PedirMasModal({ open, producto, onClose, onSubmit, saving }) {
               cursor: saving ? "not-allowed" : "pointer",
             }}
           >
-            {saving ? "Enviando..." : "Crear pedido de reposición"}
+            {saving ? "Añadiendo..." : "🛒 Añadir a la cesta"}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+
+function CartModal({ open, cart, onClose, onRemove, onUpdate, onFinalizar, onAddMore, saving, errorMsg }) {
+  const [nota, setNota] = useState("");
+
+  useEffect(() => {
+    if (open) setNota("");
+  }, [open]);
+
+  if (!open) return null;
+
+  const total = cart.reduce((sum, it) => sum + Number(it.cantidad || 0), 0);
+  const lineCount = cart.length;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2,6,23,0.52)",
+        backdropFilter: "blur(4px)",
+        zIndex: 1100,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          width: "min(720px, 96vw)",
+          maxHeight: "92vh",
+          background: "white",
+          borderRadius: 22,
+          padding: 24,
+          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 8 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#0f172a" }}>
+              🛒 Cesta de reposición
+            </div>
+            <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
+              {lineCount === 0
+                ? "Aún no has añadido productos a la cesta."
+                : `${lineCount} ${lineCount === 1 ? "línea" : "líneas"} · ${formatCantidad(total)} unidades totales`}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 10,
+              border: "1px solid rgba(15,23,42,0.10)",
+              background: "white",
+              color: "#64748b",
+              fontWeight: 800,
+              cursor: saving ? "not-allowed" : "pointer",
+              fontSize: 18,
+              lineHeight: 1,
+            }}
+            title="Cerrar"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Lista de items */}
+        <div style={{ overflowY: "auto", marginTop: 8, marginBottom: 12, flex: 1 }}>
+          {cart.length === 0 ? (
+            <div
+              style={{
+                padding: 24,
+                textAlign: "center",
+                color: "#64748b",
+                fontWeight: 700,
+                border: "1px dashed rgba(15,23,42,0.12)",
+                borderRadius: 14,
+                background: "#fbfdff",
+              }}
+            >
+              Pulsa "Pedir más" en cualquier producto del listado para empezar.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {cart.map((it, idx) => {
+                const unidad = getUnidadProducto({ categoria: it.producto_categoria, nombre_cientifico: it.producto_nombre });
+                return (
+                  <div
+                    key={`${it.producto_id}-${it.tamano}-${idx}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 140px 90px 40px",
+                      gap: 10,
+                      alignItems: "center",
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      background: "#f8fafc",
+                      border: "1px solid rgba(15,23,42,0.06)",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 900, color: "#0f172a" }}>{it.producto_nombre}</div>
+                      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700, marginTop: 2 }}>
+                        {it.producto_categoria || "—"} · Tamaño/Formato: <strong>{it.tamano || "—"}</strong>
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      min={0.001}
+                      step="any"
+                      value={it.cantidad}
+                      onChange={(e) => onUpdate(idx, { cantidad: e.target.value })}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(15,23,42,0.12)",
+                        fontWeight: 800,
+                        textAlign: "right",
+                      }}
+                    />
+                    <div style={{ fontWeight: 800, color: "#64748b", fontSize: 13 }}>{unidad}</div>
+                    <button
+                      type="button"
+                      onClick={() => onRemove(idx)}
+                      disabled={saving}
+                      title="Quitar de la cesta"
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(239,68,68,0.30)",
+                        background: "rgba(239,68,68,0.10)",
+                        color: "#991b1b",
+                        fontWeight: 900,
+                        cursor: saving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Nota general del pedido */}
+        {cart.length > 0 ? (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
+              Nota del pedido (opcional)
+            </div>
+            <textarea
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder="Motivo de la reposición, urgencia, observaciones..."
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.12)",
+                fontWeight: 700,
+                minHeight: 60,
+                resize: "vertical",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+        ) : null}
+
+        {/* Mensaje de error global */}
+        {errorMsg ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              borderRadius: 10,
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.20)",
+              color: "#991b1b",
+              fontWeight: 800,
+            }}
+          >
+            {errorMsg}
+          </div>
+        ) : null}
+
+        {/* Botones */}
+        <div style={{ marginTop: 16, display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={onAddMore}
+            disabled={saving}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(59,130,246,0.30)",
+              background: "rgba(59,130,246,0.10)",
+              color: "#1d4ed8",
+              fontWeight: 900,
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            ＋ Añadir otro producto
+          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.10)",
+                background: "white",
+                color: "#0f172a",
+                fontWeight: 900,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              Seguir comprando
+            </button>
+            <button
+              type="button"
+              onClick={() => onFinalizar(nota)}
+              disabled={saving || cart.length === 0}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 12,
+                border: "1px solid rgba(16,185,129,0.28)",
+                background: (saving || cart.length === 0)
+                  ? "rgba(16,185,129,0.30)"
+                  : "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
+                color: "white",
+                fontWeight: 900,
+                cursor: (saving || cart.length === 0) ? "not-allowed" : "pointer",
+                minWidth: 180,
+              }}
+            >
+              {saving ? "Enviando..." : "✓ Finalizar pedido"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function GestionProductosModal({ open, productos, onClose, onChanged }) {
   const [tab, setTab] = useState("listado");
@@ -820,6 +1116,13 @@ export default function Productos() {
   const [msg, setMsg] = useState("");
   const [gestionOpen, setGestionOpen] = useState(false);
 
+  // Cesta de reposición: vive solo en memoria (al cerrar la pestaña se pierde).
+  // Cada item lleva el producto_id, el formato/tamaño concreto, la cantidad y
+  // metadatos para la previsualización (nombre y categoría).
+  const [cart, setCart] = useState([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [cartError, setCartError] = useState("");
+
   const load = async () => {
     setLoading(true);
     setError("");
@@ -912,15 +1215,72 @@ export default function Productos() {
     }
   };
 
-  const handleCrearReposicion = async ({ producto_id, tamano, cantidad, nota }) => {
+  // Añadir un item a la cesta. Si ya existe el mismo producto+tamaño,
+  // suma cantidades; si no, lo añade como nueva línea.
+  const handleAnadirACesta = async (item) => {
+    setCart((prev) => {
+      const idx = prev.findIndex(
+        (it) => it.producto_id === item.producto_id && it.tamano === item.tamano
+      );
+      if (idx >= 0) {
+        const copia = [...prev];
+        copia[idx] = {
+          ...copia[idx],
+          cantidad: Number(copia[idx].cantidad || 0) + Number(item.cantidad || 0),
+        };
+        return copia;
+      }
+      return [...prev, item];
+    });
+    setPedirProducto(null);
+    setMsg("Producto añadido a la cesta.");
+    setTimeout(() => setMsg(""), 2000);
+  };
+
+  const handleUpdateCartItem = (idx, patch) => {
+    setCart((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  };
+
+  const handleRemoveCartItem = (idx) => {
+    setCart((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Finalizar pedido: crea un único pedido de reposición con todos los
+  // items de la cesta. Si va bien, vacía la cesta y muestra confirmación.
+  const handleFinalizarPedido = async (nota) => {
+    if (cart.length === 0) {
+      setCartError("La cesta está vacía.");
+      return;
+    }
+    // Validación local: todas las cantidades > 0 y con formato definido
+    for (const it of cart) {
+      if (!it.tamano) {
+        setCartError(`Falta el formato/tamaño en "${it.producto_nombre}".`);
+        return;
+      }
+      if (!it.cantidad || Number(it.cantidad) <= 0) {
+        setCartError(`La cantidad de "${it.producto_nombre}" debe ser mayor que 0.`);
+        return;
+      }
+    }
+    setCartError("");
     setSaving(true);
     try {
-      await createPedidoReposicion({ producto_id, tamano, cantidad, nota });
-      setPedirProducto(null);
-      setMsg("Pedido de reposición creado. Pendiente de aprobación.");
-      setTimeout(() => setMsg(""), 3500);
+      await createPedido({
+        tipo: "reposicion",
+        nota: nota || null,
+        items: cart.map((it) => ({
+          producto_id: it.producto_id,
+          tamano: it.tamano,
+          cantidad: Number(it.cantidad),
+        })),
+      });
+      setCart([]);
+      setCartOpen(false);
+      setMsg("Pedido de reposición creado. Pendiente de aprobación por el manager.");
+      setTimeout(() => setMsg(""), 4000);
     } catch (e) {
-      throw e;
+      setCartError(fmtErr(e));
     } finally {
       setSaving(false);
     }
@@ -930,23 +1290,68 @@ export default function Productos() {
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginTop: 0, marginBottom: 12 }}>
         <h1 style={{ margin: 0 }}>Productos</h1>
-        {puedeGestionar ? (
-          <button
-            onClick={() => setGestionOpen(true)}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 12,
-              border: "1px solid rgba(6,182,212,0.30)",
-              background: "linear-gradient(135deg, #0ea5e9 0%, #06b6d4 60%, #10b981 100%)",
-              color: "white",
-              fontWeight: 900,
-              cursor: "pointer",
-              boxShadow: "0 12px 28px rgba(6,182,212,0.18)",
-            }}
-          >
-            Gestionar productos
-          </button>
-        ) : null}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {puedePedirMas ? (
+            <button
+              onClick={() => setCartOpen(true)}
+              title={cart.length === 0 ? "Cesta vacía" : "Abrir cesta de reposición"}
+              style={{
+                position: "relative",
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(245,158,11,0.30)",
+                background: cart.length > 0
+                  ? "linear-gradient(135deg, #f59e0b 0%, #f97316 100%)"
+                  : "rgba(245,158,11,0.10)",
+                color: cart.length > 0 ? "white" : "#92400e",
+                fontWeight: 900,
+                cursor: "pointer",
+                boxShadow: cart.length > 0 ? "0 12px 28px rgba(245,158,11,0.22)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              🛒 Cesta
+              {cart.length > 0 ? (
+                <span
+                  style={{
+                    minWidth: 22,
+                    height: 22,
+                    padding: "0 6px",
+                    borderRadius: 11,
+                    background: "white",
+                    color: "#92400e",
+                    fontWeight: 900,
+                    fontSize: 12,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {cart.length}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+          {puedeGestionar ? (
+            <button
+              onClick={() => setGestionOpen(true)}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(6,182,212,0.30)",
+                background: "linear-gradient(135deg, #0ea5e9 0%, #06b6d4 60%, #10b981 100%)",
+                color: "white",
+                fontWeight: 900,
+                cursor: "pointer",
+                boxShadow: "0 12px 28px rgba(6,182,212,0.18)",
+              }}
+            >
+              Gestionar productos
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
@@ -1195,8 +1600,20 @@ export default function Productos() {
         open={!!pedirProducto}
         producto={pedirProducto}
         onClose={() => setPedirProducto(null)}
-        onSubmit={handleCrearReposicion}
+        onAddToCart={handleAnadirACesta}
         saving={saving}
+      />
+
+      <CartModal
+        open={cartOpen}
+        cart={cart}
+        onClose={() => { setCartOpen(false); setCartError(""); }}
+        onAddMore={() => { setCartOpen(false); setCartError(""); }}
+        onRemove={handleRemoveCartItem}
+        onUpdate={handleUpdateCartItem}
+        onFinalizar={handleFinalizarPedido}
+        saving={saving}
+        errorMsg={cartError}
       />
 
       <GestionProductosModal

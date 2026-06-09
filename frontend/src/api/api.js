@@ -164,6 +164,20 @@ export const denegarPedido = async (id, payload = {}) => {
   return data;
 };
 
+// Descarga el PDF imprimible del pedido (solo disponible si está APROBADO
+// o SERVIDO). Disparamos la descarga creando un blob y un enlace temporal.
+export const descargarPedidoPdf = async (id) => {
+  const resp = await api.get(`/pedidos/${id}/pdf`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `pedido_${id}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 // ---------------- LOTES / TRAZABILIDAD ----------------
 
 export const getLote = async (uuid) => {

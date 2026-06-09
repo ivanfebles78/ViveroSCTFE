@@ -13,6 +13,7 @@ import {
   createPedido,
   updatePedido,
   cancelarPedido,
+  descargarPedidoPdf,
 } from "../api/api";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
@@ -2596,7 +2597,44 @@ export default function Pedidos() {
                             </>
                           ) : null}
 
-                          {!canEditCancel ? (
+                          {/* Descarga del PDF "oficial" del pedido. Solo cuando
+                              el pedido ya ha sido aprobado (o servido) — en
+                              ese punto el documento es definitivo. */}
+                          {(() => {
+                            const e = estadoNormalizado(estado);
+                            const puedePdf = e === "APROBADO" || e === "SERVIDO";
+                            if (!puedePdf) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await descargarPedidoPdf(p.id);
+                                  } catch (err) {
+                                    showTimedMessage(
+                                      err?.response?.data?.detail || err?.message || "No se pudo descargar el PDF",
+                                      "error"
+                                    );
+                                  }
+                                }}
+                                title="Descargar PDF del pedido aprobado"
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: 12,
+                                  border: "1px solid rgba(16,185,129,0.35)",
+                                  background: "rgba(16,185,129,0.10)",
+                                  color: "#065f46",
+                                  fontWeight: 900,
+                                  cursor: "pointer",
+                                  fontSize: 13,
+                                }}
+                              >
+                                📄 PDF
+                              </button>
+                            );
+                          })()}
+
+                          {!canEditCancel && estadoNormalizado(estado) !== "APROBADO" && estadoNormalizado(estado) !== "SERVIDO" ? (
                             <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>
                           ) : null}
                         </div>

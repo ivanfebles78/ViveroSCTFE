@@ -8,12 +8,14 @@ import io
 import logging
 import traceback
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+
+from pdf_pedido import generar_pdf_pedido
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 from db import SessionLocal
 
 from db import engine
@@ -1180,12 +1182,22 @@ def get_pedidos(
     rol = (current_user.rol or "").strip().lower()
     q = db.query(Pedido)
 
-    # Empresa externa no ve pedidos internos de reposición ni de otros solicitantes
+    # Empresa externa: ve dos tipos de pedidos.
+    #   1) Sus propios pedidos (cualquier estado), independientemente del tipo.
+    #   2) Pedidos de reposición ya APROBADOS o SERVIDOS — son los que tiene
+    #      que servir como proveedor. Antes de aprobarse no debe verlos.
     if rol == "empresa_externa":
         q = q.filter(
-            or_(Pedido.tipo.is_(None), func.lower(Pedido.tipo) != "reposicion")
+            or_(
+                # Caso 1: sus propios pedidos
+                Pedido.solicitante_username == current_user.username,
+                # Caso 2: reposiciones aprobadas o servidas
+                and_(
+                    func.lower(Pedido.tipo) == "reposicion",
+                    func.upper(Pedido.estado).in_(("APROBADO", "SERVIDO")),
+                ),
+            )
         )
-        q = q.filter(Pedido.solicitante_username == current_user.username)
 
     pedidos = q.order_by(Pedido.id.desc()).all()
     return [_pedido_to_dict(p) for p in pedidos]
@@ -1203,6 +1215,16 @@ def create_pedido(
     tipo_pedido = (payload.tipo or "salida").strip().lower()
     if tipo_pedido not in ("salida", "reposicion"):
         raise HTTPException(status_code=400, detail="Tipo de pedido inválido")
+
+    # Permiso por rol para pedidos de reposición: solo personal interno del
+    # vivero (admin, manager, técnico, gestor_vivero). Empresa externa NO
+    # puede generar pedidos de reposición: ella los recibe y los sirve.
+    user_role = (current_user.rol or "").strip().lower()
+    if tipo_pedido == "reposicion" and user_role == "empresa_externa":
+        raise HTTPException(
+            status_code=403,
+            detail="Las empresas externas no pueden crear pedidos de reposición.",
+        )
 
     if tipo_pedido == "salida":
         if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
@@ -1391,6 +1413,17 @@ def aprobar_pedido(
             detail="Solo se pueden aprobar pedidos en estado RESERVA.",
         )
 
+    # Regla específica para pedidos de reposición: solo el rol "manager"
+    # puede aprobarlos. Para los pedidos de salida sigue valiendo el filtro
+    # general (admin o manager).
+    pedido_tipo = (pedido.tipo or "salida").strip().lower()
+    user_role = (current_user.rol or "").strip().lower()
+    if pedido_tipo == "reposicion" and user_role != "manager":
+        raise HTTPException(
+            status_code=403,
+            detail="Solo un usuario con rol 'manager' puede aprobar pedidos de reposición.",
+        )
+
     if hasattr(pedido, "approved_by"):
         pedido.approved_by = current_user.username
     if hasattr(pedido, "approved_at"):
@@ -1445,6 +1478,51 @@ def denegar_pedido(
     db.refresh(pedido)
 
     return _pedido_to_dict(pedido)
+
+
+@app.get("/pedidos/{pedido_id}/pdf")
+def descargar_pedido_pdf(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero", "empresa_externa"])),
+):
+    """
+    Devuelve el PDF imprimible del pedido. Solo está disponible cuando el
+    pedido ya ha sido APROBADO o SERVIDO; los pedidos en estado RESERVA
+    todavía pueden cambiar y por tanto no se materializan en PDF.
+    """
+    pedido = (
+        db.query(Pedido)
+        .filter(Pedido.id == pedido_id)
+        .first()
+    )
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+    estado = (pedido.estado or "").upper()
+    if estado not in ("APROBADO", "SERVIDO"):
+        raise HTTPException(
+            status_code=400,
+            detail="El PDF solo está disponible para pedidos aprobados o servidos.",
+        )
+
+    # Empresa externa: solo puede descargar PDFs de pedidos que pueda ver
+    # (sus propios pedidos o reposiciones aprobadas/servidas).
+    rol = (current_user.rol or "").strip().lower()
+    if rol == "empresa_externa":
+        tipo = (pedido.tipo or "").strip().lower()
+        es_reposicion_publica = tipo == "reposicion" and estado in ("APROBADO", "SERVIDO")
+        es_propio = (pedido.solicitante_username or "") == (current_user.username or "")
+        if not (es_reposicion_publica or es_propio):
+            raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
+
+    pdf_bytes = generar_pdf_pedido(pedido)
+    filename = f"pedido_{pedido.id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # =============================
