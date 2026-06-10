@@ -153,7 +153,11 @@ function estadoNormalizado(value) {
 function pedidoGroupLabel(value) {
   const e = estadoNormalizado(value);
   if (e === "RESERVA" || e === "PENDIENTE") return "RESERVA";
-  if (e === "APROBADO") return "APROBADO";
+  // Partially approved pedidos count in BOTH the "still pending" bucket
+  // (because the manager has to finish deciding them) and the approved
+  // bucket logically.  We group under APROBADO here so the dashboard's
+  // "aprobados" KPI reflects pedidos that already have serviceable items.
+  if (e === "APROBADO" || e === "APROBADO_PARCIAL") return "APROBADO";
   if (e === "SERVIDO") return "SERVIDO";
   if (e === "DENEGADO") return "DENEGADO";
   if (e === "CANCELADO" || e === "CADUCADO") return "CANCELADO";

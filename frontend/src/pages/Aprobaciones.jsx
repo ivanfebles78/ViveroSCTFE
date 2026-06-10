@@ -1,18 +1,45 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getPedidos, aprobarPedido, denegarPedido } from "../api/api";
+import { getPedidos, aprobarPedido, denegarPedido, descargarPedidoPdf } from "../api/api";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
 
+// Per-item state pill colour map.  Mirrors the global `badge()` helper
+// but tuned for the smaller inline pills inside the items table.
+const itemBadge = (estadoItem) => {
+  const e = String(estadoItem || "RESERVA").toUpperCase();
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "3px 8px",
+    borderRadius: 999,
+    fontWeight: 900,
+    fontSize: 11,
+    letterSpacing: ".02em",
+    border: "1px solid rgba(15,23,42,0.08)",
+  };
+  if (e === "APROBADO") return { ...base, background: "rgba(16,185,129,0.14)", color: "#065f46", borderColor: "rgba(16,185,129,0.30)" };
+  if (e === "DENEGADO") return { ...base, background: "rgba(239,68,68,0.12)",  color: "#991b1b", borderColor: "rgba(239,68,68,0.30)" };
+  // RESERVA — neutral amber
+  return { ...base, background: "rgba(245,158,11,0.12)", color: "#92400e", borderColor: "rgba(245,158,11,0.30)" };
+};
+const itemEstado = (it) => String(it?.estado_item || "RESERVA").toUpperCase();
+
 const ESTADO_FILTERS = [
   { value: "TODOS", label: "Todos" },
+  { value: "PENDIENTES", label: "Pendientes (Reserva + Parcial)" },
   { value: "RESERVA", label: "Reserva" },
+  { value: "APROBADO_PARCIAL", label: "Aprobado parcial" },
   { value: "APROBADO", label: "Aprobado" },
   { value: "DENEGADO", label: "Denegado" },
   { value: "SERVIDO", label: "Servido" },
   { value: "CANCELADO", label: "Cancelado" },
   { value: "CADUCADO", label: "Caducado" },
 ];
+
+// States where a manager can still take row/item-level actions because at
+// least one item is still in RESERVA.  Mirrors backend DECIDABLE_STATES.
+const DECIDABLE_FRONTEND = new Set(["RESERVA", "APROBADO_PARCIAL"]);
 
 const safeArray = (x) => (Array.isArray(x) ? x : []);
 
@@ -54,11 +81,19 @@ const badge = (estado) => {
   };
 
   if (e === "APROBADO") return { ...base, background: "rgba(16,185,129,0.12)", color: "#065f46" };
+  if (e === "APROBADO_PARCIAL") return { ...base, background: "rgba(20,184,166,0.14)", color: "#115e59", borderColor: "rgba(20,184,166,0.28)" };
   if (e === "DENEGADO") return { ...base, background: "rgba(239,68,68,0.10)", color: "#991b1b" };
   if (e === "SERVIDO") return { ...base, background: "rgba(59,130,246,0.10)", color: "#1e3a8a" };
   if (e === "CANCELADO") return { ...base, background: "rgba(148,163,184,0.20)", color: "#334155" };
   if (e === "CADUCADO") return { ...base, background: "rgba(100,116,139,0.18)", color: "#475569" };
   return { ...base, background: "rgba(245,158,11,0.12)", color: "#92400e" };
+};
+
+// Pretty label for the badge — APROBADO_PARCIAL is otherwise unreadable.
+const estadoLabel = (estado) => {
+  const e = estadoNormalizado(estado);
+  if (e === "APROBADO_PARCIAL") return "APROBADO PARCIAL";
+  return e || "—";
 };
 
 function thStyle() {
@@ -142,7 +177,9 @@ function filterLabelStyle() {
   };
 }
 
-function DetallePedidoModal({ pedido, onClose }) {
+function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdated, onMessage }) {
+  const [busyItemId, setBusyItemId] = useState(null);
+
   if (!pedido) return null;
 
   const fmtFecha = (v) => {
@@ -153,6 +190,38 @@ function DetallePedidoModal({ pedido, onClose }) {
   };
 
   const items = safeArray(pedido.items);
+  const hasApproved = items.some((it) => {
+    const st = itemEstado(it);
+    return st === "APROBADO" || st === "SERVIDO";
+  });
+
+  const actOnItem = async (itemId, action) => {
+    setBusyItemId(itemId);
+    try {
+      const fn = action === "aprobar" ? aprobarPedido : denegarPedido;
+      const updated = await fn(pedido.id, { item_ids: [itemId] });
+      if (onPedidoUpdated) onPedidoUpdated(updated);
+      if (onMessage) {
+        onMessage(`Item ${action === "aprobar" ? "aprobado" : "denegado"} en pedido #${pedido.id}.`);
+      }
+    } catch (e) {
+      if (onMessage) {
+        onMessage(e?.response?.data?.detail || e?.message || "Error procesando el item");
+      }
+    } finally {
+      setBusyItemId(null);
+    }
+  };
+
+  const downloadPdf = async () => {
+    try {
+      await descargarPedidoPdf(pedido.id);
+    } catch (e) {
+      if (onMessage) {
+        onMessage(e?.response?.data?.detail || e?.message || "Error descargando el PDF");
+      }
+    }
+  };
   const solicitante =
     formatUsername(
       pedido?.solicitante_username || pedido?.solicitante || pedido?.created_by || pedido?.usuario || ""
@@ -211,7 +280,7 @@ function DetallePedidoModal({ pedido, onClose }) {
               >
                 {pedido.tipo === "reposicion" ? "Reposición" : "Salida"}
               </span>
-              <span style={badge(pedido.estado)}>{pedido.estado || "—"}</span>
+              <span style={badge(pedido.estado)}>{estadoLabel(pedido.estado)}</span>
             </div>
           </div>
 
@@ -277,6 +346,8 @@ function DetallePedidoModal({ pedido, onClose }) {
                     <th style={thStyle()}>Cantidad</th>
                     <th style={thStyle()}>Servido</th>
                     <th style={thStyle()}>Pendiente</th>
+                    <th style={thStyle()}>Estado</th>
+                    {canApprove ? <th style={thStyle()}>Acción</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -284,13 +355,20 @@ function DetallePedidoModal({ pedido, onClose }) {
                     const cantidad = Number(it.cantidad || 0);
                     const servida = Number(it.cantidad_servida || 0);
                     const pendiente = Math.max(cantidad - servida, 0);
+                    const estIt = itemEstado(it);
+                    const isReserva = estIt === "RESERVA";
+                    const rowMuted = !isReserva
+                      ? { background: estIt === "DENEGADO" ? "rgba(239,68,68,0.04)" : "rgba(16,185,129,0.04)", opacity: estIt === "DENEGADO" ? 0.7 : 1 }
+                      : null;
+                    const productoLabel =
+                      it.producto_nombre_cientifico ||
+                      it.producto_nombre ||
+                      it.producto_nombre_natural ||
+                      `Producto #${it.producto_id}`;
                     return (
-                      <tr key={it.id || idx} style={{ borderTop: "1px solid rgba(15,23,42,0.06)" }}>
-                        <td style={tdStyle()}>
-                          {it.producto_nombre_cientifico ||
-                            it.producto_nombre ||
-                            it.producto_nombre_natural ||
-                            `Producto #${it.producto_id}`}
+                      <tr key={it.id || idx} style={{ borderTop: "1px solid rgba(15,23,42,0.06)", ...rowMuted }}>
+                        <td style={{ ...tdStyle(), textDecoration: estIt === "DENEGADO" ? "line-through" : "none" }}>
+                          {productoLabel}
                         </td>
                         <td style={tdStyle()}>{it.tamano || "—"}</td>
                         <td style={{ ...tdStyle(), fontWeight: 900 }}>{formatCantidad(cantidad) || "0"}</td>
@@ -298,6 +376,57 @@ function DetallePedidoModal({ pedido, onClose }) {
                         <td style={{ ...tdStyle(), color: pendiente > 0 ? "#92400e" : "#64748b", fontWeight: 900 }}>
                           {formatCantidad(pendiente) || "0"}
                         </td>
+                        <td style={tdStyle()}>
+                          <span style={itemBadge(estIt)}>
+                            {estIt === "APROBADO" ? "✓ Aprobado" : estIt === "DENEGADO" ? "✗ Denegado" : "⏳ Pendiente"}
+                          </span>
+                        </td>
+                        {canApprove ? (
+                          <td style={tdStyle()}>
+                            {isReserva ? (
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button
+                                  type="button"
+                                  disabled={busyItemId === it.id}
+                                  onClick={() => actOnItem(it.id, "aprobar")}
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: 8,
+                                    border: "1px solid rgba(16,185,129,0.35)",
+                                    background: "rgba(16,185,129,0.10)",
+                                    color: "#065f46",
+                                    fontWeight: 900,
+                                    fontSize: 12,
+                                    cursor: busyItemId === it.id ? "wait" : "pointer",
+                                    opacity: busyItemId === it.id ? 0.6 : 1,
+                                  }}
+                                >
+                                  Aprobar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busyItemId === it.id}
+                                  onClick={() => actOnItem(it.id, "denegar")}
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: 8,
+                                    border: "1px solid rgba(239,68,68,0.30)",
+                                    background: "rgba(239,68,68,0.08)",
+                                    color: "#991b1b",
+                                    fontWeight: 900,
+                                    fontSize: 12,
+                                    cursor: busyItemId === it.id ? "wait" : "pointer",
+                                    opacity: busyItemId === it.id ? 0.6 : 1,
+                                  }}
+                                >
+                                  Denegar
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ color: "#64748b", fontSize: 12, fontStyle: "italic" }}>—</span>
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -305,6 +434,44 @@ function DetallePedidoModal({ pedido, onClose }) {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Footer: PDF download whenever there's at least one approved item. */}
+        <div
+          style={{
+            padding: "14px 22px",
+            borderTop: "1px solid rgba(15,23,42,0.08)",
+            background: "#f8fafc",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+            {canApprove && items.some((it) => itemEstado(it) === "RESERVA")
+              ? "Puedes aprobar o denegar items individualmente. Los items aprobados quedarán reflejados en el PDF."
+              : hasApproved
+              ? "Hay items aprobados disponibles en el PDF."
+              : "Sin items aprobados todavía."}
+          </div>
+          {hasApproved ? (
+            <button
+              type="button"
+              onClick={downloadPdf}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(59,130,246,0.30)",
+                background: "rgba(59,130,246,0.08)",
+                color: "#1d4ed8",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              Descargar PDF
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -358,7 +525,9 @@ export default function Aprobaciones() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  const [estadoFiltro, setEstadoFiltro] = useState("RESERVA");
+  // Default to "PENDIENTES" so RESERVA + APROBADO_PARCIAL both show — those
+  // are the pedidos that still need the manager's attention.
+  const [estadoFiltro, setEstadoFiltro] = useState("PENDIENTES");
   const [idFiltro, setIdFiltro] = useState("");
   const [fechaFiltro, setFechaFiltro] = useState("");
   const [solicitanteFiltro, setSolicitanteFiltro] = useState("");
@@ -422,7 +591,13 @@ export default function Aprobaciones() {
       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
       .filter((p) => {
         const idOk = !idFiltro || String(p.id).includes(String(idFiltro).trim());
-        const estadoOk = estadoFiltro === "TODOS" || estadoNormalizado(p?.estado) === estadoFiltro;
+        const estadoNorm = estadoNormalizado(p?.estado);
+        const estadoOk =
+          estadoFiltro === "TODOS"
+            ? true
+            : estadoFiltro === "PENDIENTES"
+            ? DECIDABLE_FRONTEND.has(estadoNorm)
+            : estadoNorm === estadoFiltro;
         const fechaOk = !fechaFiltro || dateInputValue(p?.created_at) === fechaFiltro;
 
         const solicitante = solicitanteFromPedido(p).toLowerCase();
@@ -579,7 +754,9 @@ export default function Aprobaciones() {
               <tbody>
                 {pedidosFiltrados.map((p) => {
                   const estado = p.estado || "RESERVA";
-                  const editable = estadoNormalizado(estado) === "RESERVA";
+                  // Editable = pedido has at least one item still in RESERVA, i.e.
+                  // estado is RESERVA or APROBADO_PARCIAL.  Mirrors backend.
+                  const editable = DECIDABLE_FRONTEND.has(estadoNormalizado(estado));
 
                   return (
                     <tr
@@ -628,7 +805,7 @@ export default function Aprobaciones() {
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-                        <span style={badge(estado)}>{estado}</span>
+                        <span style={badge(estado)}>{estadoLabel(estado)}</span>
                       </td>
 
                       <td
@@ -702,7 +879,18 @@ export default function Aprobaciones() {
         )}
       </div>
 
-      <DetallePedidoModal pedido={detallePedido} onClose={() => setDetallePedido(null)} />
+      <DetallePedidoModal
+        pedido={detallePedido}
+        onClose={() => setDetallePedido(null)}
+        canApprove={canApprove}
+        onPedidoUpdated={(updated) => {
+          // Keep the modal in sync with the freshly-returned pedido and
+          // refresh the parent list so the table reflects the new state.
+          setDetallePedido(updated);
+          load();
+        }}
+        onMessage={(text) => showTimedMessage(text)}
+      />
     </div>
   );
 }

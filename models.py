@@ -156,6 +156,17 @@ class PedidoItem(Base):
     cantidad = Column(Numeric(12, 3), nullable=False)
     cantidad_servida = Column(Numeric(12, 3), nullable=False, default=0)
 
+    # Per-item approval state (RESERVA | APROBADO | DENEGADO).  The pedido's
+    # aggregate `estado` is derived from these — see `recompute_pedido_estado`
+    # in main.py.
+    estado_item = Column(
+        String(20),
+        nullable=False,
+        default="RESERVA",
+        server_default="RESERVA",
+        index=True,
+    )
+
     pedido = relationship("Pedido", back_populates="items")
     producto = relationship("Producto")
 

@@ -386,7 +386,7 @@ function buildPedidoCaducidadNotifications(pedidos) {
   for (const p of pedidos) {
     const estado = String(p?.estado || "").trim().toUpperCase();
     // Solo avisamos sobre pedidos aún "vivos"
-    if (!["RESERVA", "APROBADO"].includes(estado)) continue;
+    if (!["RESERVA", "APROBADO_PARCIAL", "APROBADO"].includes(estado)) continue;
     if (!p?.fecha_caducidad) continue;
 
     const d = new Date(p.fecha_caducidad);

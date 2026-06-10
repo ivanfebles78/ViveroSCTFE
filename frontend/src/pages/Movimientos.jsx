@@ -661,8 +661,11 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
 
   const pedidosFiltrados = useMemo(() => {
     const t = texto.trim().toLowerCase();
+    // Include APROBADO_PARCIAL so the proveedor can serve already-approved
+    // items even while other lines in the same pedido are still pending.
+    const SERVICEABLE = new Set(["APROBADO", "APROBADO_PARCIAL"]);
     return safeArray(pedidos)
-      .filter((p) => String(p?.estado || "").toUpperCase() === "APROBADO")
+      .filter((p) => SERVICEABLE.has(String(p?.estado || "").toUpperCase()))
       .filter((p) => {
         if (!t) return true;
         const base = [
@@ -1019,13 +1022,34 @@ function MovimientoModal({
       const yaUsadaBackend = cantidadMovidaBackend > 0;
       const yaEnLoteLocal = cantidadEnLoteLocal > 0;
 
+      // Per-item approval state — only APROBADO items are serviceable.
+      // RESERVA → still pending decision.
+      // DENEGADO → manager rejected this line; never serviceable.
+      // Anything else (legacy data without estado_item) → treat as APROBADO
+      // for backwards-compatibility, since the pedido as a whole had to be
+      // APROBADO for it to reach this screen.
+      const estadoItemRaw = String(it?.estado_item || "APROBADO").toUpperCase();
+      const itemRechazado = estadoItemRaw === "DENEGADO";
+      const itemPendiente = estadoItemRaw === "RESERVA";
+      const itemNoServible = itemRechazado || itemPendiente;
+
+      const reasonRank = yaEnLoteLocal
+        ? "ya_en_lote"
+        : yaUsadaBackend
+        ? "ya_servida"
+        : itemRechazado
+        ? "item_denegado"
+        : itemPendiente
+        ? "item_pendiente"
+        : null;
+
       return {
         ...it,
         _key: `${selectedPedido?.id || "pedido"}-${it?.producto_id || "prod"}-${it?.tamano || "tam"}-${idx}`,
         _cantidad_movida: cantidadMovida,
         _cantidad_en_lote: cantidadEnLoteLocal,
-        _disabled: yaUsadaBackend || yaEnLoteLocal,
-        _razon_bloqueo: yaEnLoteLocal ? "ya_en_lote" : yaUsadaBackend ? "ya_servida" : null,
+        _disabled: yaUsadaBackend || yaEnLoteLocal || itemNoServible,
+        _razon_bloqueo: reasonRank,
       };
     });
   }, [selectedPedido, movimientosPreviosPorPedido, cantidadesEnLote]);
@@ -1814,6 +1838,10 @@ function MovimientoModal({
                               {disabled
                                 ? linea._razon_bloqueo === "ya_en_lote"
                                   ? ` · En el lote (${linea._cantidad_en_lote})`
+                                  : linea._razon_bloqueo === "item_pendiente"
+                                  ? " · ⏳ Pendiente de aprobación"
+                                  : linea._razon_bloqueo === "item_denegado"
+                                  ? " · ✗ Denegado por el manager"
                                   : ` · Ya movida: ${linea._cantidad_movida}`
                                 : ""}
                             </div>
@@ -3167,7 +3195,10 @@ export default function Movimientos() {
   };
 
   const pedidosAprobados = useMemo(() => {
-    return safeArray(pedidos).filter((p) => String(p?.estado || "").toUpperCase() === "APROBADO");
+    // Pedidos with at least one approved item that the proveedor can act on.
+    // APROBADO_PARCIAL belongs here too — its approved items are serviceable.
+    const SERVICEABLE = new Set(["APROBADO", "APROBADO_PARCIAL"]);
+    return safeArray(pedidos).filter((p) => SERVICEABLE.has(String(p?.estado || "").toUpperCase()));
   }, [pedidos]);
 
   const movimientosFiltrados = useMemo(() => {

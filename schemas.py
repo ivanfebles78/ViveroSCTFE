@@ -176,7 +176,17 @@ class PedidoCreate(BaseModel):
     tipo: Optional[Literal["salida", "reposicion"]] = "salida"
 
 class PedidoActionRequest(BaseModel):
+    """
+    Request body for /pedidos/{id}/aprobar and /pedidos/{id}/denegar.
+
+    `item_ids` — optional list of PedidoItem IDs to act on.  If omitted
+    or empty, the action applies to ALL items in the pedido (the
+    legacy "approve / deny entire pedido" behaviour, preserved for
+    backwards compatibility).  If provided, only the listed items are
+    affected — used for partial approvals.
+    """
     motivo: Optional[str] = None
+    item_ids: Optional[List[int]] = None
 
 
 class PedidoItemOut(BaseModel):
@@ -186,6 +196,7 @@ class PedidoItemOut(BaseModel):
     tamano: Optional[str] = None
     cantidad: float
     cantidad_servida: float = 0
+    estado_item: Optional[str] = "RESERVA"
 
     class Config:
         from_attributes = True

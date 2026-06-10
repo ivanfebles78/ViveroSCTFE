@@ -563,14 +563,15 @@ def _stock_total_producto_tamano(db: Session, producto_id: int, tamano: str) -> 
 def _transicionar_pedidos_caducados(db: Session) -> int:
     """
     Marca como CADUCADO todos los pedidos cuya fecha_caducidad ya pasó
-    y que todavía estén en RESERVA o APROBADO. Devuelve el número afectado.
+    y que todavía estén vivos (RESERVA / APROBADO_PARCIAL / APROBADO).
+    Devuelve el número afectado.
     """
     hoy = datetime.utcnow().date()
     q = (
         db.query(Pedido)
         .filter(Pedido.fecha_caducidad.isnot(None))
         .filter(Pedido.fecha_caducidad < hoy)
-        .filter(func.upper(Pedido.estado).in_(["RESERVA", "APROBADO"]))
+        .filter(func.upper(Pedido.estado).in_(["RESERVA", "APROBADO_PARCIAL", "APROBADO"]))
     )
     vencidos = q.all()
     for p in vencidos:
@@ -586,13 +587,97 @@ def _asegurar_no_caducado(pedido: Pedido, db: Session) -> None:
         return
     hoy = datetime.utcnow().date()
     estado_norm = (pedido.estado or "").upper()
-    if pedido.fecha_caducidad < hoy and estado_norm in ("RESERVA", "APROBADO"):
+    if pedido.fecha_caducidad < hoy and estado_norm in ("RESERVA", "APROBADO_PARCIAL", "APROBADO"):
         pedido.estado = "CADUCADO"
         db.commit()
         raise HTTPException(
             status_code=400,
             detail="El pedido ha caducado. Ya no se puede modificar ni aprobar.",
         )
+
+
+def _item_estado(item: PedidoItem) -> str:
+    """Per-item state, normalised to upper-case.  Defaults to RESERVA when
+    the column is absent (e.g. brand new code reading legacy data before
+    the migration runs)."""
+    raw = getattr(item, "estado_item", None) or "RESERVA"
+    return str(raw).strip().upper() or "RESERVA"
+
+
+def recompute_pedido_estado(pedido: Pedido) -> str:
+    """
+    Derive the pedido's aggregate state from its items' `estado_item` values.
+
+    The caller still owns terminal states (SERVIDO / CANCELADO / CADUCADO) —
+    we only recompute within the RESERVA / APROBADO_PARCIAL / APROBADO /
+    DENEGADO continuum:
+
+      • Any item RESERVA  AND no item APROBADO   → pedido = RESERVA
+        (nothing serviceable yet — keep in approvals queue, hide from proveedor)
+      • Any item RESERVA  AND ≥1 item APROBADO   → pedido = APROBADO_PARCIAL
+        (proveedor can start serving the approved ones; manager still needs
+        to decide the rest)
+      • No item RESERVA  AND ≥1 item APROBADO    → pedido = APROBADO
+      • All items DENEGADO                       → pedido = DENEGADO
+      • No items                                 → leave estado unchanged.
+
+    The function mutates `pedido.estado` in place and returns the new value.
+    The caller is responsible for `db.commit()`.
+    """
+    terminal = {"SERVIDO", "CANCELADO", "CADUCADO"}
+    current = (pedido.estado or "").upper()
+    if current in terminal:
+        return current
+
+    items = getattr(pedido, "items", None) or []
+    if not items:
+        return current
+
+    has_reserva  = any(_item_estado(it) == "RESERVA"  for it in items)
+    has_approved = any(_item_estado(it) == "APROBADO" for it in items)
+
+    if has_reserva and has_approved:
+        new_state = "APROBADO_PARCIAL"
+    elif has_reserva:
+        new_state = "RESERVA"
+    elif has_approved:
+        new_state = "APROBADO"
+    else:
+        new_state = "DENEGADO"
+
+    pedido.estado = new_state
+    return new_state
+
+
+# Convenience: states where the pedido is still partly or fully serviceable
+# by a proveedor / external company.  APROBADO_PARCIAL is intentionally
+# included so the partial-approval workflow actually delivers value: the
+# proveedor sees the pedido as soon as ANY of its items has been approved.
+SERVICEABLE_STATES = ("APROBADO", "APROBADO_PARCIAL", "SERVIDO")
+
+# States where the manager can still take aprobar/denegar actions on items
+# (there are still RESERVA items to decide).
+DECIDABLE_STATES   = ("RESERVA", "APROBADO_PARCIAL")
+
+
+def _has_any_approved_item(pedido: Pedido) -> bool:
+    """True if at least one item is APROBADO (or already SERVIDO).
+    Used to decide whether the PDF endpoint is available even while the
+    pedido itself is still in RESERVA due to other pending items."""
+    items = getattr(pedido, "items", None) or []
+    if not items:
+        return False
+    for it in items:
+        st = _item_estado(it)
+        if st in ("APROBADO", "SERVIDO"):
+            return True
+        # Legacy data with no estado_item but cantidad_servida > 0 counts as served.
+        try:
+            if float(getattr(it, "cantidad_servida", 0) or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
 
 
 def _pedido_to_dict(pedido: Pedido) -> dict:
@@ -623,6 +708,7 @@ def _pedido_to_dict(pedido: Pedido) -> dict:
                 "tamano": getattr(item, "tamano", None),
                 "cantidad": getattr(item, "cantidad", 0),
                 "cantidad_servida": getattr(item, "cantidad_servida", 0),
+                "estado_item": _item_estado(item),
                 "servicio_completo": int(getattr(item, "cantidad_servida", 0) or 0)
                 >= int(getattr(item, "cantidad", 0) or 0),
                 "producto_nombre_cientifico": getattr(getattr(item, "producto", None), "nombre_cientifico", None),
@@ -1184,29 +1270,32 @@ def get_pedidos(
 
     # Empresa externa: ve dos tipos de pedidos.
     #   1) Sus propios pedidos (cualquier estado), independientemente del tipo.
-    #   2) Pedidos de reposición ya APROBADOS o SERVIDOS — son los que tiene
-    #      que servir como proveedor. Antes de aprobarse no debe verlos.
+    #   2) Pedidos de reposición que ya tengan items aprobados (APROBADO,
+    #      APROBADO_PARCIAL o SERVIDO) — son los que puede empezar a servir.
+    #      APROBADO_PARCIAL se incluye para no perder la esencia de la
+    #      aprobación parcial: el proveedor puede servir los items ya
+    #      aprobados aunque queden otros pendientes de decisión.
     if rol == "empresa_externa":
         q = q.filter(
             or_(
                 # Caso 1: sus propios pedidos
                 Pedido.solicitante_username == current_user.username,
-                # Caso 2: reposiciones aprobadas o servidas
+                # Caso 2: reposiciones con items servibles
                 and_(
                     func.lower(Pedido.tipo) == "reposicion",
-                    func.upper(Pedido.estado).in_(("APROBADO", "SERVIDO")),
+                    func.upper(Pedido.estado).in_(SERVICEABLE_STATES),
                 ),
             )
         )
 
-    # Proveedor: rol estrictamente de consulta. Solo ve los pedidos de
-    # REPOSICIÓN ya aprobados/servidos. Nunca pedidos de salida, ni
-    # pedidos de reposición pendientes de aprobación.
+    # Proveedor: rol estrictamente de consulta y servicio.  Solo ve los
+    # pedidos de REPOSICIÓN con al menos un item aprobado o servido.
+    # Nunca pedidos de salida, ni reposiciones aún sin aprobación.
     if rol == "proveedor":
         q = q.filter(
             and_(
                 func.lower(Pedido.tipo) == "reposicion",
-                func.upper(Pedido.estado).in_(("APROBADO", "SERVIDO")),
+                func.upper(Pedido.estado).in_(SERVICEABLE_STATES),
             )
         )
 
@@ -1401,6 +1490,34 @@ def cancelar_pedido_endpoint(
     return _pedido_to_dict(pedido)
 
 
+def _select_items_for_action(pedido: Pedido, item_ids):
+    """
+    Resolve which items the action targets.
+      - item_ids = None or [] → ALL items currently in RESERVA (legacy
+        "approve / deny whole pedido" semantics).
+      - item_ids = [..]       → only items whose id is in the list AND
+        whose `estado_item` is still RESERVA (already-decided items are
+        immutable and silently skipped — never overwritten).
+
+    Returns the list of PedidoItem rows to mutate.  Raises 400 if the
+    caller passed item_ids that don't belong to the pedido at all.
+    """
+    items = list(getattr(pedido, "items", []) or [])
+    items_by_id = {it.id: it for it in items}
+
+    if not item_ids:
+        return [it for it in items if _item_estado(it) == "RESERVA"]
+
+    bogus = [iid for iid in item_ids if iid not in items_by_id]
+    if bogus:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Items {bogus} no pertenecen al pedido.",
+        )
+
+    return [items_by_id[iid] for iid in item_ids if _item_estado(items_by_id[iid]) == "RESERVA"]
+
+
 @app.post("/pedidos/{pedido_id}/aprobar", response_model=PedidoOut)
 def aprobar_pedido(
     pedido_id: int,
@@ -1408,6 +1525,18 @@ def aprobar_pedido(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager"])),
 ):
+    """
+    Approve a pedido — fully or partially.
+
+    Body:
+      - No `item_ids` (or empty) → approves every still-RESERVA item.
+      - `item_ids: [int, ...]`   → approves only those items; the rest
+        stay in RESERVA so the manager can decide them later.
+
+    The pedido's aggregate `estado` is recomputed from its items:
+    while any item remains RESERVA the pedido stays RESERVA (so it
+    keeps showing up in the approvals queue).
+    """
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
 
     if not pedido:
@@ -1418,15 +1547,14 @@ def aprobar_pedido(
 
     _asegurar_no_caducado(pedido, db)
 
-    if (pedido.estado or "").upper() != "RESERVA":
+    if (pedido.estado or "").upper() not in DECIDABLE_STATES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se pueden aprobar pedidos en estado RESERVA.",
+            detail="Solo se pueden aprobar items mientras el pedido tenga líneas en RESERVA.",
         )
 
-    # Regla específica para pedidos de reposición: solo el rol "manager"
-    # puede aprobarlos. Para los pedidos de salida sigue valiendo el filtro
-    # general (admin o manager).
+    # Reposición pedidos: only "manager" role can approve.  Salida pedidos
+    # remain admin-or-manager via the require_roles dependency above.
     pedido_tipo = (pedido.tipo or "salida").strip().lower()
     user_role = (current_user.rol or "").strip().lower()
     if pedido_tipo == "reposicion" and user_role != "manager":
@@ -1435,17 +1563,28 @@ def aprobar_pedido(
             detail="Solo un usuario con rol 'manager' puede aprobar pedidos de reposición.",
         )
 
-    if hasattr(pedido, "approved_by"):
-        pedido.approved_by = current_user.username
-    if hasattr(pedido, "approved_at"):
-        pedido.approved_at = datetime.utcnow()
+    targets = _select_items_for_action(pedido, payload.item_ids)
+    if not targets:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No hay items en RESERVA que aprobar en este pedido.",
+        )
 
-    if hasattr(pedido, "aprobado_por"):
+    now = datetime.utcnow()
+    for item in targets:
+        item.estado_item = "APROBADO"
+
+    # Stamp the pedido's "approved by/at" the FIRST time any item is approved.
+    if hasattr(pedido, "aprobado_por") and not getattr(pedido, "aprobado_por", None):
         pedido.aprobado_por = current_user.username
-    if hasattr(pedido, "aprobado_at"):
-        pedido.aprobado_at = datetime.utcnow()
+    if hasattr(pedido, "aprobado_at") and not getattr(pedido, "aprobado_at", None):
+        pedido.aprobado_at = now
+    if hasattr(pedido, "approved_by") and not getattr(pedido, "approved_by", None):
+        pedido.approved_by = current_user.username
+    if hasattr(pedido, "approved_at") and not getattr(pedido, "approved_at", None):
+        pedido.approved_at = now
 
-    pedido.estado = "APROBADO"
+    recompute_pedido_estado(pedido)
 
     db.commit()
     db.refresh(pedido)
@@ -1460,6 +1599,12 @@ def denegar_pedido(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager"])),
 ):
+    """
+    Deny a pedido — fully or partially.
+
+    Mirrors /aprobar: pass `item_ids` to deny specific items, or omit
+    it to deny every still-RESERVA item in the pedido.
+    """
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
 
     if not pedido:
@@ -1470,20 +1615,33 @@ def denegar_pedido(
 
     _asegurar_no_caducado(pedido, db)
 
-    if (pedido.estado or "").upper() != "RESERVA":
+    if (pedido.estado or "").upper() not in DECIDABLE_STATES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se pueden denegar pedidos en estado RESERVA.",
+            detail="Solo se pueden denegar items mientras el pedido tenga líneas en RESERVA.",
         )
 
-    pedido.estado = "DENEGADO"
+    targets = _select_items_for_action(pedido, payload.item_ids)
+    if not targets:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No hay items en RESERVA que denegar en este pedido.",
+        )
 
-    if hasattr(pedido, "denegado_por"):
+    now = datetime.utcnow()
+    for item in targets:
+        item.estado_item = "DENEGADO"
+
+    if hasattr(pedido, "denegado_por") and not getattr(pedido, "denegado_por", None):
         pedido.denegado_por = current_user.username
-    if hasattr(pedido, "denegado_at"):
-        pedido.denegado_at = datetime.utcnow()
-    if hasattr(pedido, "motivo_denegacion"):
-        pedido.motivo_denegacion = payload.motivo
+    if hasattr(pedido, "denegado_at") and not getattr(pedido, "denegado_at", None):
+        pedido.denegado_at = now
+    if hasattr(pedido, "motivo_denegacion") and payload.motivo:
+        # Append rather than overwrite if there's already a previous reason.
+        existing = getattr(pedido, "motivo_denegacion", None) or ""
+        pedido.motivo_denegacion = (existing + "\n" + payload.motivo).strip() if existing else payload.motivo
+
+    recompute_pedido_estado(pedido)
 
     db.commit()
     db.refresh(pedido)
@@ -1498,9 +1656,13 @@ def descargar_pedido_pdf(
     current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero", "empresa_externa", "proveedor"])),
 ):
     """
-    Devuelve el PDF imprimible del pedido. Solo está disponible cuando el
-    pedido ya ha sido APROBADO o SERVIDO; los pedidos en estado RESERVA
-    todavía pueden cambiar y por tanto no se materializan en PDF.
+    Devuelve el PDF imprimible del pedido.
+
+    El PDF está disponible cuando hay **al menos un item APROBADO o SERVIDO**
+    en el pedido, aunque su `estado` global siga siendo RESERVA por items
+    todavía pendientes (escenario de aprobación parcial).  Esto permite al
+    manager descargar el PDF de las líneas ya aprobadas sin esperar a que
+    decida el resto.
     """
     pedido = (
         db.query(Pedido)
@@ -1511,26 +1673,32 @@ def descargar_pedido_pdf(
         raise HTTPException(status_code=404, detail="Pedido no encontrado.")
 
     estado = (pedido.estado or "").upper()
-    if estado not in ("APROBADO", "SERVIDO"):
+    has_approved = _has_any_approved_item(pedido)
+
+    # PDF gating: any "serviceable" state (APROBADO / APROBADO_PARCIAL /
+    # SERVIDO) OR any-approved-item fallback for safety.
+    if estado not in SERVICEABLE_STATES and not has_approved:
         raise HTTPException(
             status_code=400,
-            detail="El PDF solo está disponible para pedidos aprobados o servidos.",
+            detail="El PDF solo está disponible cuando hay al menos un item aprobado o servido.",
         )
 
-    # Empresa externa: solo puede descargar PDFs de pedidos que pueda ver
-    # (sus propios pedidos o reposiciones aprobadas/servidas).
     rol = (current_user.rol or "").strip().lower()
+
+    # Empresa externa: only their own pedidos, or public reposiciones.
     if rol == "empresa_externa":
         tipo = (pedido.tipo or "").strip().lower()
-        es_reposicion_publica = tipo == "reposicion" and estado in ("APROBADO", "SERVIDO")
+        es_reposicion_publica = tipo == "reposicion" and (
+            estado in SERVICEABLE_STATES or has_approved
+        )
         es_propio = (pedido.solicitante_username or "") == (current_user.username or "")
         if not (es_reposicion_publica or es_propio):
             raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
 
-    # Proveedor: solo PDF de reposiciones aprobadas o servidas. Nada más.
+    # Proveedor: only reposiciones with at least one approved/served item.
     if rol == "proveedor":
         tipo = (pedido.tipo or "").strip().lower()
-        if not (tipo == "reposicion" and estado in ("APROBADO", "SERVIDO")):
+        if not (tipo == "reposicion" and (estado in SERVICEABLE_STATES or has_approved)):
             raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
 
     pdf_bytes = generar_pdf_pedido(pedido)

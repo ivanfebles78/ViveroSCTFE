@@ -461,6 +461,7 @@ function AbastecimientoBadge({ estado }) {
   let border = "rgba(15,23,42,0.08)";
 
   if (e === "APROBADO") { bg = "rgba(16,185,129,0.12)"; color = "#065f46"; border = "rgba(16,185,129,0.20)"; }
+  else if (e === "APROBADO_PARCIAL") { bg = "rgba(20,184,166,0.14)"; color = "#115e59"; border = "rgba(20,184,166,0.28)"; }
   else if (e === "RESERVA") { bg = "rgba(245,158,11,0.12)"; color = "#92400e"; border = "rgba(245,158,11,0.20)"; }
   else if (e === "SERVIDO") { bg = "rgba(59,130,246,0.12)"; color = "#1e3a8a"; border = "rgba(59,130,246,0.20)"; }
   else if (e === "DENEGADO") { bg = "rgba(239,68,68,0.10)"; color = "#991b1b"; border = "rgba(239,68,68,0.20)"; }
@@ -2981,6 +2982,7 @@ Productos con fecha de caducidad
                 >
                   <option value="">Todos</option>
                   <option value="RESERVA">Reserva</option>
+                  <option value="APROBADO_PARCIAL">Aprobado parcial</option>
                   <option value="APROBADO">Aprobado</option>
                   <option value="SERVIDO">Servido</option>
                   <option value="DENEGADO">Denegado</option>
