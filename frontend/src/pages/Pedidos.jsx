@@ -1382,6 +1382,50 @@ function PedidoModal({
    LISTA DE PEDIDOS
    ========================================= */
 
+// Per-item state badge for the items column in the Pedidos table.
+// Renders only when the parent pedido is APROBADO_PARCIAL — in any other
+// state every item shares the same status, so the badge would be
+// redundant noise.
+function ItemEstadoBadge({ estadoItem }) {
+  const e = String(estadoItem || "RESERVA").toUpperCase();
+  let label, bg, color, border;
+  if (e === "APROBADO") {
+    label = "✓ Aprobado";
+    bg = "rgba(16,185,129,0.14)";
+    color = "#065f46";
+    border = "rgba(16,185,129,0.30)";
+  } else if (e === "DENEGADO") {
+    label = "✗ Denegado";
+    bg = "rgba(239,68,68,0.12)";
+    color = "#991b1b";
+    border = "rgba(239,68,68,0.30)";
+  } else {
+    label = "⏳ Pendiente";
+    bg = "rgba(245,158,11,0.14)";
+    color = "#92400e";
+    border = "rgba(245,158,11,0.30)";
+  }
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "3px 8px",
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 900,
+        letterSpacing: ".02em",
+        background: bg,
+        color,
+        border: `1px solid ${border}`,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 function PedidoDetalleCellOld({
   pedido,
   mapProdName,
@@ -1405,6 +1449,11 @@ function PedidoDetalleCellOld({
       })
     : safeArray(pedido.items);
 
+  // Only annotate per-item status when the pedido is APROBADO_PARCIAL.
+  // For RESERVA, APROBADO, DENEGADO, SERVIDO, etc. the per-item label
+  // would just repeat the pedido's state — redundant.
+  const isPartial = estadoNormalizado(pedido?.estado) === "APROBADO_PARCIAL";
+
   if (editingId !== pedido.id) {
     const visibleItems = expanded ? items : items.slice(0, 3);
     const hiddenCount = Math.max(0, items.length - visibleItems.length);
@@ -1424,23 +1473,54 @@ function PedidoDetalleCellOld({
                 it.nombre ||
                 `ID ${pid}`;
 
+              const estIt = String(it.estado_item || "RESERVA").toUpperCase();
+              const isDenegado = isPartial && estIt === "DENEGADO";
+              // In partial-approval mode, tint the row background by state
+              // so the manager / proveedor can scan which lines are which.
+              const rowBg = !isPartial
+                ? "transparent"
+                : estIt === "APROBADO"
+                ? "rgba(16,185,129,0.05)"
+                : estIt === "DENEGADO"
+                ? "rgba(239,68,68,0.04)"
+                : "rgba(245,158,11,0.05)";
+
               return (
                 <div
                   key={`${pedido.id}-${idx}`}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 90px 80px",
+                    gridTemplateColumns: isPartial
+                      ? "1fr 70px 70px 110px"
+                      : "1fr 90px 80px",
                     gap: 10,
                     alignItems: "center",
+                    padding: isPartial ? "6px 8px" : "0",
+                    borderRadius: isPartial ? 8 : 0,
+                    background: rowBg,
+                    opacity: isDenegado ? 0.6 : 1,
                   }}
                 >
-                  <div style={{ fontWeight: 800, color: "#0f172a" }}>{nombre}</div>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      textDecoration: isDenegado ? "line-through" : "none",
+                    }}
+                  >
+                    {nombre}
+                  </div>
                   <div style={{ textAlign: "center", fontWeight: 900, color: "#334155" }}>
                     {it.tamano || "—"}
                   </div>
                   <div style={{ textAlign: "right", fontWeight: 900, color: "#0f172a" }}>
                     {formatCantidad(it.cantidad ?? 0) || "0"}
                   </div>
+                  {isPartial ? (
+                    <div style={{ textAlign: "right" }}>
+                      <ItemEstadoBadge estadoItem={it.estado_item} />
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
