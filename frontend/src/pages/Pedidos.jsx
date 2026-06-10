@@ -1480,44 +1480,63 @@ function PedidoDetalleCellOld({
               const rowBg = !isPartial
                 ? "transparent"
                 : estIt === "APROBADO"
-                ? "rgba(16,185,129,0.05)"
+                ? "rgba(16,185,129,0.06)"
                 : estIt === "DENEGADO"
-                ? "rgba(239,68,68,0.04)"
-                : "rgba(245,158,11,0.05)";
+                ? "rgba(239,68,68,0.05)"
+                : "rgba(245,158,11,0.06)";
+              const rowBorder = !isPartial
+                ? "transparent"
+                : estIt === "APROBADO"
+                ? "rgba(16,185,129,0.25)"
+                : estIt === "DENEGADO"
+                ? "rgba(239,68,68,0.25)"
+                : "rgba(245,158,11,0.25)";
 
               return (
                 <div
                   key={`${pedido.id}-${idx}`}
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: isPartial
-                      ? "1fr 70px 70px 110px"
-                      : "1fr 90px 80px",
-                    gap: 10,
-                    alignItems: "center",
                     padding: isPartial ? "6px 8px" : "0",
                     borderRadius: isPartial ? 8 : 0,
                     background: rowBg,
-                    opacity: isDenegado ? 0.6 : 1,
+                    borderLeft: isPartial ? `3px solid ${rowBorder}` : "none",
                   }}
                 >
+                  {/* Row 1: matches the header grid (1fr 90px 80px) so the
+                      Producto / Tamaño / Cantidad columns line up perfectly
+                      with the column headers above the table. */}
                   <div
                     style={{
-                      fontWeight: 800,
-                      color: "#0f172a",
-                      textDecoration: isDenegado ? "line-through" : "none",
+                      display: "grid",
+                      gridTemplateColumns: "1fr 90px 80px",
+                      gap: 10,
+                      alignItems: "center",
+                      opacity: isDenegado ? 0.55 : 1,
                     }}
                   >
-                    {nombre}
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        textDecoration: isDenegado ? "line-through" : "none",
+                      }}
+                    >
+                      {nombre}
+                    </div>
+                    <div style={{ textAlign: "center", fontWeight: 900, color: "#334155" }}>
+                      {it.tamano || "—"}
+                    </div>
+                    <div style={{ textAlign: "right", fontWeight: 900, color: "#0f172a" }}>
+                      {formatCantidad(it.cantidad ?? 0) || "0"}
+                    </div>
                   </div>
-                  <div style={{ textAlign: "center", fontWeight: 900, color: "#334155" }}>
-                    {it.tamano || "—"}
-                  </div>
-                  <div style={{ textAlign: "right", fontWeight: 900, color: "#0f172a" }}>
-                    {formatCantidad(it.cantidad ?? 0) || "0"}
-                  </div>
+
+                  {/* Row 2: small inline badge under the item — only in
+                      partial-approval mode.  Does not consume horizontal
+                      space, so the columns above stay aligned with the
+                      table header. */}
                   {isPartial ? (
-                    <div style={{ textAlign: "right" }}>
+                    <div style={{ marginTop: 4 }}>
                       <ItemEstadoBadge estadoItem={it.estado_item} />
                     </div>
                   ) : null}
