@@ -259,11 +259,13 @@ def generar_pdf_pedido(pedido) -> bytes:
             else:
                 n_reserva += 1
 
-        # Show a small summary line above the table when the pedido isn't
-        # fully aprobado — useful for partial approvals so the proveedor
-        # knows at a glance how many lines apply to them vs which are
-        # still pending or denied.
-        if n_reserva or n_denegado:
+        # The Estado column + summary line are only meaningful when there
+        # is a MIX of per-item states (i.e. partial approval).  If every
+        # item shares the same state, the column would be just one repeated
+        # label and the summary would be redundant — hide both.
+        is_partial = len({label for label, _, _ in item_states}) > 1
+
+        if is_partial:
             resumen_parts = []
             if n_aprobado: resumen_parts.append(f"<b><font color='#065F46'>{n_aprobado} aprobado{'s' if n_aprobado != 1 else ''}</font></b>")
             if n_reserva:  resumen_parts.append(f"<b><font color='#92400E'>{n_reserva} pendiente{'s' if n_reserva != 1 else ''}</font></b>")
@@ -275,10 +277,13 @@ def generar_pdf_pedido(pedido) -> bytes:
             ))
             story.append(Spacer(1, 4))
 
-        data = [["#", "Producto", "Tamaño / Formato", "Cantidad", "Servida", "Estado"]]
-        # Track which body rows are which state so we can paint per-row
-        # backgrounds on the STATUS cell.
-        per_row_styles = []
+        # Headers + body — Estado column is only added in partial-approval mode.
+        if is_partial:
+            data = [["#", "Producto", "Tamaño / Formato", "Cantidad", "Servida", "Estado"]]
+        else:
+            data = [["#", "Producto", "Tamaño / Formato", "Cantidad", "Servida"]]
+
+        per_row_styles = []  # only populated in partial mode
         for idx, item in enumerate(items, start=1):
             prod = getattr(item, "producto", None)
             nombre = getattr(prod, "nombre_cientifico", None) or getattr(prod, "nombre_natural", None) or f"#{getattr(item, 'producto_id', '?')}"
@@ -289,11 +294,19 @@ def generar_pdf_pedido(pedido) -> bytes:
             servida = f"{_fmt_cantidad(item.cantidad_servida)} {unidad}"
 
             label, bg, fg = item_states[idx - 1]
-            data.append([str(idx), nombre, str(tamano), cantidad, servida, label])
-            per_row_styles.append((idx, bg, fg, label == "Denegado"))
+            if is_partial:
+                data.append([str(idx), nombre, str(tamano), cantidad, servida, label])
+                per_row_styles.append((idx, bg, fg, label == "Denegado"))
+            else:
+                data.append([str(idx), nombre, str(tamano), cantidad, servida])
 
-        # New column layout: 175 mm total = 10 + 56 + 30 + 26 + 26 + 27
-        t_items = Table(data, colWidths=[10 * mm, 56 * mm, 30 * mm, 26 * mm, 26 * mm, 27 * mm])
+        # Column layouts (175 mm total in both cases).
+        if is_partial:
+            col_widths = [10 * mm, 56 * mm, 30 * mm, 26 * mm, 26 * mm, 27 * mm]
+        else:
+            col_widths = [10 * mm, 70 * mm, 35 * mm, 30 * mm, 30 * mm]
+
+        t_items = Table(data, colWidths=col_widths)
         base_style = [
             ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARIO),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -302,8 +315,6 @@ def generar_pdf_pedido(pedido) -> bytes:
             ("FONTSIZE", (0, 1), (-1, -1), 9),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
             ("ALIGN", (3, 0), (4, -1), "RIGHT"),
-            ("ALIGN", (5, 0), (5, -1), "CENTER"),
-            ("FONTNAME", (5, 1), (5, -1), "Helvetica-Bold"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -312,14 +323,17 @@ def generar_pdf_pedido(pedido) -> bytes:
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, COLOR_GRIS_FONDO]),
             ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
         ]
-        # Paint the Estado cell with the state colour for every row.  For
-        # DENEGADO rows additionally grey-out the whole row's text so it
-        # reads as "no aplica" at a glance.
-        for row_idx, bg, fg, is_denegado in per_row_styles:
-            base_style.append(("BACKGROUND", (5, row_idx), (5, row_idx), bg))
-            base_style.append(("TEXTCOLOR", (5, row_idx), (5, row_idx), fg))
-            if is_denegado:
-                base_style.append(("TEXTCOLOR", (0, row_idx), (4, row_idx), COLOR_GRIS))
+        if is_partial:
+            # Estado column: centered, bold, with per-row state colours.
+            # DENEGADO rows additionally grey-out the rest of the row so
+            # it reads as "no aplica" at a glance.
+            base_style.append(("ALIGN", (5, 0), (5, -1), "CENTER"))
+            base_style.append(("FONTNAME", (5, 1), (5, -1), "Helvetica-Bold"))
+            for row_idx, bg, fg, is_denegado in per_row_styles:
+                base_style.append(("BACKGROUND", (5, row_idx), (5, row_idx), bg))
+                base_style.append(("TEXTCOLOR", (5, row_idx), (5, row_idx), fg))
+                if is_denegado:
+                    base_style.append(("TEXTCOLOR", (0, row_idx), (4, row_idx), COLOR_GRIS))
         t_items.setStyle(TableStyle(base_style))
         story.append(t_items)
     story.append(Spacer(1, 12))
