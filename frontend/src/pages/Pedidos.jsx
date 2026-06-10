@@ -21,12 +21,21 @@ const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 const ESTADO_FILTERS = [
   { value: "TODOS", label: "Todos" },
   { value: "RESERVA", label: "Reserva" },
+  { value: "APROBADO_PARCIAL", label: "Aprobado parcial" },
   { value: "APROBADO", label: "Aprobado" },
   { value: "SERVIDO", label: "Servido" },
   { value: "DENEGADO", label: "Denegado" },
   { value: "CANCELADO", label: "Cancelado" },
   { value: "CADUCADO", label: "Caducado" },
 ];
+
+// Human-readable label for the estado.  APROBADO_PARCIAL is otherwise
+// rendered as a single ugly token in the UI.
+const estadoLabel = (estado) => {
+  const e = String(estado || "").trim().toUpperCase();
+  if (e === "APROBADO_PARCIAL") return "APROBADO PARCIAL";
+  return e || "—";
+};
 
 const DISTRITO_BARRIOS = {
   Anaga: [
@@ -290,6 +299,7 @@ function badge(estado) {
   };
 
   if (e === "APROBADO") return { ...base, background: "rgba(16,185,129,0.12)", color: "#065f46" };
+  if (e === "APROBADO_PARCIAL") return { ...base, background: "rgba(20,184,166,0.14)", color: "#115e59", borderColor: "rgba(20,184,166,0.28)" };
   if (e === "DENEGADO") return { ...base, background: "rgba(239,68,68,0.10)", color: "#991b1b" };
   if (e === "SERVIDO") return { ...base, background: "rgba(59,130,246,0.10)", color: "#1e3a8a" };
   if (e === "CANCELADO") return { ...base, background: "rgba(148,163,184,0.18)", color: "#334155" };
@@ -2578,11 +2588,12 @@ export default function Pedidos() {
                           const e = estadoNormalizado(estado);
                           let color = "#92400e"; // reserva/default ámbar
                           if (e === "APROBADO") color = "#065f46";
+                          else if (e === "APROBADO_PARCIAL") color = "#115e59";
                           else if (e === "DENEGADO") color = "#991b1b";
                           else if (e === "SERVIDO") color = "#1e3a8a";
                           else if (e === "CANCELADO") color = "#334155";
                           else if (e === "CADUCADO") color = "#475569";
-                          return <span style={{ fontWeight: 900, color, fontSize: 13 }}>{estado}</span>;
+                          return <span style={{ fontWeight: 900, color, fontSize: 13 }}>{estadoLabel(estado)}</span>;
                         })()}
                       </td>
 
@@ -2624,12 +2635,16 @@ export default function Pedidos() {
                             </>
                           ) : null}
 
-                          {/* Descarga del PDF "oficial" del pedido. Solo cuando
-                              el pedido ya ha sido aprobado (o servido) — en
-                              ese punto el documento es definitivo. */}
+                          {/* Descarga del PDF "oficial" del pedido.  Disponible
+                              en cuanto haya ≥1 item aprobado: APROBADO_PARCIAL,
+                              APROBADO o SERVIDO.  El backend protege el endpoint
+                              y devuelve un PDF que refleja el estado actual. */}
                           {(() => {
                             const e = estadoNormalizado(estado);
-                            const puedePdf = e === "APROBADO" || e === "SERVIDO";
+                            const puedePdf =
+                              e === "APROBADO" ||
+                              e === "APROBADO_PARCIAL" ||
+                              e === "SERVIDO";
                             if (!puedePdf) return null;
                             return (
                               <button
@@ -2661,9 +2676,16 @@ export default function Pedidos() {
                             );
                           })()}
 
-                          {!canEditCancel && estadoNormalizado(estado) !== "APROBADO" && estadoNormalizado(estado) !== "SERVIDO" ? (
-                            <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>
-                          ) : null}
+                          {(() => {
+                            // Show the "—" placeholder ONLY when there are
+                            // truly no actions to render: can't edit/cancel
+                            // and no PDF available either.
+                            const e = estadoNormalizado(estado);
+                            const hasPdf =
+                              e === "APROBADO" || e === "APROBADO_PARCIAL" || e === "SERVIDO";
+                            if (canEditCancel || hasPdf) return null;
+                            return <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>;
+                          })()}
                         </div>
                       </td>
                     </tr>
