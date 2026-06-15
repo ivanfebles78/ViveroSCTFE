@@ -904,14 +904,18 @@ export default function Aprobaciones() {
               <tbody>
                 {pedidosFiltrados.map((p) => {
                   const estado = p.estado || "RESERVA";
-                  // Row-level Aprobar / Denegar shortcuts only show for pedidos
-                  // in RESERVA — i.e. brand-new pedidos where no decision has
-                  // been taken yet.  Once ANY decision exists (APROBADO_PARCIAL,
-                  // APROBADO, DENEGADO, …) the pedido is final and the manager
-                  // must open the detail modal to act on lingering RESERVA items
-                  // (which only happens with legacy data — the new flow forces
-                  // a complete decision atomically).
-                  const editable = estadoNormalizado(estado) === "RESERVA";
+                  // Row-level Aprobar / Denegar shortcuts only show when:
+                  //   1) pedido is in RESERVA (no decision taken yet — once
+                  //      ANY decision exists, state is final), AND
+                  //   2) the pedido has exactly ONE item.  Multi-item pedidos
+                  //      must be decided through the detail modal so the
+                  //      manager can pick per-item which lines to approve and
+                  //      which to deny.  Otherwise the row-level shortcut
+                  //      would force "approve all" or "deny all" and the
+                  //      partial-approval workflow becomes inaccessible.
+                  const itemCount = safeArray(p?.items).length;
+                  const editable =
+                    estadoNormalizado(estado) === "RESERVA" && itemCount === 1;
 
                   return (
                     <tr
