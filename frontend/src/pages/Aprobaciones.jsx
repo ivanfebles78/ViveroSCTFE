@@ -904,9 +904,14 @@ export default function Aprobaciones() {
               <tbody>
                 {pedidosFiltrados.map((p) => {
                   const estado = p.estado || "RESERVA";
-                  // Editable = pedido has at least one item still in RESERVA, i.e.
-                  // estado is RESERVA or APROBADO_PARCIAL.  Mirrors backend.
-                  const editable = DECIDABLE_FRONTEND.has(estadoNormalizado(estado));
+                  // Row-level Aprobar / Denegar shortcuts only show for pedidos
+                  // in RESERVA — i.e. brand-new pedidos where no decision has
+                  // been taken yet.  Once ANY decision exists (APROBADO_PARCIAL,
+                  // APROBADO, DENEGADO, …) the pedido is final and the manager
+                  // must open the detail modal to act on lingering RESERVA items
+                  // (which only happens with legacy data — the new flow forces
+                  // a complete decision atomically).
+                  const editable = estadoNormalizado(estado) === "RESERVA";
 
                   return (
                     <tr
