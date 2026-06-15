@@ -237,6 +237,11 @@ class PedidoOut(BaseModel):
     barrio_destino: Optional[str] = None
     direccion_destino: Optional[str] = None
     items: List[PedidoItemOut] = []
+    # Non-fatal warnings collected during the request (e.g. an intended
+    # email recipient had no email registered).  The pedido transaction
+    # itself still succeeded — these are informational notices the UI
+    # surfaces as a soft toast.
+    email_warnings: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

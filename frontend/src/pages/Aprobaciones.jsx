@@ -248,7 +248,11 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
         const parts = [];
         if (approved_item_ids.length) parts.push(`${approved_item_ids.length} aprobado(s)`);
         if (denied_item_ids.length)   parts.push(`${denied_item_ids.length} denegado(s)`);
-        onMessage(`Pedido #${pedido.id}: ${parts.join(" · ")}.`);
+        // Surface any email-delivery warnings returned by the backend
+        // (e.g. solicitante / técnico / proveedor without email).
+        const warns = Array.isArray(updated?.email_warnings) ? updated.email_warnings : [];
+        const base = `Pedido #${pedido.id}: ${parts.join(" · ")}.`;
+        onMessage(warns.length ? `${base} Aviso: ${warns.join(" · ")}` : base);
       }
       setPendingDecisions({});
       setMotivo("");
@@ -782,11 +786,18 @@ export default function Aprobaciones() {
       });
   }, [pedidos, estadoFiltro, idFiltro, fechaFiltro, solicitanteFiltro, textoFiltro]);
 
+  // Helper to format the post-action message with optional email warnings
+  // returned by the backend (e.g. solicitante without email registered).
+  const messageWithWarnings = (base, updated) => {
+    const warns = Array.isArray(updated?.email_warnings) ? updated.email_warnings : [];
+    return warns.length ? `${base} Aviso: ${warns.join(" · ")}` : base;
+  };
+
   const aprobar = async (id) => {
     try {
-      await aprobarPedido(id, {});
+      const updated = await aprobarPedido(id, {});
       await load();
-      showTimedMessage(`Pedido #${id} aprobado.`);
+      showTimedMessage(messageWithWarnings(`Pedido #${id} aprobado.`, updated));
     } catch (e) {
       showTimedMessage(e?.response?.data?.detail || e?.message || "Error aprobando pedido");
     }
@@ -794,9 +805,9 @@ export default function Aprobaciones() {
 
   const denegar = async (id) => {
     try {
-      await denegarPedido(id, {});
+      const updated = await denegarPedido(id, {});
       await load();
-      showTimedMessage(`Pedido #${id} denegado.`);
+      showTimedMessage(messageWithWarnings(`Pedido #${id} denegado.`, updated));
     } catch (e) {
       showTimedMessage(e?.response?.data?.detail || e?.message || "Error denegando pedido");
     }

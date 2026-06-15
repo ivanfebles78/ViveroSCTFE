@@ -719,11 +719,44 @@ def _pdf_silencioso(pedido, viewer_role: Optional[str] = None) -> Optional[bytes
         return None
 
 
-def _notificar_pedido_creado(db: Session, pedido: Pedido) -> None:
-    """Pedido recién creado → email a managers con PDF adjunto."""
+def _users_without_email(db: Session, *roles: str) -> list[str]:
+    """Return usernames of users that have one of the given roles but no
+    email registered.  Used to surface 'X usuarios no recibirán aviso'
+    warnings in the API response."""
+    if not roles:
+        return []
+    rows = (
+        db.query(Usuario.username)
+        .filter(func.lower(Usuario.rol).in_([r.lower() for r in roles]))
+        .filter((Usuario.email.is_(None)) | (func.length(func.trim(Usuario.email)) == 0))
+        .all()
+    )
+    return [u for (u,) in rows if u]
+
+
+def _notificar_pedido_creado(db: Session, pedido: Pedido) -> list[str]:
+    """Pedido recién creado → email a managers con PDF adjunto.
+    Devuelve una lista de avisos (recipients sin email)."""
+    warnings: list[str] = []
     managers = _emails_by_role(db, "manager")
+    missing = _users_without_email(db, "manager")
+    if missing:
+        warnings.append(
+            f"{len(missing)} manager(s) sin email registrado no recibirán el aviso: "
+            + ", ".join(missing)
+        )
     if not managers:
-        return
+        # Diferencia entre 'no hay managers' y 'los hay pero sin email'.
+        any_manager = (
+            db.query(Usuario)
+            .filter(func.lower(Usuario.rol) == "manager")
+            .first()
+        )
+        if not any_manager:
+            warnings.append("No hay ningún usuario con rol manager — nadie recibirá el aviso del pedido nuevo.")
+        # Si hay managers pero todos sin email, el warning ya está cubierto arriba.
+        return warnings
+
     pdf = _pdf_silencioso(pedido)
     _safe_notify(
         "pedido_creado_a_manager",
@@ -732,22 +765,31 @@ def _notificar_pedido_creado(db: Session, pedido: Pedido) -> None:
         pedido=pedido,
         pdf_bytes=pdf,
     )
+    return warnings
 
 
-def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> None:
+def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> list[str]:
     """Pedido decidido (aprobar/denegar/decidir) → notificar a:
        - solicitante (con PDF general)
        - técnicos del vivero (FYI, con PDF general)
        - proveedor (solo reposición y solo si hay items aprobados — PDF
          filtrado a sus líneas).
+    Devuelve una lista de avisos para recipients sin email registrado.
     """
+    warnings: list[str] = []
     estado = (getattr(pedido, "estado", "") or "").upper()
     tipo = (getattr(pedido, "tipo", "") or "salida").strip().lower()
 
-    # PDF "completo" (con columna Estado si es parcial) para solicitante + técnicos.
     pdf_general = _pdf_silencioso(pedido)
 
-    solicitante_email = _email_of_user(db, getattr(pedido, "solicitante_username", "") or "")
+    # --- Solicitante -----------------------------------------------------
+    solicitante_username = (getattr(pedido, "solicitante_username", "") or "").strip()
+    solicitante_email = _email_of_user(db, solicitante_username) if solicitante_username else None
+    if solicitante_username and not solicitante_email:
+        warnings.append(
+            f"El solicitante '{solicitante_username}' no tiene email registrado — "
+            "no se le pudo notificar la decisión."
+        )
     if solicitante_email:
         _safe_notify(
             "pedido_decidido_a_solicitante",
@@ -757,7 +799,14 @@ def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> None:
             pdf_bytes=pdf_general,
         )
 
+    # --- Técnicos del vivero --------------------------------------------
     tecnicos = _emails_by_role(db, "tecnico", "gestor_vivero")
+    tecnicos_sin_email = _users_without_email(db, "tecnico", "gestor_vivero")
+    if tecnicos_sin_email:
+        warnings.append(
+            f"{len(tecnicos_sin_email)} técnico(s) sin email registrado no recibirán el FYI: "
+            + ", ".join(tecnicos_sin_email)
+        )
     # Evita mandarse a sí mismo si el solicitante también es técnico.
     if solicitante_email:
         tecnicos = [e for e in tecnicos if e.lower() != solicitante_email.lower()]
@@ -770,9 +819,23 @@ def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> None:
             pdf_bytes=pdf_general,
         )
 
-    # Proveedor: solo reposición + solo si quedó algún item aprobado/servido.
+    # --- Proveedor (solo reposición con items aprobados) ----------------
     if tipo == "reposicion" and (estado in SERVICEABLE_STATES) and _has_any_approved_item(pedido):
         proveedores = _emails_by_role(db, "proveedor")
+        proveedores_sin_email = _users_without_email(db, "proveedor")
+        if proveedores_sin_email:
+            warnings.append(
+                f"{len(proveedores_sin_email)} proveedor(es) sin email registrado no recibirán el pedido: "
+                + ", ".join(proveedores_sin_email)
+            )
+        if not proveedores:
+            any_prov = (
+                db.query(Usuario)
+                .filter(func.lower(Usuario.rol) == "proveedor")
+                .first()
+            )
+            if not any_prov:
+                warnings.append("No hay ningún proveedor configurado — no se ha podido enviar el pedido a ninguno.")
         if proveedores:
             pdf_proveedor = _pdf_silencioso(pedido, viewer_role="proveedor")
             _safe_notify(
@@ -782,6 +845,8 @@ def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> None:
                 pedido=pedido,
                 pdf_bytes=pdf_proveedor,
             )
+
+    return warnings
 
 
 def _has_any_approved_item(pedido: Pedido) -> bool:
@@ -804,7 +869,11 @@ def _has_any_approved_item(pedido: Pedido) -> bool:
     return False
 
 
-def _pedido_to_dict(pedido: Pedido, viewer_role: Optional[str] = None) -> dict:
+def _pedido_to_dict(
+    pedido: Pedido,
+    viewer_role: Optional[str] = None,
+    warnings: Optional[list] = None,
+) -> dict:
     """
     Serialise a Pedido to the JSON shape the frontend expects.
 
@@ -818,6 +887,10 @@ def _pedido_to_dict(pedido: Pedido, viewer_role: Optional[str] = None) -> dict:
         rejected some lines they're not seeing.
 
     For every other role the full items list is returned as before.
+
+    `warnings` — optional list of non-fatal advisories (e.g. "manager X
+    has no email registered, no aviso").  Included in the response so
+    the frontend can surface them as a soft toast.
     """
     items = getattr(pedido, "items", []) or []
     role = (viewer_role or "").strip().lower()
@@ -885,6 +958,10 @@ def _pedido_to_dict(pedido: Pedido, viewer_role: Optional[str] = None) -> dict:
             }
             for item in items
         ],
+        # Non-fatal advisories collected during the current request.
+        # Frontend reads this and surfaces a soft toast.  Defaults to None
+        # so listing endpoints (where we don't track warnings) stay clean.
+        "email_warnings": list(warnings) if warnings else None,
     }
 
 
@@ -1538,9 +1615,9 @@ def create_pedido(
     db.refresh(pedido)
 
     # Notify managers — they have a new pedido waiting for their decision.
-    _notificar_pedido_creado(db, pedido)
+    warnings = _notificar_pedido_creado(db, pedido)
 
-    return _pedido_to_dict(pedido)
+    return _pedido_to_dict(pedido, warnings=warnings)
 
 
 @app.put("/pedidos/{pedido_id}")
@@ -1801,9 +1878,9 @@ def denegar_pedido(
     db.refresh(pedido)
 
     # Notify solicitante + técnicos (+ proveedor for reposicion).
-    _notificar_pedido_decidido(db, pedido)
+    warnings = _notificar_pedido_decidido(db, pedido)
 
-    return _pedido_to_dict(pedido)
+    return _pedido_to_dict(pedido, warnings=warnings)
 
 
 @app.post("/pedidos/{pedido_id}/decidir", response_model=PedidoOut)
@@ -1929,9 +2006,9 @@ def decidir_pedido(
     db.refresh(pedido)
 
     # Notify solicitante + técnicos (+ proveedor for reposicion).
-    _notificar_pedido_decidido(db, pedido)
+    warnings = _notificar_pedido_decidido(db, pedido)
 
-    return _pedido_to_dict(pedido)
+    return _pedido_to_dict(pedido, warnings=warnings)
 
 
 @app.get("/pedidos/{pedido_id}/pdf")

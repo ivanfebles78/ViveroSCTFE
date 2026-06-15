@@ -2242,10 +2242,22 @@ export default function Pedidos() {
     setSavingNewPedido(true);
 
     try {
-      await createPedido(payload);
+      const created = await createPedido(payload);
       setModalOpen(false);
       await refrescar();
-      showTimedMessage("Pedido creado correctamente.", "success");
+      // If the backend surfaced any email-delivery warnings (e.g. a
+      // manager without email registered), show them as a soft notice
+      // RIGHT AFTER the success message so the user knows what didn't go
+      // through, without making the create flow look like it failed.
+      const warns = Array.isArray(created?.email_warnings) ? created.email_warnings : [];
+      if (warns.length) {
+        showTimedMessage(
+          `Pedido creado. Aviso: ${warns.join(" · ")}`,
+          "warning"
+        );
+      } else {
+        showTimedMessage("Pedido creado correctamente.", "success");
+      }
     } catch (e) {
       showTimedMessage(
         e?.response?.data?.detail || e?.message || "Error creando pedido",
