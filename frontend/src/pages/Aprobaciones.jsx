@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getPedidos, aprobarPedido, denegarPedido, descargarPedidoPdf } from "../api/api";
+import { getPedidos, aprobarPedido, denegarPedido, decidirPedido, descargarPedidoPdf } from "../api/api";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
 
@@ -178,7 +178,18 @@ function filterLabelStyle() {
 }
 
 function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdated, onMessage }) {
-  const [busyItemId, setBusyItemId] = useState(null);
+  // Pending decisions: { [item.id]: "aprobar" | "denegar" }.  Lives only
+  // in the modal — nothing hits the DB until the manager presses
+  // "Confirmar decisiones".  Closing the modal discards them.
+  const [pendingDecisions, setPendingDecisions] = useState({});
+  const [motivo, setMotivo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Reset local state whenever a different pedido is opened.
+  useEffect(() => {
+    setPendingDecisions({});
+    setMotivo("");
+  }, [pedido?.id]);
 
   if (!pedido) return null;
 
@@ -195,21 +206,47 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
     return st === "APROBADO" || st === "SERVIDO";
   });
 
-  const actOnItem = async (itemId, action) => {
-    setBusyItemId(itemId);
+  // Items still in RESERVA — these are the ones the manager must decide on.
+  const reservaItems     = items.filter((it) => itemEstado(it) === "RESERVA");
+  const pendingCount     = reservaItems.length;
+  const decidedLocalCount = reservaItems.filter((it) => pendingDecisions[it.id]).length;
+  const allDecided       = pendingCount > 0 && decidedLocalCount === pendingCount;
+  const anyDenied        = reservaItems.some((it) => pendingDecisions[it.id] === "denegar");
+
+  const setDecision = (itemId, decision) => {
+    setPendingDecisions((prev) => ({ ...prev, [itemId]: decision }));
+  };
+
+  const submitDecisions = async () => {
+    if (!allDecided || submitting) return;
+    const approved_item_ids = [];
+    const denied_item_ids   = [];
+    for (const it of reservaItems) {
+      if (pendingDecisions[it.id] === "aprobar") approved_item_ids.push(it.id);
+      else if (pendingDecisions[it.id] === "denegar") denied_item_ids.push(it.id);
+    }
+    setSubmitting(true);
     try {
-      const fn = action === "aprobar" ? aprobarPedido : denegarPedido;
-      const updated = await fn(pedido.id, { item_ids: [itemId] });
+      const updated = await decidirPedido(pedido.id, {
+        approved_item_ids,
+        denied_item_ids,
+        motivo_denegacion: denied_item_ids.length ? (motivo.trim() || null) : null,
+      });
       if (onPedidoUpdated) onPedidoUpdated(updated);
       if (onMessage) {
-        onMessage(`Item ${action === "aprobar" ? "aprobado" : "denegado"} en pedido #${pedido.id}.`);
+        const parts = [];
+        if (approved_item_ids.length) parts.push(`${approved_item_ids.length} aprobado(s)`);
+        if (denied_item_ids.length)   parts.push(`${denied_item_ids.length} denegado(s)`);
+        onMessage(`Pedido #${pedido.id}: ${parts.join(" · ")}.`);
       }
+      setPendingDecisions({});
+      setMotivo("");
     } catch (e) {
       if (onMessage) {
-        onMessage(e?.response?.data?.detail || e?.message || "Error procesando el item");
+        onMessage(e?.response?.data?.detail || e?.message || "Error aplicando las decisiones");
       }
     } finally {
-      setBusyItemId(null);
+      setSubmitting(false);
     }
   };
 
@@ -384,44 +421,68 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                         {canApprove ? (
                           <td style={tdStyle()}>
                             {isReserva ? (
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <button
-                                  type="button"
-                                  disabled={busyItemId === it.id}
-                                  onClick={() => actOnItem(it.id, "aprobar")}
-                                  style={{
-                                    padding: "6px 10px",
-                                    borderRadius: 8,
-                                    border: "1px solid rgba(16,185,129,0.35)",
-                                    background: "rgba(16,185,129,0.10)",
-                                    color: "#065f46",
-                                    fontWeight: 900,
-                                    fontSize: 12,
-                                    cursor: busyItemId === it.id ? "wait" : "pointer",
-                                    opacity: busyItemId === it.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  Aprobar
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={busyItemId === it.id}
-                                  onClick={() => actOnItem(it.id, "denegar")}
-                                  style={{
-                                    padding: "6px 10px",
-                                    borderRadius: 8,
-                                    border: "1px solid rgba(239,68,68,0.30)",
-                                    background: "rgba(239,68,68,0.08)",
-                                    color: "#991b1b",
-                                    fontWeight: 900,
-                                    fontSize: 12,
-                                    cursor: busyItemId === it.id ? "wait" : "pointer",
-                                    opacity: busyItemId === it.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  Denegar
-                                </button>
-                              </div>
+                              (() => {
+                                // Toggle pair: clicking a button marks the
+                                // pending decision locally; no API call yet.
+                                // The selected option is highlighted.
+                                const decision = pendingDecisions[it.id]; // undefined | "aprobar" | "denegar"
+                                const baseBtn = {
+                                  padding: "6px 10px",
+                                  borderRadius: 8,
+                                  fontWeight: 900,
+                                  fontSize: 12,
+                                  cursor: submitting ? "wait" : "pointer",
+                                  transition: "background .15s, border-color .15s, box-shadow .15s",
+                                };
+                                const aprobarStyle = {
+                                  ...baseBtn,
+                                  border: decision === "aprobar"
+                                    ? "1px solid #10b981"
+                                    : "1px solid rgba(16,185,129,0.30)",
+                                  background: decision === "aprobar"
+                                    ? "rgba(16,185,129,0.25)"
+                                    : "rgba(16,185,129,0.08)",
+                                  color: "#065f46",
+                                  boxShadow: decision === "aprobar"
+                                    ? "0 0 0 2px rgba(16,185,129,0.18)"
+                                    : "none",
+                                };
+                                const denegarStyle = {
+                                  ...baseBtn,
+                                  border: decision === "denegar"
+                                    ? "1px solid #ef4444"
+                                    : "1px solid rgba(239,68,68,0.25)",
+                                  background: decision === "denegar"
+                                    ? "rgba(239,68,68,0.20)"
+                                    : "rgba(239,68,68,0.06)",
+                                  color: "#991b1b",
+                                  boxShadow: decision === "denegar"
+                                    ? "0 0 0 2px rgba(239,68,68,0.18)"
+                                    : "none",
+                                };
+                                return (
+                                  <div style={{ display: "flex", gap: 6 }}>
+                                    <button
+                                      type="button"
+                                      disabled={submitting}
+                                      onClick={() => setDecision(it.id, "aprobar")}
+                                      style={aprobarStyle}
+                                      title="Marcar este item como aprobado (no se aplica hasta confirmar)"
+                                    >
+                                      {decision === "aprobar" ? "✓ Aprobar" : "Aprobar"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={submitting}
+                                      onClick={() => setDecision(it.id, "denegar")}
+                                      style={denegarStyle}
+                                      title="Marcar este item como denegado (no se aplica hasta confirmar)"
+                                    >
+                                      {decision === "denegar" ? "✗ Denegar" : "Denegar"}
+                                    </button>
+                                  </div>
+                                );
+                              })()
                             ) : (
                               <span style={{ color: "#64748b", fontSize: 12, fontStyle: "italic" }}>—</span>
                             )}
@@ -436,43 +497,132 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
           )}
         </div>
 
-        {/* Footer: PDF download whenever there's at least one approved item. */}
-        <div
-          style={{
-            padding: "14px 22px",
-            borderTop: "1px solid rgba(15,23,42,0.08)",
-            background: "#f8fafc",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
-            {canApprove && items.some((it) => itemEstado(it) === "RESERVA")
-              ? "Puedes aprobar o denegar items individualmente. Los items aprobados quedarán reflejados en el PDF."
-              : hasApproved
-              ? "Hay items aprobados disponibles en el PDF."
-              : "Sin items aprobados todavía."}
-          </div>
-          {hasApproved ? (
-            <button
-              type="button"
-              onClick={downloadPdf}
+        {/* Footer: two distinct modes.
+            (a) There are still RESERVA items AND the user can approve →
+                show the batch-decision UI: motivo input + Confirmar.
+            (b) Otherwise → show the PDF download (when applicable). */}
+        {canApprove && pendingCount > 0 ? (
+          <div
+            style={{
+              padding: "14px 22px",
+              borderTop: "1px solid rgba(15,23,42,0.08)",
+              background: "#f8fafc",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div
               style={{
-                padding: "10px 16px",
-                borderRadius: 12,
-                border: "1px solid rgba(59,130,246,0.30)",
-                background: "rgba(59,130,246,0.08)",
-                color: "#1d4ed8",
-                fontWeight: 900,
-                cursor: "pointer",
+                fontSize: 13,
+                color: allDecided ? "#065f46" : "#92400e",
+                fontWeight: 800,
               }}
             >
-              Descargar PDF
-            </button>
-          ) : null}
-        </div>
+              {allDecided
+                ? `Listo: ${decidedLocalCount} de ${pendingCount} items decididos. Pulsa "Confirmar decisiones" para aplicar.`
+                : `Decide TODOS los items antes de confirmar (${decidedLocalCount}/${pendingCount} hechos). No se puede dejar nada pendiente.`}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              {anyDenied ? (
+                <input
+                  type="text"
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value)}
+                  disabled={submitting}
+                  placeholder="Motivo de denegación (opcional)"
+                  style={{
+                    flex: 1,
+                    minWidth: 220,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(15,23,42,0.12)",
+                    background: "white",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#0f172a",
+                  }}
+                />
+              ) : (
+                <span style={{ flex: 1 }} />
+              )}
+
+              <button
+                type="button"
+                disabled={!allDecided || submitting}
+                onClick={submitDecisions}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 12,
+                  border: "1px solid " + (allDecided ? "#0f766e" : "rgba(15,23,42,0.12)"),
+                  background: allDecided ? "#0f766e" : "rgba(148,163,184,0.30)",
+                  color: allDecided ? "white" : "#64748b",
+                  fontWeight: 900,
+                  cursor: !allDecided || submitting ? "not-allowed" : "pointer",
+                  fontSize: 13,
+                  letterSpacing: ".02em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {submitting ? "Aplicando…" : "Confirmar decisiones"}
+              </button>
+
+              {hasApproved ? (
+                <button
+                  type="button"
+                  onClick={downloadPdf}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(59,130,246,0.30)",
+                    background: "rgba(59,130,246,0.08)",
+                    color: "#1d4ed8",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                  }}
+                >
+                  PDF
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              padding: "14px 22px",
+              borderTop: "1px solid rgba(15,23,42,0.08)",
+              background: "#f8fafc",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+              {hasApproved
+                ? "Hay items aprobados disponibles en el PDF."
+                : "Sin items aprobados todavía."}
+            </div>
+            {hasApproved ? (
+              <button
+                type="button"
+                onClick={downloadPdf}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(59,130,246,0.30)",
+                  background: "rgba(59,130,246,0.08)",
+                  color: "#1d4ed8",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                Descargar PDF
+              </button>
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   );

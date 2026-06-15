@@ -33,7 +33,7 @@ from models import (
     ZonaPolygon,
     Base,
 )
-from schemas import PedidoActionRequest, PedidoOut
+from schemas import PedidoActionRequest, PedidoDecidirRequest, PedidoOut
 
 import account_tokens
 import email_service
@@ -1640,6 +1640,131 @@ def denegar_pedido(
         # Append rather than overwrite if there's already a previous reason.
         existing = getattr(pedido, "motivo_denegacion", None) or ""
         pedido.motivo_denegacion = (existing + "\n" + payload.motivo).strip() if existing else payload.motivo
+
+    recompute_pedido_estado(pedido)
+
+    db.commit()
+    db.refresh(pedido)
+
+    return _pedido_to_dict(pedido)
+
+
+@app.post("/pedidos/{pedido_id}/decidir", response_model=PedidoOut)
+def decidir_pedido(
+    pedido_id: int,
+    payload: PedidoDecidirRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+):
+    """
+    Atomic per-item decision over a pedido.
+
+    Business rule: when the manager opens a pedido to decide, they MUST
+    take a decision on EVERY item still in RESERVA — there is no
+    "leave-for-later" option.  The request body must therefore contain
+    `approved_item_ids` and `denied_item_ids` whose union equals exactly
+    the current set of RESERVA items in the pedido.
+
+    After applying the decisions the pedido transitions in one shot to
+    APROBADO (all approved), DENEGADO (all denied) or APROBADO_PARCIAL
+    (mix).  No item is left in RESERVA.
+    """
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pedido no encontrado.",
+        )
+
+    _asegurar_no_caducado(pedido, db)
+
+    if (pedido.estado or "").upper() not in DECIDABLE_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este pedido ya no admite decisiones (no hay items en RESERVA).",
+        )
+
+    # Reposición: only "manager" role can decide (matches /aprobar).
+    pedido_tipo = (pedido.tipo or "salida").strip().lower()
+    user_role  = (current_user.rol or "").strip().lower()
+    if pedido_tipo == "reposicion" and user_role != "manager":
+        raise HTTPException(
+            status_code=403,
+            detail="Solo un usuario con rol 'manager' puede decidir pedidos de reposición.",
+        )
+
+    items_by_id = {it.id: it for it in (pedido.items or [])}
+    reserva_ids = {it.id for it in (pedido.items or []) if _item_estado(it) == "RESERVA"}
+
+    approved = list(payload.approved_item_ids or [])
+    denied   = list(payload.denied_item_ids   or [])
+
+    # Validation 1: every referenced item must belong to the pedido.
+    all_referenced = set(approved) | set(denied)
+    bogus = [iid for iid in all_referenced if iid not in items_by_id]
+    if bogus:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Items {bogus} no pertenecen al pedido.",
+        )
+
+    # Validation 2: no item in both lists.
+    overlap = set(approved) & set(denied)
+    if overlap:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Items {sorted(overlap)} aparecen simultáneamente como aprobados y denegados.",
+        )
+
+    # Validation 3: every still-RESERVA item must be covered.
+    missing = reserva_ids - all_referenced
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Debes decidir sobre todos los items pendientes. "
+                f"Te faltan: {sorted(missing)}."
+            ),
+        )
+
+    # Validation 4: every referenced item must currently be RESERVA.
+    # (Already-decided items are immutable; they can't be re-decided.)
+    immutable = [iid for iid in all_referenced if iid not in reserva_ids]
+    if immutable:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Items {immutable} ya tienen decisión previa y no pueden modificarse."
+            ),
+        )
+
+    # Apply.
+    now = datetime.utcnow()
+    for iid in approved:
+        items_by_id[iid].estado_item = "APROBADO"
+    for iid in denied:
+        items_by_id[iid].estado_item = "DENEGADO"
+
+    # Stamp aprobado_por/at the first time any item gets approved.
+    if approved:
+        if hasattr(pedido, "aprobado_por") and not getattr(pedido, "aprobado_por", None):
+            pedido.aprobado_por = current_user.username
+        if hasattr(pedido, "aprobado_at") and not getattr(pedido, "aprobado_at", None):
+            pedido.aprobado_at = now
+        if hasattr(pedido, "approved_by") and not getattr(pedido, "approved_by", None):
+            pedido.approved_by = current_user.username
+        if hasattr(pedido, "approved_at") and not getattr(pedido, "approved_at", None):
+            pedido.approved_at = now
+
+    # Stamp denegado_por/at + motivo the first time any item gets denied.
+    if denied:
+        if hasattr(pedido, "denegado_por") and not getattr(pedido, "denegado_por", None):
+            pedido.denegado_por = current_user.username
+        if hasattr(pedido, "denegado_at") and not getattr(pedido, "denegado_at", None):
+            pedido.denegado_at = now
+        if hasattr(pedido, "motivo_denegacion") and payload.motivo_denegacion:
+            existing = getattr(pedido, "motivo_denegacion", None) or ""
+            pedido.motivo_denegacion = (existing + "\n" + payload.motivo_denegacion).strip() if existing else payload.motivo_denegacion
 
     recompute_pedido_estado(pedido)
 

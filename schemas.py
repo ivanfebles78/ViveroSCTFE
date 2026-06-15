@@ -183,10 +183,28 @@ class PedidoActionRequest(BaseModel):
     or empty, the action applies to ALL items in the pedido (the
     legacy "approve / deny entire pedido" behaviour, preserved for
     backwards compatibility).  If provided, only the listed items are
-    affected — used for partial approvals.
+    affected.
     """
     motivo: Optional[str] = None
     item_ids: Optional[List[int]] = None
+
+
+class PedidoDecidirRequest(BaseModel):
+    """
+    Atomic decision over every still-RESERVA item in a pedido.
+
+    The union of `approved_item_ids` and `denied_item_ids` MUST equal
+    exactly the set of items currently in RESERVA — no missing items,
+    no duplicates, no overlap.  This enforces the business rule that
+    the manager cannot leave items in limbo: each line must be either
+    accepted or rejected.
+
+    `motivo_denegacion` is optional and only applied if any items are
+    denied.
+    """
+    approved_item_ids: List[int] = []
+    denied_item_ids:   List[int] = []
+    motivo_denegacion: Optional[str] = None
 
 
 class PedidoItemOut(BaseModel):

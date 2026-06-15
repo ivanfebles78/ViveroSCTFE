@@ -164,6 +164,14 @@ export const denegarPedido = async (id, payload = {}) => {
   return data;
 };
 
+// Atomic per-item decision: payload = { approved_item_ids, denied_item_ids,
+// motivo_denegacion? }.  The union of both id lists must cover ALL items
+// currently in RESERVA — the backend rejects partial decisions.
+export const decidirPedido = async (id, payload) => {
+  const { data } = await api.post(`/pedidos/${id}/decidir`, payload);
+  return data;
+};
+
 // Descarga el PDF imprimible del pedido (solo disponible si está APROBADO
 // o SERVIDO). Disparamos la descarga creando un blob y un enlace temporal.
 export const descargarPedidoPdf = async (id) => {
