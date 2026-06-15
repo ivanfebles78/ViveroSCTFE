@@ -2744,15 +2744,17 @@ export default function Pedidos() {
                           ) : null}
 
                           {/* Descarga del PDF "oficial" del pedido.  Disponible
-                              en cuanto haya ≥1 item aprobado: APROBADO_PARCIAL,
-                              APROBADO o SERVIDO.  El backend protege el endpoint
-                              y devuelve un PDF que refleja el estado actual. */}
+                              en cualquier estado decidido (APROBADO, APROBADO_PARCIAL,
+                              SERVIDO o DENEGADO) — incluso para los denegados,
+                              porque el PDF lleva motivo de denegación + detalle
+                              de líneas y sirve como registro de auditoría. */}
                           {(() => {
                             const e = estadoNormalizado(estado);
                             const puedePdf =
                               e === "APROBADO" ||
                               e === "APROBADO_PARCIAL" ||
-                              e === "SERVIDO";
+                              e === "SERVIDO" ||
+                              e === "DENEGADO";
                             if (!puedePdf) return null;
                             return (
                               <button
@@ -2787,10 +2789,14 @@ export default function Pedidos() {
                           {(() => {
                             // Show the "—" placeholder ONLY when there are
                             // truly no actions to render: can't edit/cancel
-                            // and no PDF available either.
+                            // and no PDF available either.  PDF is now available
+                            // in any decided state (including DENEGADO).
                             const e = estadoNormalizado(estado);
                             const hasPdf =
-                              e === "APROBADO" || e === "APROBADO_PARCIAL" || e === "SERVIDO";
+                              e === "APROBADO" ||
+                              e === "APROBADO_PARCIAL" ||
+                              e === "SERVIDO" ||
+                              e === "DENEGADO";
                             if (canEditCancel || hasPdf) return null;
                             return <span style={{ color: "#94a3b8", fontWeight: 800 }}>—</span>;
                           })()}

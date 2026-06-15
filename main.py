@@ -1805,12 +1805,15 @@ def descargar_pedido_pdf(
     estado = (pedido.estado or "").upper()
     has_approved = _has_any_approved_item(pedido)
 
-    # PDF gating: any "serviceable" state (APROBADO / APROBADO_PARCIAL /
-    # SERVIDO) OR any-approved-item fallback for safety.
-    if estado not in SERVICEABLE_STATES and not has_approved:
+    # PDF gating: any state where a decision has already been recorded —
+    # APROBADO / APROBADO_PARCIAL / SERVIDO (serviceable) plus DENEGADO
+    # (so the requester / manager can audit motive + line detail).  We
+    # only block pristine RESERVA where nothing is yet decided.
+    PDF_VIEWABLE_STATES = SERVICEABLE_STATES + ("DENEGADO",)
+    if estado not in PDF_VIEWABLE_STATES and not has_approved:
         raise HTTPException(
             status_code=400,
-            detail="El PDF solo está disponible cuando hay al menos un item aprobado o servido.",
+            detail="El PDF solo está disponible una vez tomada la decisión sobre el pedido.",
         )
 
     rol = (current_user.rol or "").strip().lower()

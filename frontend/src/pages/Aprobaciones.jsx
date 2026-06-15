@@ -205,6 +205,17 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
     const st = itemEstado(it);
     return st === "APROBADO" || st === "SERVIDO";
   });
+  // Show the PDF button in any decided state — APROBADO, APROBADO_PARCIAL,
+  // SERVIDO and DENEGADO.  Even fully-denied pedidos have audit value
+  // (motivo de denegación + line detail).  Blocked only for pristine
+  // RESERVA / pedidos with no decision recorded yet.
+  const estadoNormPedido = String(pedido.estado || "RESERVA").toUpperCase();
+  const canShowPdf =
+    estadoNormPedido === "APROBADO" ||
+    estadoNormPedido === "APROBADO_PARCIAL" ||
+    estadoNormPedido === "SERVIDO" ||
+    estadoNormPedido === "DENEGADO" ||
+    hasApproved;
 
   // Items still in RESERVA — these are the ones the manager must decide on.
   const reservaItems     = items.filter((it) => itemEstado(it) === "RESERVA");
@@ -568,7 +579,7 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                 {submitting ? "Aplicando…" : "Confirmar decisiones"}
               </button>
 
-              {hasApproved ? (
+              {canShowPdf ? (
                 <button
                   type="button"
                   onClick={downloadPdf}
@@ -600,11 +611,13 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
             }}
           >
             <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
-              {hasApproved
+              {estadoNormPedido === "DENEGADO"
+                ? "Pedido denegado. El PDF contiene el detalle y motivo de denegación."
+                : hasApproved
                 ? "Hay items aprobados disponibles en el PDF."
-                : "Sin items aprobados todavía."}
+                : "Sin decisión registrada todavía."}
             </div>
-            {hasApproved ? (
+            {canShowPdf ? (
               <button
                 type="button"
                 onClick={downloadPdf}
