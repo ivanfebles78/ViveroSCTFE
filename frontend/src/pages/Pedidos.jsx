@@ -1449,13 +1449,22 @@ function PedidoDetalleCellOld({
       })
     : safeArray(pedido.items);
 
-  // Only annotate per-item status when the pedido is APROBADO_PARCIAL.
-  // For RESERVA, APROBADO, DENEGADO, SERVIDO, etc. the per-item label
-  // would just repeat the pedido's state — redundant.
-  const isPartial = estadoNormalizado(pedido?.estado) === "APROBADO_PARCIAL";
+  // Annotate per-item status whenever the items don't all share the same
+  // state — the parent pedido's estado is the primary signal, but we also
+  // compute it directly from items as a defensive fallback in case the
+  // backend hasn't recomputed (or there's legacy data sitting in the wrong
+  // state — e.g. an APROBADO pedido that secretly has a DENEGADO line).
+  const itemStates = new Set(items.map((it) => String(it.estado_item || "RESERVA").toUpperCase()));
+  const isPartial =
+    estadoNormalizado(pedido?.estado) === "APROBADO_PARCIAL" ||
+    itemStates.size > 1;
 
   if (editingId !== pedido.id) {
-    const visibleItems = expanded ? items : items.slice(0, 3);
+    // When the pedido is partial, show ALL items unconditionally so the
+    // viewer can't miss a denied/pending line hidden behind the "Ver más"
+    // truncation.  Only the uniform case (all items same state) keeps the
+    // 3-item preview behaviour.
+    const visibleItems = (expanded || isPartial) ? items : items.slice(0, 3);
     const hiddenCount = Math.max(0, items.length - visibleItems.length);
 
     return (

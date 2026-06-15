@@ -635,13 +635,18 @@ def recompute_pedido_estado(pedido: Pedido) -> str:
 
     has_reserva  = any(_item_estado(it) == "RESERVA"  for it in items)
     has_approved = any(_item_estado(it) == "APROBADO" for it in items)
+    has_denegado = any(_item_estado(it) == "DENEGADO" for it in items)
 
-    if has_reserva and has_approved:
+    # APROBADO_PARCIAL means: at least one APROBADO line co-exists with at
+    # least one non-APROBADO line (RESERVA or DENEGADO).  Two flavours:
+    #   - APROBADO + RESERVA  → legacy partial (pre-atomic-decision flow)
+    #   - APROBADO + DENEGADO → new partial (manager rejected some lines)
+    if has_approved and (has_reserva or has_denegado):
         new_state = "APROBADO_PARCIAL"
-    elif has_reserva:
-        new_state = "RESERVA"
     elif has_approved:
         new_state = "APROBADO"
+    elif has_reserva:
+        new_state = "RESERVA"
     else:
         new_state = "DENEGADO"
 
