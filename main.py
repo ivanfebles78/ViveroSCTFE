@@ -665,6 +665,125 @@ SERVICEABLE_STATES = ("APROBADO", "APROBADO_PARCIAL", "SERVIDO")
 DECIDABLE_STATES   = ("RESERVA", "APROBADO_PARCIAL")
 
 
+# ───────────────────────────────────────────────────────────────────────────
+# Email notification helpers
+# ───────────────────────────────────────────────────────────────────────────
+def _emails_by_role(db: Session, *roles: str) -> list[str]:
+    """Return all distinct, non-empty emails for users with one of the given roles."""
+    if not roles:
+        return []
+    rows = (
+        db.query(Usuario.email)
+        .filter(func.lower(Usuario.rol).in_([r.lower() for r in roles]))
+        .filter(Usuario.email.isnot(None))
+        .all()
+    )
+    seen, out = set(), []
+    for (e,) in rows:
+        e = (e or "").strip()
+        if not e:
+            continue
+        k = e.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(e)
+    return out
+
+
+def _email_of_user(db: Session, username: str) -> Optional[str]:
+    if not username:
+        return None
+    u = db.query(Usuario).filter(Usuario.username == username).first()
+    return (u.email or "").strip() if u and u.email else None
+
+
+def _safe_notify(label: str, fn, **kwargs) -> None:
+    """Run an email-send function in a guarded try/except.  Email failures
+    must NEVER break the underlying pedido transaction — they're a
+    secondary effect."""
+    try:
+        fn(**kwargs)
+    except Exception as exc:  # noqa: BLE001
+        # Log to stdout so Railway captures it.  We deliberately swallow.
+        print(f"[email] WARN {label} failed: {exc}", flush=True)
+
+
+def _pdf_silencioso(pedido, viewer_role: Optional[str] = None) -> Optional[bytes]:
+    """Generate the PDF for the given pedido, returning None on any error
+    so a broken PDF doesn't take down the rest of the notification."""
+    try:
+        return generar_pdf_pedido(pedido, viewer_role=viewer_role)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[email] WARN PDF generation failed for pedido {getattr(pedido, 'id', '?')}: {exc}", flush=True)
+        return None
+
+
+def _notificar_pedido_creado(db: Session, pedido: Pedido) -> None:
+    """Pedido recién creado → email a managers con PDF adjunto."""
+    managers = _emails_by_role(db, "manager")
+    if not managers:
+        return
+    pdf = _pdf_silencioso(pedido)
+    _safe_notify(
+        "pedido_creado_a_manager",
+        email_service.send_pedido_creado_a_manager,
+        recipients=managers,
+        pedido=pedido,
+        pdf_bytes=pdf,
+    )
+
+
+def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> None:
+    """Pedido decidido (aprobar/denegar/decidir) → notificar a:
+       - solicitante (con PDF general)
+       - técnicos del vivero (FYI, con PDF general)
+       - proveedor (solo reposición y solo si hay items aprobados — PDF
+         filtrado a sus líneas).
+    """
+    estado = (getattr(pedido, "estado", "") or "").upper()
+    tipo = (getattr(pedido, "tipo", "") or "salida").strip().lower()
+
+    # PDF "completo" (con columna Estado si es parcial) para solicitante + técnicos.
+    pdf_general = _pdf_silencioso(pedido)
+
+    solicitante_email = _email_of_user(db, getattr(pedido, "solicitante_username", "") or "")
+    if solicitante_email:
+        _safe_notify(
+            "pedido_decidido_a_solicitante",
+            email_service.send_pedido_decidido_a_solicitante,
+            recipients=[solicitante_email],
+            pedido=pedido,
+            pdf_bytes=pdf_general,
+        )
+
+    tecnicos = _emails_by_role(db, "tecnico", "gestor_vivero")
+    # Evita mandarse a sí mismo si el solicitante también es técnico.
+    if solicitante_email:
+        tecnicos = [e for e in tecnicos if e.lower() != solicitante_email.lower()]
+    if tecnicos:
+        _safe_notify(
+            "pedido_decidido_a_tecnico",
+            email_service.send_pedido_decidido_a_tecnico,
+            recipients=tecnicos,
+            pedido=pedido,
+            pdf_bytes=pdf_general,
+        )
+
+    # Proveedor: solo reposición + solo si quedó algún item aprobado/servido.
+    if tipo == "reposicion" and (estado in SERVICEABLE_STATES) and _has_any_approved_item(pedido):
+        proveedores = _emails_by_role(db, "proveedor")
+        if proveedores:
+            pdf_proveedor = _pdf_silencioso(pedido, viewer_role="proveedor")
+            _safe_notify(
+                "pedido_reposicion_decidido_a_proveedor",
+                email_service.send_pedido_reposicion_decidido_a_proveedor,
+                recipients=proveedores,
+                pedido=pedido,
+                pdf_bytes=pdf_proveedor,
+            )
+
+
 def _has_any_approved_item(pedido: Pedido) -> bool:
     """True if at least one item is APROBADO (or already SERVIDO).
     Used to decide whether the PDF endpoint is available even while the
@@ -1417,6 +1536,10 @@ def create_pedido(
 
     db.commit()
     db.refresh(pedido)
+
+    # Notify managers — they have a new pedido waiting for their decision.
+    _notificar_pedido_creado(db, pedido)
+
     return _pedido_to_dict(pedido)
 
 
@@ -1617,6 +1740,9 @@ def aprobar_pedido(
     db.commit()
     db.refresh(pedido)
 
+    # Notify solicitante + técnicos (+ proveedor for reposicion).
+    _notificar_pedido_decidido(db, pedido)
+
     return _pedido_to_dict(pedido)
 
 
@@ -1673,6 +1799,9 @@ def denegar_pedido(
 
     db.commit()
     db.refresh(pedido)
+
+    # Notify solicitante + técnicos (+ proveedor for reposicion).
+    _notificar_pedido_decidido(db, pedido)
 
     return _pedido_to_dict(pedido)
 
@@ -1798,6 +1927,9 @@ def decidir_pedido(
 
     db.commit()
     db.refresh(pedido)
+
+    # Notify solicitante + técnicos (+ proveedor for reposicion).
+    _notificar_pedido_decidido(db, pedido)
 
     return _pedido_to_dict(pedido)
 

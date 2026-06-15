@@ -6,21 +6,35 @@ Drivers soportados:
     el primer despliegue antes de configurar un proveedor real.
   - "resend": envía a través de la API HTTPS de Resend (https://resend.com).
     Configurar con EMAIL_DRIVER=resend, RESEND_API_KEY=..., EMAIL_FROM=...
+  - "brevo": idem vía https://api.brevo.com (BREVO_API_KEY).
+
+Adjuntos (attachments):
+  Los drivers `resend` y `brevo` aceptan adjuntos como tuplas
+  `(filename, content_bytes, mime_type)`.  El driver `console` solo loguea el
+  nombre del adjunto y su tamaño.
 
 Plantillas:
-  - send_invitation_email: cuando el admin crea una cuenta.
-  - send_reset_password_email: cuando el admin pulsa Reset password.
-  - send_unlock_email: cuando el admin desbloquea una cuenta.
+  - send_invitation_email / send_reset_password_email / send_unlock_email
+    (auth flows existentes)
+  - send_pedido_creado_a_manager
+  - send_pedido_decidido_a_solicitante
+  - send_pedido_decidido_a_tecnico
+  - send_pedido_reposicion_decidido_a_proveedor
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import urllib.error
 import urllib.request
-from typing import Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
+
+
+# A single attachment is (filename, content_bytes, mime_type).
+Attachment = Tuple[str, bytes, str]
 
 
 def _env(name: str, default: str = "") -> str:
@@ -59,17 +73,22 @@ def _driver() -> str:
 # Drivers
 # ----------------------------------------------------------------------------
 
-def _send_console(*, to: str, subject: str, html: str, text: str) -> None:
+def _send_console(*, to: str, subject: str, html: str, text: str,
+                  attachments: Optional[List[Attachment]] = None) -> None:
     print("=" * 72)
     print(f"[email:console] To:      {to}")
     print(f"[email:console] From:    {_email_from()}")
     print(f"[email:console] Subject: {subject}")
+    if attachments:
+        for fn, body, mime in attachments:
+            print(f"[email:console] Attach:  {fn} ({len(body)} bytes, {mime})")
     print("-" * 72)
     print(text)
     print("=" * 72, flush=True)
 
 
-def _send_resend(*, to: str, subject: str, html: str, text: str) -> None:
+def _send_resend(*, to: str, subject: str, html: str, text: str,
+                 attachments: Optional[List[Attachment]] = None) -> None:
     api_key = _env("RESEND_API_KEY")
     if not api_key:
         # Sin API key, caemos a consola para no perder el mensaje
@@ -77,7 +96,7 @@ def _send_resend(*, to: str, subject: str, html: str, text: str) -> None:
             "[email:resend] WARNING: RESEND_API_KEY no configurada. "
             "Cayendo a driver consola."
         )
-        _send_console(to=to, subject=subject, html=html, text=text)
+        _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
         return
 
     payload = {
@@ -87,6 +106,19 @@ def _send_resend(*, to: str, subject: str, html: str, text: str) -> None:
         "html": html,
         "text": text,
     }
+    if attachments:
+        # Resend espera attachments como base64 en el campo "content".
+        # https://resend.com/docs/api-reference/emails/send-email
+        payload["attachments"] = [
+            {
+                "filename": fn,
+                "content": base64.b64encode(body).decode("ascii"),
+                # Resend infiere el content_type del filename si no se pasa;
+                # lo enviamos explícito por claridad y consistencia.
+                "content_type": mime,
+            }
+            for (fn, body, mime) in attachments
+        ]
     data = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(
@@ -116,14 +148,15 @@ def _send_resend(*, to: str, subject: str, html: str, text: str) -> None:
         print(f"[email:resend] ERROR: {e}")
 
 
-def _send_brevo(*, to: str, subject: str, html: str, text: str) -> None:
+def _send_brevo(*, to: str, subject: str, html: str, text: str,
+                attachments: Optional[List[Attachment]] = None) -> None:
     api_key = _env("BREVO_API_KEY")
     if not api_key:
         print(
             "[email:brevo] WARNING: BREVO_API_KEY no configurada. "
             "Cayendo a driver consola."
         )
-        _send_console(to=to, subject=subject, html=html, text=text)
+        _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
         return
 
     sender_name, sender_email = _parse_email_from()
@@ -135,6 +168,16 @@ def _send_brevo(*, to: str, subject: str, html: str, text: str) -> None:
         "htmlContent": html,
         "textContent": text,
     }
+    if attachments:
+        # Brevo: array de objetos con name + content (base64).
+        # https://developers.brevo.com/reference/sendtransacemail
+        payload["attachment"] = [
+            {
+                "name": fn,
+                "content": base64.b64encode(body).decode("ascii"),
+            }
+            for (fn, body, _mime) in attachments
+        ]
     data = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(
@@ -166,14 +209,31 @@ def _send_brevo(*, to: str, subject: str, html: str, text: str) -> None:
         print(f"[email:brevo] ERROR: {e}")
 
 
-def _dispatch(*, to: str, subject: str, html: str, text: str) -> None:
+def _dispatch(*, to: str, subject: str, html: str, text: str,
+              attachments: Optional[List[Attachment]] = None) -> None:
     driver = _driver()
     if driver == "resend":
-        _send_resend(to=to, subject=subject, html=html, text=text)
+        _send_resend(to=to, subject=subject, html=html, text=text, attachments=attachments)
     elif driver == "brevo":
-        _send_brevo(to=to, subject=subject, html=html, text=text)
+        _send_brevo(to=to, subject=subject, html=html, text=text, attachments=attachments)
     else:
-        _send_console(to=to, subject=subject, html=html, text=text)
+        _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
+
+
+def _dispatch_many(*, recipients: Iterable[str], subject: str, html: str, text: str,
+                   attachments: Optional[List[Attachment]] = None) -> None:
+    """Send the same email to each recipient.  Empty/duplicate/None entries
+    are skipped silently so callers can pass mixed lists from the DB
+    without sanitising first."""
+    seen = set()
+    for to in recipients:
+        if not to:
+            continue
+        to = to.strip()
+        if not to or to.lower() in seen:
+            continue
+        seen.add(to.lower())
+        _dispatch(to=to, subject=subject, html=html, text=text, attachments=attachments)
 
 
 # ----------------------------------------------------------------------------
@@ -316,3 +376,264 @@ def send_unlock_email(*, to: str, username: str, token: str) -> None:
         outro="Si no has solicitado este desbloqueo, contacta con el administrador.",
     )
     _dispatch(to=to, subject=subject, html=html, text=text)
+
+
+# ----------------------------------------------------------------------------
+# Plantillas de pedidos
+# ----------------------------------------------------------------------------
+
+def _fmt_destino_pedido(pedido) -> str:
+    tipo = (getattr(pedido, "tipo", None) or "salida").strip().lower()
+    if tipo == "reposicion":
+        return "Vivero (reposición)"
+    partes = [
+        getattr(pedido, "distrito_destino", "") or "",
+        getattr(pedido, "barrio_destino", "") or "",
+        getattr(pedido, "direccion_destino", "") or "",
+    ]
+    return " · ".join(p for p in partes if p) or "—"
+
+
+def _resumen_items_html(pedido) -> str:
+    items = getattr(pedido, "items", []) or []
+    if not items:
+        return "<em>Pedido sin líneas.</em>"
+    rows = []
+    for it in items:
+        prod = getattr(it, "producto", None)
+        nombre = (getattr(prod, "nombre_cientifico", None)
+                  or getattr(prod, "nombre_natural", None)
+                  or f"#{getattr(it, 'producto_id', '?')}")
+        tam = getattr(it, "tamano", None) or "—"
+        cant = getattr(it, "cantidad", 0)
+        est = (str(getattr(it, "estado_item", None) or "RESERVA").upper())
+        marker = {"APROBADO": "✓", "DENEGADO": "✗", "SERVIDO": "✓"}.get(est, "·")
+        rows.append(
+            f"<tr><td style='padding:4px 8px;border-bottom:1px solid #eee'>{marker}</td>"
+            f"<td style='padding:4px 8px;border-bottom:1px solid #eee'>{nombre}</td>"
+            f"<td style='padding:4px 8px;border-bottom:1px solid #eee;text-align:center'>{tam}</td>"
+            f"<td style='padding:4px 8px;border-bottom:1px solid #eee;text-align:right'>{cant}</td></tr>"
+        )
+    return (
+        "<table style='border-collapse:collapse;width:100%;font-size:13px;'>"
+        + "<thead><tr style='background:#f1f5f9'>"
+        + "<th style='padding:4px 8px;text-align:left'></th>"
+        + "<th style='padding:4px 8px;text-align:left'>Producto</th>"
+        + "<th style='padding:4px 8px;text-align:center'>Tamaño</th>"
+        + "<th style='padding:4px 8px;text-align:right'>Cantidad</th>"
+        + "</tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>"
+    )
+
+
+def _resumen_items_text(pedido) -> str:
+    items = getattr(pedido, "items", []) or []
+    if not items:
+        return "(Pedido sin líneas)"
+    lines = []
+    for it in items:
+        prod = getattr(it, "producto", None)
+        nombre = (getattr(prod, "nombre_cientifico", None)
+                  or getattr(prod, "nombre_natural", None)
+                  or f"#{getattr(it, 'producto_id', '?')}")
+        tam = getattr(it, "tamano", None) or "—"
+        cant = getattr(it, "cantidad", 0)
+        est = (str(getattr(it, "estado_item", None) or "RESERVA").upper())
+        marker = {"APROBADO": "[OK]", "DENEGADO": "[X]", "SERVIDO": "[OK]"}.get(est, "[ ]")
+        lines.append(f"  {marker} {nombre} · {tam} · {cant}")
+    return "\n".join(lines)
+
+
+def _pedido_pdf_attachment(pdf_bytes: Optional[bytes], pedido_id) -> Optional[List[Attachment]]:
+    if not pdf_bytes:
+        return None
+    return [(f"pedido_{pedido_id}.pdf", pdf_bytes, "application/pdf")]
+
+
+def send_pedido_creado_a_manager(
+    *, recipients: Iterable[str], pedido, pdf_bytes: Optional[bytes] = None
+) -> None:
+    """Pedido recién creado → notificar a los managers para que decidan."""
+    pedido_id = getattr(pedido, "id", "?")
+    tipo = (getattr(pedido, "tipo", None) or "salida").strip().lower()
+    tipo_label = "reposición" if tipo == "reposicion" else "salida"
+    solicitante = getattr(pedido, "solicitante_username", "") or "—"
+    destino = _fmt_destino_pedido(pedido)
+    n_items = len(getattr(pedido, "items", []) or [])
+
+    subject = f"[ViverApp] Nuevo pedido de {tipo_label} #{pedido_id} pendiente de decisión"
+    body_html = (
+        f"Hola,<br><br>"
+        f"Se ha creado un nuevo pedido de <strong>{tipo_label}</strong> que requiere tu decisión.<br><br>"
+        f"<strong>Pedido:</strong> #{pedido_id}<br>"
+        f"<strong>Solicitante:</strong> {solicitante}<br>"
+        f"<strong>Destino:</strong> {destino}<br>"
+        f"<strong>Líneas:</strong> {n_items}<br><br>"
+        f"{_resumen_items_html(pedido)}<br><br>"
+        f"Tienes el PDF adjunto con el detalle completo."
+    )
+    url = f"{_frontend_url()}/aprobaciones"
+    html = _wrap_html(
+        title=f"Nuevo pedido pendiente — #{pedido_id}",
+        body_html=body_html,
+        button_label="Abrir Aprobaciones",
+        button_url=url,
+        footer="Recibes este aviso porque tu rol es Manager en ViverApp.",
+    )
+    text = (
+        f"Nuevo pedido de {tipo_label} pendiente de decisión.\n\n"
+        f"Pedido:      #{pedido_id}\n"
+        f"Solicitante: {solicitante}\n"
+        f"Destino:     {destino}\n"
+        f"Líneas:      {n_items}\n\n"
+        f"{_resumen_items_text(pedido)}\n\n"
+        f"Abre Aprobaciones: {url}\n"
+    )
+    _dispatch_many(
+        recipients=recipients,
+        subject=subject,
+        html=html,
+        text=text,
+        attachments=_pedido_pdf_attachment(pdf_bytes, pedido_id),
+    )
+
+
+def send_pedido_decidido_a_solicitante(
+    *, recipients: Iterable[str], pedido, pdf_bytes: Optional[bytes] = None
+) -> None:
+    """Pedido decidido → notificar al solicitante con el resultado."""
+    pedido_id = getattr(pedido, "id", "?")
+    estado = (getattr(pedido, "estado", None) or "").upper()
+    motivo = (getattr(pedido, "motivo_denegacion", None) or "").strip()
+    estado_label = {
+        "APROBADO": "Aprobado",
+        "APROBADO_PARCIAL": "Aprobado parcialmente",
+        "DENEGADO": "Denegado",
+    }.get(estado, estado.title() or "Decidido")
+
+    subject = f"[ViverApp] Tu pedido #{pedido_id} ha sido {estado_label.lower()}"
+    motivo_block = (
+        f"<p><strong>Motivo de denegación:</strong><br>{motivo}</p>"
+        if motivo and estado in ("DENEGADO", "APROBADO_PARCIAL") else ""
+    )
+    body_html = (
+        f"Hola,<br><br>"
+        f"Tu pedido <strong>#{pedido_id}</strong> ha sido "
+        f"<strong>{estado_label}</strong>.<br><br>"
+        f"{_resumen_items_html(pedido)}"
+        f"{motivo_block}"
+        f"<br>Tienes el PDF oficial adjunto con todo el detalle."
+    )
+    url = f"{_frontend_url()}/pedidos"
+    html = _wrap_html(
+        title=f"Pedido #{pedido_id}: {estado_label}",
+        body_html=body_html,
+        button_label="Ver mis pedidos",
+        button_url=url,
+        footer="Recibes este aviso porque eres el solicitante de este pedido.",
+    )
+    text = (
+        f"Tu pedido #{pedido_id} ha sido {estado_label.lower()}.\n\n"
+        f"{_resumen_items_text(pedido)}\n\n"
+        + (f"Motivo de denegación: {motivo}\n\n" if motivo and estado in ("DENEGADO", "APROBADO_PARCIAL") else "")
+        + f"Ver pedidos: {url}\n"
+    )
+    _dispatch_many(
+        recipients=recipients,
+        subject=subject,
+        html=html,
+        text=text,
+        attachments=_pedido_pdf_attachment(pdf_bytes, pedido_id),
+    )
+
+
+def send_pedido_decidido_a_tecnico(
+    *, recipients: Iterable[str], pedido, pdf_bytes: Optional[bytes] = None
+) -> None:
+    """Pedido decidido → FYI a los técnicos del vivero."""
+    pedido_id = getattr(pedido, "id", "?")
+    estado = (getattr(pedido, "estado", None) or "").upper()
+    estado_label = {
+        "APROBADO": "Aprobado",
+        "APROBADO_PARCIAL": "Aprobado parcialmente",
+        "DENEGADO": "Denegado",
+    }.get(estado, estado.title() or "Decidido")
+    solicitante = getattr(pedido, "solicitante_username", "") or "—"
+    destino = _fmt_destino_pedido(pedido)
+
+    subject = f"[ViverApp] FYI — Pedido #{pedido_id} {estado_label.lower()}"
+    body_html = (
+        f"Hola,<br><br>"
+        f"El pedido <strong>#{pedido_id}</strong> ha sido <strong>{estado_label}</strong> "
+        f"por el manager.<br><br>"
+        f"<strong>Solicitante:</strong> {solicitante}<br>"
+        f"<strong>Destino:</strong> {destino}<br><br>"
+        f"{_resumen_items_html(pedido)}<br><br>"
+        f"Detalle completo en el PDF adjunto."
+    )
+    url = f"{_frontend_url()}/pedidos"
+    html = _wrap_html(
+        title=f"FYI — Pedido #{pedido_id}: {estado_label}",
+        body_html=body_html,
+        button_label="Ver pedidos",
+        button_url=url,
+        footer="Recibes este aviso como técnico del vivero.",
+    )
+    text = (
+        f"FYI: Pedido #{pedido_id} {estado_label.lower()} por el manager.\n\n"
+        f"Solicitante: {solicitante}\n"
+        f"Destino:     {destino}\n\n"
+        f"{_resumen_items_text(pedido)}\n\n"
+        f"Ver pedidos: {url}\n"
+    )
+    _dispatch_many(
+        recipients=recipients,
+        subject=subject,
+        html=html,
+        text=text,
+        attachments=_pedido_pdf_attachment(pdf_bytes, pedido_id),
+    )
+
+
+def send_pedido_reposicion_decidido_a_proveedor(
+    *, recipients: Iterable[str], pedido, pdf_bytes: Optional[bytes] = None
+) -> None:
+    """Pedido de reposición aprobado/aprobado_parcial → al proveedor con el PDF
+    YA filtrado a solo las líneas que tiene que servir.  El caller pasa el
+    `pdf_bytes` generado con `viewer_role='proveedor'`."""
+    pedido_id = getattr(pedido, "id", "?")
+    estado = (getattr(pedido, "estado", None) or "").upper()
+    # Para el proveedor "aprobado parcial" significa que el manager rechazó
+    # alguna línea — desde su POV solo ve lo que tiene que servir.
+    estado_label = "Aprobado"
+
+    subject = f"[ViverApp] Nuevo pedido de reposición #{pedido_id} para servir"
+    body_html = (
+        f"Hola,<br><br>"
+        f"Tenemos un nuevo pedido de reposición <strong>#{pedido_id}</strong> "
+        f"que ha sido <strong>{estado_label}</strong>.<br><br>"
+        f"El PDF adjunto contiene las líneas que debes servir."
+        f"<br>(Si el manager hubiera rechazado alguna línea del pedido original, "
+        f"no aparece en el PDF — solo ves lo que sí tienes que entregar.)"
+    )
+    url = f"{_frontend_url()}/pedidos"
+    html = _wrap_html(
+        title=f"Pedido de reposición #{pedido_id} — para servir",
+        body_html=body_html,
+        button_label="Ver pedido",
+        button_url=url,
+        footer="Recibes este aviso porque eres proveedor del vivero.",
+    )
+    text = (
+        f"Nuevo pedido de reposición #{pedido_id} aprobado.\n\n"
+        f"El PDF adjunto contiene las líneas que debes servir.\n"
+        f"Ver pedido: {url}\n"
+    )
+    _dispatch_many(
+        recipients=recipients,
+        subject=subject,
+        html=html,
+        text=text,
+        attachments=_pedido_pdf_attachment(pdf_bytes, pedido_id),
+    )
+
