@@ -685,8 +685,25 @@ def _has_any_approved_item(pedido: Pedido) -> bool:
     return False
 
 
-def _pedido_to_dict(pedido: Pedido) -> dict:
+def _pedido_to_dict(pedido: Pedido, viewer_role: Optional[str] = None) -> dict:
+    """
+    Serialise a Pedido to the JSON shape the frontend expects.
+
+    `viewer_role` lets the serializer hide line items that the caller has
+    no business seeing.  In particular:
+
+      - proveedor → only APROBADO / SERVIDO lines are returned.  Denied
+        or still-pending lines never reach a supplier's UI/PDF.  The
+        pedido's overall `estado` is left untouched so the UI can still
+        show "APROBADO PARCIAL" — the proveedor learns that the manager
+        rejected some lines they're not seeing.
+
+    For every other role the full items list is returned as before.
+    """
     items = getattr(pedido, "items", []) or []
+    role = (viewer_role or "").strip().lower()
+    if role == "proveedor":
+        items = [it for it in items if _item_estado(it) in ("APROBADO", "SERVIDO")]
 
     return {
         "id": getattr(pedido, "id", None),
@@ -1305,7 +1322,13 @@ def get_pedidos(
         )
 
     pedidos = q.order_by(Pedido.id.desc()).all()
-    return [_pedido_to_dict(p) for p in pedidos]
+    out = [_pedido_to_dict(p, viewer_role=rol) for p in pedidos]
+    # For proveedor: after filtering items, drop pedidos that ended up with
+    # zero visible lines (e.g. all approved items already SERVIDO and the
+    # rest were denied — nothing left for them to act on or audit).
+    if rol == "proveedor":
+        out = [p for p in out if p.get("items")]
+    return out
 
 
 @app.post("/pedidos")
@@ -1829,12 +1852,19 @@ def descargar_pedido_pdf(
             raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
 
     # Proveedor: only reposiciones with at least one approved/served item.
+    # Additional belt-and-suspenders check: even if the pedido is in a
+    # serviceable state, refuse if there are no APROBADO/SERVIDO items
+    # (theoretical edge case after filtering).
     if rol == "proveedor":
         tipo = (pedido.tipo or "").strip().lower()
-        if not (tipo == "reposicion" and (estado in SERVICEABLE_STATES or has_approved)):
+        has_servible_items = any(
+            _item_estado(it) in ("APROBADO", "SERVIDO")
+            for it in (pedido.items or [])
+        )
+        if not (tipo == "reposicion" and (estado in SERVICEABLE_STATES or has_approved) and has_servible_items):
             raise HTTPException(status_code=403, detail="No puedes descargar este pedido.")
 
-    pdf_bytes = generar_pdf_pedido(pedido)
+    pdf_bytes = generar_pdf_pedido(pedido, viewer_role=rol)
     filename = f"pedido_{pedido.id}.pdf"
     return Response(
         content=pdf_bytes,

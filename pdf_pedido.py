@@ -100,7 +100,7 @@ def _unidad_para_categoria(categoria: Optional[str], tamano: Optional[str]) -> s
     return "ud"
 
 
-def generar_pdf_pedido(pedido) -> bytes:
+def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
     """
     Construye el PDF del pedido y devuelve los bytes.
 
@@ -243,6 +243,18 @@ def generar_pdf_pedido(pedido) -> bytes:
     # ===== Bloque: items =====
     story.append(Paragraph("Detalle del pedido", style_h2))
     items = getattr(pedido, "items", []) or []
+    # When generating the PDF for a proveedor (supplier), hide any lines
+    # that were denied or are still pending — they're not the supplier's
+    # business to see.  After this filter, every remaining item is
+    # APROBADO or SERVIDO and the per-item Estado column collapses
+    # automatically (single state → no column).
+    role = (viewer_role or "").strip().lower()
+    if role == "proveedor":
+        items = [
+            it for it in items
+            if (str(getattr(it, "estado_item", None) or "APROBADO").strip().upper()
+                in ("APROBADO", "SERVIDO"))
+        ]
     if not items:
         story.append(Paragraph("Sin líneas en el pedido.", style_body))
     else:
