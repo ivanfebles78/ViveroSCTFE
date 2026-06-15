@@ -2,20 +2,25 @@
 Servicio de email para ViverApp.
 
 Drivers soportados:
-  - "console" (default): imprime el email en stdout. Útil para desarrollo y para
-    el primer despliegue antes de configurar un proveedor real.
-  - "resend": envía a través de la API HTTPS de Resend (https://resend.com).
-    Configurar con EMAIL_DRIVER=resend, RESEND_API_KEY=..., EMAIL_FROM=...
-  - "brevo": idem vía https://api.brevo.com (BREVO_API_KEY).
+  - "console" (default): imprime el email en stdout.
+  - "resend": API HTTPS de Resend (https://resend.com).
+      EMAIL_DRIVER=resend, RESEND_API_KEY=..., EMAIL_FROM=...
+  - "brevo":  API HTTPS de Brevo  (https://brevo.com).
+      EMAIL_DRIVER=brevo,  BREVO_API_KEY=...,  EMAIL_FROM=...
+  - "smtp":   SMTP nativo (Office 365, Gmail, cualquier servidor).
+      EMAIL_DRIVER=smtp, SMTP_HOST=..., SMTP_PORT=587,
+      SMTP_USERNAME=..., SMTP_PASSWORD=..., SMTP_USE_TLS=true,
+      EMAIL_FROM=...
+      (Para Office 365: SMTP_HOST=smtp.office365.com, puerto 587, TLS=true.
+       El admin del tenant tiene que habilitar 'Authenticated SMTP' en
+       el buzón; si hay MFA, usar una App Password.)
 
 Adjuntos (attachments):
-  Los drivers `resend` y `brevo` aceptan adjuntos como tuplas
-  `(filename, content_bytes, mime_type)`.  El driver `console` solo loguea el
-  nombre del adjunto y su tamaño.
+  Los 4 drivers aceptan adjuntos como tuplas
+  `(filename, content_bytes, mime_type)`.
 
 Plantillas:
   - send_invitation_email / send_reset_password_email / send_unlock_email
-    (auth flows existentes)
   - send_pedido_creado_a_manager
   - send_pedido_decidido_a_solicitante
   - send_pedido_decidido_a_tecnico
@@ -28,8 +33,14 @@ import base64
 import json
 import os
 import re
+import smtplib
 import urllib.error
 import urllib.request
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
 from typing import Iterable, List, Optional, Tuple
 
 
@@ -209,6 +220,114 @@ def _send_brevo(*, to: str, subject: str, html: str, text: str,
         print(f"[email:brevo] ERROR: {e}")
 
 
+def _send_smtp(*, to: str, subject: str, html: str, text: str,
+               attachments: Optional[List[Attachment]] = None) -> None:
+    """
+    Send via plain SMTP (e.g. Office 365 on smtp.office365.com:587).
+    Uses STARTTLS by default — Office 365 requires it.
+
+    Env vars:
+        SMTP_HOST       (required)
+        SMTP_PORT       (default 587)
+        SMTP_USERNAME   (required — auth)
+        SMTP_PASSWORD   (required — auth; use App Password if MFA)
+        SMTP_USE_TLS    (default "true" → STARTTLS on the connection)
+        SMTP_USE_SSL    (default "false" → set "true" for implicit TLS on 465)
+        EMAIL_FROM      (must match SMTP_USERNAME or be one of its
+                         allowed aliases — Office 365 rejects sends from
+                         other addresses).
+    """
+    host = _env("SMTP_HOST")
+    port_str = _env("SMTP_PORT", "587")
+    username = _env("SMTP_USERNAME")
+    password = _env("SMTP_PASSWORD")
+    use_tls = _env("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes", "y")
+    use_ssl = _env("SMTP_USE_SSL", "false").lower() in ("1", "true", "yes", "y")
+
+    if not host or not username or not password:
+        print(
+            "[email:smtp] WARNING: SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD "
+            "no configurados.  Cayendo a driver consola."
+        )
+        _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
+        return
+
+    try:
+        port = int(port_str)
+    except (TypeError, ValueError):
+        port = 587
+
+    sender_name, sender_email = _parse_email_from()
+    # Office 365 rechaza FROM distinto del usuario autenticado.  Lo
+    # corregimos silenciosamente para evitar 550 5.7.1 si el operador
+    # configuró EMAIL_FROM con otro dominio por error.
+    if sender_email.lower() != username.lower():
+        sender_email = username
+
+    # MIME tree:
+    #   multipart/mixed
+    #     multipart/alternative
+    #       text/plain
+    #       text/html
+    #     [attachments]
+    msg = MIMEMultipart("mixed")
+    msg["From"] = formataddr((sender_name or "ViverApp", sender_email))
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg["Reply-To"] = sender_email
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(text or "", "plain", "utf-8"))
+    alt.attach(MIMEText(html or "", "html", "utf-8"))
+    msg.attach(alt)
+
+    for fn, body, mime in (attachments or []):
+        maintype, _, subtype = (mime or "application/octet-stream").partition("/")
+        if not subtype:
+            maintype, subtype = "application", "octet-stream"
+        part = MIMEBase(maintype, subtype)
+        part.set_payload(body)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f'attachment; filename="{fn}"')
+        msg.attach(part)
+
+    try:
+        if use_ssl:
+            # Implicit TLS (port 465).  Not the Office 365 case but
+            # supported for completeness with other providers.
+            server = smtplib.SMTP_SSL(host, port, timeout=20)
+        else:
+            server = smtplib.SMTP(host, port, timeout=20)
+        with server:
+            server.ehlo()
+            if use_tls and not use_ssl:
+                server.starttls()
+                server.ehlo()
+            server.login(username, password)
+            server.send_message(msg, from_addr=sender_email, to_addrs=[to])
+        print(f"[email:smtp] OK sent to {to}", flush=True)
+    except smtplib.SMTPAuthenticationError as e:
+        print(
+            f"[email:smtp] ERROR auth {e.smtp_code}: {e.smtp_error!r}.  "
+            "Para Office 365, asegúrate de que SMTP AUTH esté habilitado "
+            "para el buzón y, si hay MFA, usa una App Password.",
+            flush=True,
+        )
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"[email:smtp] ERROR recipient refused: {e.recipients!r}", flush=True)
+    except smtplib.SMTPSenderRefused as e:
+        print(
+            f"[email:smtp] ERROR sender refused {e.smtp_code}: {e.smtp_error!r}.  "
+            "Office 365 sólo permite enviar desde EMAIL_FROM = SMTP_USERNAME "
+            "o un alias autorizado del mismo buzón.",
+            flush=True,
+        )
+    except smtplib.SMTPException as e:
+        print(f"[email:smtp] ERROR SMTP: {type(e).__name__}: {e}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[email:smtp] ERROR: {type(e).__name__}: {e}", flush=True)
+
+
 def _dispatch(*, to: str, subject: str, html: str, text: str,
               attachments: Optional[List[Attachment]] = None) -> None:
     driver = _driver()
@@ -216,6 +335,8 @@ def _dispatch(*, to: str, subject: str, html: str, text: str,
         _send_resend(to=to, subject=subject, html=html, text=text, attachments=attachments)
     elif driver == "brevo":
         _send_brevo(to=to, subject=subject, html=html, text=text, attachments=attachments)
+    elif driver == "smtp":
+        _send_smtp(to=to, subject=subject, html=html, text=text, attachments=attachments)
     else:
         _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
 
