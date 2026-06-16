@@ -224,7 +224,9 @@ function softInputStyle() {
 function thStyle() {
   return {
     textAlign: "left",
-    padding: "14px 12px",
+    // Tightened horizontal padding (was 12) so columns don't waste space
+    // on either side — relevant for the Destino → Producto transition.
+    padding: "14px 8px",
     color: "#475569",
     fontWeight: 900,
     fontSize: 13,
@@ -236,7 +238,7 @@ function thStyle() {
 
 function tdStyle() {
   return {
-    padding: "16px 12px",
+    padding: "14px 8px",
     verticalAlign: "top",
     color: "#0f172a",
     fontWeight: 700,
@@ -1460,12 +1462,22 @@ function PedidoDetalleCellOld({
     itemStates.size > 1;
 
   if (editingId !== pedido.id) {
-    // When the pedido is partial, show ALL items unconditionally so the
-    // viewer can't miss a denied/pending line hidden behind the "Ver más"
-    // truncation.  Only the uniform case (all items same state) keeps the
-    // 3-item preview behaviour.
-    const visibleItems = (expanded || isPartial) ? items : items.slice(0, 3);
+    // Show at most 3 items by default — including for APROBADO_PARCIAL.
+    // The "+ ver N más" button expands the rest in-place.  For partial
+    // pedidos with hidden denied/pending items we surface a small badge
+    // in the toggle so the viewer notices there's masked state.
+    const COLLAPSED_MAX = 3;
+    const visibleItems = expanded ? items : items.slice(0, COLLAPSED_MAX);
     const hiddenCount = Math.max(0, items.length - visibleItems.length);
+    // Count of "interesting" hidden items in partial mode (denied or
+    // approved that the viewer otherwise might miss).
+    const hiddenInteresting = expanded
+      ? 0
+      : items.slice(COLLAPSED_MAX).filter((it) => {
+          if (!isPartial) return false;
+          const e = String(it.estado_item || "RESERVA").toUpperCase();
+          return e === "DENEGADO" || e === "APROBADO";
+        }).length;
 
     return (
       <div>
@@ -1517,8 +1529,10 @@ function PedidoDetalleCellOld({
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 90px 80px",
-                      gap: 10,
+                      // Mantén estos valores en sync con la sub-grid del
+                      // <th> de Producto.  Si cambias uno, cambia el otro.
+                      gridTemplateColumns: "1fr 80px 70px",
+                      gap: 8,
                       alignItems: "center",
                       opacity: isDenegado ? 0.55 : 1,
                     }}
@@ -1561,13 +1575,36 @@ function PedidoDetalleCellOld({
                   marginTop: 4,
                   padding: "6px 10px",
                   borderRadius: 999,
-                  border: "1px solid rgba(15,23,42,0.10)",
-                  background: "white",
+                  border: `1px solid ${
+                    hiddenInteresting > 0
+                      ? "rgba(220,38,38,0.45)"
+                      : "rgba(15,23,42,0.10)"
+                  }`,
+                  background: hiddenInteresting > 0 ? "rgba(220,38,38,0.06)" : "white",
                   color: "#0f172a",
                   fontWeight: 900,
                   cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
+                title={
+                  hiddenInteresting > 0
+                    ? `Hay ${hiddenInteresting} líneas con decisión que están ocultas`
+                    : undefined
+                }
               >
+                {hiddenInteresting > 0 && !expanded ? (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      background: "#dc2626",
+                    }}
+                  />
+                ) : null}
                 {expanded ? "Ver menos" : `+ ver ${hiddenCount} más`}
               </button>
             ) : null}
@@ -2583,12 +2620,12 @@ export default function Pedidos() {
                   <th style={thStyle()}>Caduca</th>
                   <th style={thStyle()}>Solicitante</th>
                   <th style={thStyle()}>Destino</th>
-                  <th style={{ ...thStyle(), minWidth: 380 }}>
+                  <th style={{ ...thStyle(), minWidth: 320 }}>
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 90px 80px",
-                        gap: 10,
+                        gridTemplateColumns: "1fr 80px 70px",
+                        gap: 8,
                         alignItems: "center",
                       }}
                     >
@@ -2669,7 +2706,20 @@ export default function Pedidos() {
                         {solicitanteFromPedido(p)}
                       </td>
 
-                      <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)", minWidth: 240 }}>
+                      <td
+                        style={{
+                          ...tdStyle(),
+                          borderTop: "1px solid rgba(15,23,42,0.10)",
+                          borderBottom: "1px solid rgba(15,23,42,0.10)",
+                          // Cap the column width so a long address wraps
+                          // instead of pushing the rest of the row right.
+                          maxWidth: 220,
+                          minWidth: 140,
+                          whiteSpace: "normal",
+                          wordBreak: "break-word",
+                          lineHeight: 1.3,
+                        }}
+                      >
                         {p?.tipo === "reposicion" ? (
                           <span style={{ fontWeight: 900, color: "#065f46" }}>Vivero</span>
                         ) : (
