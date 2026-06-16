@@ -328,10 +328,22 @@ def _send_smtp(*, to: str, subject: str, html: str, text: str,
         print(f"[email:smtp] ERROR: {type(e).__name__}: {e}", flush=True)
 
 
+def _send_disabled(*, to: str, subject: str, html: str, text: str,
+                   attachments: Optional[List[Attachment]] = None) -> None:
+    """Driver no-op: silenciosamente descarta el email.  Útil para
+    desactivar el envío sin tener que tocar el código — basta con poner
+    EMAIL_DRIVER=disabled en Railway.  No imprime nada para no saturar
+    los logs."""
+    # Intencionalmente vacío.  No print, no nada.
+    return
+
+
 def _dispatch(*, to: str, subject: str, html: str, text: str,
               attachments: Optional[List[Attachment]] = None) -> None:
     driver = _driver()
-    if driver == "resend":
+    if driver == "disabled":
+        _send_disabled(to=to, subject=subject, html=html, text=text, attachments=attachments)
+    elif driver == "resend":
         _send_resend(to=to, subject=subject, html=html, text=text, attachments=attachments)
     elif driver == "brevo":
         _send_brevo(to=to, subject=subject, html=html, text=text, attachments=attachments)

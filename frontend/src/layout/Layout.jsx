@@ -18,6 +18,143 @@ const ENABLE_ZONE_EDITOR = true;
 const MAP_WIDTH = 2048;
 const MAP_HEIGHT = 1365;
 const NOTIFICATIONS_STORAGE_KEY = "vivero_global_notifications_read";
+// Per-user tracking of which pedido_id → estado the user has already
+// "seen" in the Pedidos page.  Used to surface a badge on the menu
+// link the next time the state of one of their pedidos changes (e.g.
+// from RESERVA to APROBADO_PARCIAL).  Cleared role-wise by the
+// effect that runs when the user opens /pedidos.
+const SEEN_PEDIDOS_STORAGE_KEY = "vivero_seen_pedidos_v1";
+
+const DECIDED_STATES = new Set(["APROBADO", "APROBADO_PARCIAL", "DENEGADO", "SERVIDO"]);
+const SERVICEABLE_STATES = new Set(["APROBADO", "APROBADO_PARCIAL"]);
+
+function loadSeenPedidosFromStorage() {
+  try {
+    const raw = localStorage.getItem(SEEN_PEDIDOS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSeenPedidosToStorage(seen) {
+  try {
+    localStorage.setItem(SEEN_PEDIDOS_STORAGE_KEY, JSON.stringify(seen || {}));
+  } catch {
+    // localStorage might be unavailable (private browsing, quotas).  No-op.
+  }
+}
+
+/**
+ * Compute badge counts per nav route based on the user's role and the
+ * pedidos visible to them.
+ *
+ * Returns: { [path]: number }, e.g. { "/aprobaciones": 3, "/pedidos": 2 }.
+ * A 0 / missing entry means no badge.
+ */
+function computeBadgeCounts(role, pedidos, seenMap, username) {
+  const counts = {};
+  if (!Array.isArray(pedidos) || pedidos.length === 0) return counts;
+  const r = (role || "").trim().toLowerCase();
+  const me = (username || "").trim().toLowerCase();
+
+  const estadoOf = (p) => String(p?.estado || "").trim().toUpperCase();
+  const tipoOf   = (p) => String(p?.tipo || "salida").trim().toLowerCase();
+  const isOwn    = (p) => (p?.solicitante_username || "").trim().toLowerCase() === me;
+
+  // --- Aprobaciones: pedidos que el manager debe decidir ---
+  if (r === "manager" || r === "admin") {
+    counts["/aprobaciones"] = pedidos.filter((p) => estadoOf(p) === "RESERVA").length;
+  }
+
+  // --- Pedidos: depende del rol ---
+  if (r === "proveedor") {
+    // Proveedor: reposiciones aprobadas o parciales sin servir completas.
+    counts["/pedidos"] = pedidos.filter((p) => {
+      if (tipoOf(p) !== "reposicion") return false;
+      if (!SERVICEABLE_STATES.has(estadoOf(p))) return false;
+      const cant = Number(
+        (p.items || []).reduce((acc, it) => acc + Number(it.cantidad || 0), 0)
+      );
+      const servida = Number(
+        (p.items || []).reduce((acc, it) => acc + Number(it.cantidad_servida || 0), 0)
+      );
+      return servida < cant;
+    }).length;
+  } else if (r === "empresa_externa") {
+    // Empresa externa: solo le interesan sus propios pedidos decididos
+    // que NO ha "visto" todavía (cambio de estado desde la última vista).
+    counts["/pedidos"] = pedidos.filter((p) => {
+      if (!isOwn(p)) return false;
+      const e = estadoOf(p);
+      if (!DECIDED_STATES.has(e)) return false;
+      return seenMap[String(p.id)] !== e;
+    }).length;
+  } else if (r === "tecnico" || r === "gestor_vivero" || r === "admin") {
+    // Roles internos que crean Y sirven pedidos.  Mezclamos dos señales:
+    //   (a) Pedidos de salida APROBADO/APROBADO_PARCIAL que aún no están
+    //       servidos por completo — requieren acción operativa.
+    //   (b) Pedidos propios decididos cuya decisión no han visto todavía.
+    let count = 0;
+    for (const p of pedidos) {
+      const e = estadoOf(p);
+      // (a) servir salidas
+      if (tipoOf(p) === "salida" && SERVICEABLE_STATES.has(e)) {
+        const cant = Number(
+          (p.items || []).reduce((acc, it) => acc + Number(it.cantidad || 0), 0)
+        );
+        const servida = Number(
+          (p.items || []).reduce((acc, it) => acc + Number(it.cantidad_servida || 0), 0)
+        );
+        if (servida < cant) {
+          count += 1;
+          continue;
+        }
+      }
+      // (b) decisión nueva sobre pedido propio
+      if (isOwn(p) && DECIDED_STATES.has(e) && seenMap[String(p.id)] !== e) {
+        count += 1;
+      }
+    }
+    if (count > 0) counts["/pedidos"] = count;
+  }
+
+  return counts;
+}
+
+/**
+ * Renders a small red pill with a number, anchored to the right of a
+ * nav link.  Used by the sidebar to surface "needs attention" counts.
+ */
+function NavBadge({ count }) {
+  if (!count || count <= 0) return null;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 22,
+        height: 22,
+        padding: "0 7px",
+        marginLeft: "auto",
+        borderRadius: 999,
+        background: "#dc2626",
+        color: "white",
+        fontSize: 12,
+        fontWeight: 900,
+        lineHeight: 1,
+        boxShadow: "0 1px 3px rgba(220, 38, 38, 0.40)",
+      }}
+      aria-label={`${count} pendientes`}
+      title={`${count} pendiente(s)`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Panel de control" },
@@ -1128,6 +1265,7 @@ export default function Layout() {
   const [readNotificationIds, setReadNotificationIds] = useState(() =>
     getReadNotificationsFromStorage()
   );
+  const [seenPedidos, setSeenPedidos] = useState(() => loadSeenPedidosFromStorage());
 
   // Modal de bienvenida: se abre automáticamente al entrar al Dashboard si:
   //   - es la primera vez (no hay flag "viverapp_welcome_seen" en localStorage), o
@@ -1186,18 +1324,52 @@ export default function Layout() {
     };
 
     if (esEmpresaExternaRol) {
-      // Empresa externa: solo pedidos (no stock/caducidad de productos internos)
+      // Empresa externa: solo pedidos (no stock/caducidad de productos internos).
       setProductos([]);
       loadPedidosUsuario();
     } else {
-      setPedidosUsuario([]);
+      // Resto de roles: cargamos AMBAS cosas — productos para las alertas
+      // de caducidad, pedidos para los badges del menú lateral (aprobaciones
+      // pendientes, pedidos a servir, decisiones nuevas sobre pedidos propios).
       loadInterno();
+      loadPedidosUsuario();
     }
   }, [location.pathname, me, esEmpresaExternaRol]);
 
   useEffect(() => {
     saveReadNotificationsToStorage(readNotificationIds);
   }, [readNotificationIds]);
+
+  // Persist the per-user "seen pedido state" map.
+  useEffect(() => {
+    saveSeenPedidosToStorage(seenPedidos);
+  }, [seenPedidos]);
+
+  // Mark every pedido visible to the user as "seen at its current state"
+  // every time they land on /pedidos.  This drops the badge to 0 for the
+  // solicitante-side notifications.  Action-required badges (manager /
+  // proveedor / gestor-servidor) are NOT affected — they're recomputed
+  // from live data and only decrease when the underlying action is taken.
+  useEffect(() => {
+    if (location.pathname !== "/pedidos") return;
+    if (!Array.isArray(pedidosUsuario) || pedidosUsuario.length === 0) return;
+    setSeenPedidos((prev) => {
+      const next = { ...prev };
+      for (const p of pedidosUsuario) {
+        if (!p?.id) continue;
+        const e = String(p.estado || "").trim().toUpperCase();
+        if (!e) continue;
+        next[String(p.id)] = e;
+      }
+      return next;
+    });
+  }, [location.pathname, pedidosUsuario]);
+
+  // Badge counts per nav route — recomputed whenever pedidos, role or
+  // seen-map change.  Cheap (filter over an in-memory array).
+  const navBadgeCounts = useMemo(() => {
+    return computeBadgeCounts(rolActual, pedidosUsuario, seenPedidos, me?.username);
+  }, [rolActual, pedidosUsuario, seenPedidos, me?.username]);
 
   const allNotifications = useMemo(() => {
     if (esEmpresaExternaRol) {
@@ -1346,6 +1518,7 @@ export default function Layout() {
           <nav style={{ display: "grid", gap: 12 }}>
             {getVisibleNavItems(userRole).map((item) => {
               const active = location.pathname === item.to;
+              const badge = navBadgeCounts[item.to] || 0;
               return (
                 <NavLink
                   key={item.to}
@@ -1354,9 +1527,22 @@ export default function Layout() {
                     ...navBtnStyle(active),
                     justifyContent: "flex-start",
                     padding: "0 18px",
+                    // When a badge is present and the item is NOT active,
+                    // give the whole button a subtle red ring so it stands
+                    // out even at a quick glance (the count alone can be
+                    // missed on small badges).  No ring when active to
+                    // keep the selected-state styling clean.
+                    boxShadow:
+                      badge > 0 && !active
+                        ? "inset 0 0 0 2px rgba(220, 38, 38, 0.45)"
+                        : undefined,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
                   }}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  <NavBadge count={badge} />
                 </NavLink>
               );
             })}
