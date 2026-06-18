@@ -3,5 +3,6 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5176, strictPort: true },
+  cacheDir: "/tmp/vite-cache-" + Date.now(),
+  server: { port: 5476, strictPort: true },
 });
