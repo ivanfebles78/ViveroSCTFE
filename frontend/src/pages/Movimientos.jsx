@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   getMovimientos,
@@ -862,6 +863,60 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
   );
 }
 
+
+function StepIndicator({ step, tipoMovimiento }) {
+  const steps = [
+    { n: 1, label: "Tipo" },
+    { n: 2, label: "Detalles" },
+    { n: 3, label: "Confirmar" },
+  ];
+  const colors = {
+    entrada: "#10b981",
+    salida: "#ef4444",
+    traslado_interno: "#3b82f6",
+    devolucion: "#f59e0b",
+  };
+  const accent = colors[tipoMovimiento] || "#06b6d4";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28 }}>
+      {steps.map((s, i) => (
+        <React.Fragment key={s.n}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 15, background: step >= s.n ? accent : "rgba(255,255,255,0.10)", color: step >= s.n ? "#fff" : "rgba(255,255,255,0.40)", border: step === s.n ? `2px solid ${accent}` : "2px solid transparent", boxShadow: step === s.n ? `0 0 0 4px ${accent}22` : "none", transition: "all 0.25s ease" }}>
+              {step > s.n ? "✓" : s.n}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: step >= s.n ? "#fff" : "rgba(255,255,255,0.40)", letterSpacing: "0.05em" }}>{s.label}</div>
+          </div>
+          {i < steps.length - 1 && (
+            <div style={{ flex: 1, height: 2, marginBottom: 22, background: step > s.n ? accent : "rgba(255,255,255,0.12)", transition: "background 0.3s ease" }} />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function TipoCard({ tipo, label, desc, icon, selected, onClick }) {
+  const colors = {
+    entrada: { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.35)", accent: "#10b981", text: "#065f46" },
+    salida: { bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.30)", accent: "#ef4444", text: "#991b1b" },
+    traslado_interno: { bg: "rgba(59,130,246,0.10)", border: "rgba(59,130,246,0.30)", accent: "#3b82f6", text: "#1e3a8a" },
+    devolucion: { bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.30)", accent: "#f59e0b", text: "#92400e" },
+  };
+  const c = colors[tipo] || colors.traslado_interno;
+  return (
+    <button type="button" onClick={onClick} style={{ padding: "16px 14px", borderRadius: 16, border: selected ? `2px solid ${c.accent}` : "2px solid transparent", background: selected ? c.bg : "rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", transition: "all 0.18s ease", boxShadow: selected ? `0 0 0 3px ${c.accent}22` : "none", outline: "none" }}>
+      <div style={{ fontSize: 26, marginBottom: 8 }}>{icon}</div>
+      <div style={{ fontWeight: 900, fontSize: 15, color: selected ? c.text : "#334155" }}>{label}</div>
+      <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: "#64748b", lineHeight: 1.4 }}>{desc}</div>
+    </button>
+  );
+}
+
+function SLabel({ children }) {
+  return <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{children}</div>;
+}
+
 function MovimientoModal({
   open,
   onClose,
@@ -1226,6 +1281,11 @@ function MovimientoModal({
     </>
   );
 }
+
+
+
+
+
 
 export default function Movimientos() {
   const [movimientos, setMovimientos] = useState([]);
