@@ -661,25 +661,16 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
 
   const pedidosFiltrados = useMemo(() => {
     const t = texto.trim().toLowerCase();
-    // Include APROBADO_PARCIAL so the proveedor can serve already-approved
-    // items even while other lines in the same pedido are still pending.
     const SERVICEABLE = new Set(["APROBADO", "APROBADO_PARCIAL"]);
     return safeArray(pedidos)
       .filter((p) => SERVICEABLE.has(String(p?.estado || "").toUpperCase()))
       .filter((p) => {
         if (!t) return true;
         const base = [
-          p?.id,
-          p?.solicitante_username,
-          p?.distrito_destino,
-          p?.barrio_destino,
-          p?.direccion_destino,
+          p?.id, p?.solicitante_username, p?.distrito_destino,
+          p?.barrio_destino, p?.direccion_destino,
           ...(safeArray(p?.items).map((it) => `${it?.producto_nombre || ""} ${it?.tamano || ""} ${it?.cantidad || ""}`)),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
+        ].filter(Boolean).join(" ").toLowerCase();
         return base.includes(t);
       });
   }, [pedidos, texto]);
@@ -687,168 +678,57 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
   if (!open) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(2,6,23,0.45)",
-        backdropFilter: "blur(3px)",
-        zIndex: 1300,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: 24,
-        overflowY: "auto",
-        overscrollBehavior: "contain",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        style={{
-          width: "min(980px, 95vw)",
-          background: "white",
-          borderRadius: 24,
-          boxShadow: "0 30px 80px rgba(2,6,23,0.35)",
-          border: "1px solid rgba(15,23,42,0.10)",
-          display: "flex",
-          flexDirection: "column",
-          marginTop: "auto",
-          marginBottom: "auto",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            padding: "20px 22px 10px",
-            display: "flex",
-            alignItems: "start",
-            justifyContent: "space-between",
-            gap: 16,
-            position: "sticky",
-            top: 0,
-            background: "white",
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            zIndex: 2,
-            borderBottom: "1px solid rgba(15,23,42,0.05)",
-          }}
-        >
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.60)", backdropFilter: "blur(4px)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ width: "min(860px, 95vw)", maxHeight: "88vh", background: "#fff", borderRadius: 20, boxShadow: "0 40px 100px rgba(2,6,23,0.40)", border: "1px solid rgba(15,23,42,0.12)", display: "flex", flexDirection: "column", overflow: "hidden" }}
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: "18px 22px 14px", background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: "#0f172a" }}>
-              Pedidos aprobados
-            </div>
-            <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
-              Selecciona un pedido aprobado para cargar sus productos y su destino.
-            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>Pedidos aprobados</div>
+            <div style={{ marginTop: 3, color: "rgba(255,255,255,0.60)", fontWeight: 700, fontSize: 13 }}>Selecciona un pedido para cargar sus datos automáticamente.</div>
           </div>
-
-          <button onClick={onClose} style={closeButtonStyle()}>
-            Cerrar
-          </button>
+          <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 10, fontWeight: 900, cursor: "pointer", background: "#f59e0b", color: "#111827", border: "2px solid #000", fontSize: 13 }}>✕ Cerrar</button>
         </div>
 
-        <div style={{ padding: "14px 22px", position: "sticky", top: 96, background: "white", zIndex: 1 }}>
-          <input
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            placeholder="Buscar por ID, solicitante, nombre científico, dirección..."
-            style={inputStyle()}
-          />
+        {/* Search */}
+        <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(15,23,42,0.08)", flexShrink: 0, background: "#f8fafc" }}>
+          <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="🔍  Buscar por ID, solicitante, producto, dirección..." style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.15)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box", fontSize: 14 }} />
         </div>
 
-        <div style={{ padding: "0 22px 22px" }}>
+        {/* List */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
           {pedidosFiltrados.length === 0 ? (
-            <div
-              style={{
-                border: "1px solid rgba(15,23,42,0.08)",
-                borderRadius: 16,
-                padding: 18,
-                color: "#64748b",
-                fontWeight: 800,
-              }}
-            >
-              No hay pedidos aprobados que coincidan con la búsqueda.
+            <div style={{ padding: "32px 20px", textAlign: "center", color: "#64748b", fontWeight: 700, fontSize: 14 }}>
+              No hay pedidos aprobados que coincidan.
             </div>
           ) : (
-            <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ display: "grid", gap: 10 }}>
               {pedidosFiltrados.map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    border: "1px solid rgba(15,23,42,0.08)",
-                    borderRadius: 18,
-                    padding: 16,
-                    background: "#fbfdff",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
-                    }}
-                  >
+                <div key={p.id} style={{ borderRadius: 14, border: "2px solid rgba(15,23,42,0.10)", background: "#fff", overflow: "hidden", boxShadow: "0 2px 8px rgba(2,6,23,0.06)" }}>
+                  {/* Pedido header */}
+                  <div style={{ padding: "12px 16px", background: "#f8fafc", borderBottom: "1px solid rgba(15,23,42,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
-                        Pedido #{p.id}
+                      <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>Pedido #{p.id}</div>
+                      <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>
+                        {fmtFechaES(p.created_at)} · <span style={{ color: "#334155" }}>{p.solicitante_username || "—"}</span>
+                        {" · "}<span style={{ color: p.tipo === "reposicion" ? "#92400e" : "#1e3a8a", fontWeight: 900 }}>{p.tipo === "reposicion" ? "Reposición" : "Salida"}</span>
                       </div>
-                      <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700 }}>
-                        {fmtFechaES(p.created_at)} · Solicitante: {p.solicitante_username || "—"}
+                      <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>
+                        📍 {p.tipo === "reposicion" ? "Vivero" : ([p.distrito_destino, p.barrio_destino, p.direccion_destino].filter(Boolean).join(" · ") || "—")}
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => onSelect(p)}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 14,
-                        border: "1px solid rgba(16,185,129,0.35)",
-                        background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
-                        color: "white",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Usar pedido
+                    <button onClick={() => onSelect(p)} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(16,185,129,0.35)", background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)", color: "white", fontWeight: 900, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>
+                      ✓ Usar pedido
                     </button>
                   </div>
-
-                  <div style={{ marginTop: 10, color: "#475569", fontWeight: 700 }}>
-                    Tipo: <span style={{ color: p.tipo === "reposicion" ? "#92400e" : "#1e3a8a", fontWeight: 900 }}>
-                      {p.tipo === "reposicion" ? "Reposición" : "Salida"}
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 6, color: "#475569", fontWeight: 700 }}>
-                    Destino: {p.tipo === "reposicion"
-                      ? "Vivero"
-                      : ([p.distrito_destino, p.barrio_destino, p.direccion_destino].filter(Boolean).join(" · ") || "—")}
-                  </div>
-
-                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                  {/* Items */}
+                  <div style={{ padding: "10px 16px", display: "grid", gap: 6 }}>
                     {safeArray(p.items).map((it, idx) => (
-                      <div
-                        key={`${p.id}-${idx}`}
-                        style={{
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          background: "white",
-                          border: "1px solid rgba(15,23,42,0.06)",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {it.producto_nombre || `Producto #${it.producto_id}`}
-                        </div>
-                        <div style={{ color: "#64748b", fontWeight: 800 }}>
-                          Tamaño: {it.tamano || "—"} · Cantidad: {formatCantidad(it.cantidad) || "0"}
-                        </div>
+                      <div key={`${p.id}-${idx}`} style={{ padding: "8px 12px", borderRadius: 8, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.07)", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13 }}>{it.producto_nombre || `Producto #${it.producto_id}`}</div>
+                        <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>{it.tamano || "—"} · {formatCantidad(it.cantidad) || "0"} uds</div>
                       </div>
                     ))}
                   </div>
@@ -861,7 +741,6 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
     </div>
   );
 }
-
 
 
 function StepIndicator({ step, tipoMovimiento }) {
@@ -1144,7 +1023,7 @@ function MovimientoModal({
   }, [form.origen_tipo, form.tamano_origen, availableOriginSizes]);
 
   const esDevolucion = useMemo(() => form.destino_tipo === "Vivero" && isDevolucionOrigen(form.origen_tipo), [form.origen_tipo, form.destino_tipo]);
-  const distribucionActiva = form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen;
+  const distribucionActiva = form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen && form.tipo_elegido === "salida";
 
   const distribucionDisponible = useMemo(() => {
     if (!distribucionActiva) return {};
@@ -1495,8 +1374,8 @@ function MovimientoModal({
                 {selectedProducto && formatoConfig.showCantidad !== false && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <SLabel>Cantidad {formatoConfig.unit ? `(${formatoConfig.unit})` : ""}</SLabel>
-                      <input type="number" min={0} step="0.1" value={form.cantidad} onChange={(e) => setForm((p) => ({ ...p, cantidad: e.target.value }))} style={iStyle()} placeholder="0" />
+                      <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}</SLabel>
+                      <input key={`qty-${form.producto_id}`} autoFocus type="number" min={0} step="0.1" value={form.cantidad} onChange={(e) => setForm((p) => ({ ...p, cantidad: e.target.value }))} style={iStyle()} placeholder="0" />
                     </div>
                     <div>
                       <SLabel>Observaciones (opcional)</SLabel>
@@ -1617,7 +1496,7 @@ function MovimientoModal({
                     {[
                       { label: "Tipo", value: <span style={tipoTextStyle(tipoPreview)}>{getTipoDisplayLabel(tipoPreview)}</span> },
                       { label: "Producto", value: selectedProducto ? getProductDisplayName(selectedProducto) : "—" },
-                      form.cantidad ? { label: "Cantidad", value: `${form.cantidad} ${formatoConfig.unit || ""}`.trim() } : null,
+                      form.cantidad ? { label: "Cantidad", value: `${form.cantidad} ${formatoConfig.kind === "tamano" ? "uds" : formatoConfig.kind === "formato_fijo" ? formatoConfig.value : formatoConfig.unit || ""}`.trim() } : null,
                       { label: "Origen", value: form.origen_tipo === "Vivero" ? (distribucionActiva ? `Vivero · ${Object.keys(distribucion).filter(z => Number(distribucion[z]) > 0).map(z => `${getZonaLabel(z)}: ${distribucion[z]}`).join(", ") || "—"}` : `Vivero · Zona ${form.zona_origen || "—"} · ${form.tamano_origen || "—"}`) : form.origen_tipo || "—" },
                       { label: "Destino", value: form.destino_tipo === "Vivero" ? `Vivero · Zona ${form.zona_destino || "—"} · ${form.tamano_destino || "—"}` : isExternalDestination(form.destino_tipo) ? [form.destino_tipo, form.distrito_destino, form.barrio_destino, form.direccion_destino].filter(Boolean).join(" · ") : form.destino_tipo || "—" },
                       form.pedido_id ? { label: "Pedido", value: `#${form.pedido_id}` } : null,
@@ -1668,6 +1547,7 @@ function MovimientoModal({
                 <button onClick={() => {
                   if (step === 1 && !step1Valid) { setErrors(["Completa los campos requeridos antes de continuar."]); return; }
                   if (step === 2 && !form.producto_id) { setErrors(["Selecciona un producto antes de continuar."]); return; }
+                  if (step === 2 && formatoConfig.showCantidad !== false && (!form.cantidad || Number(form.cantidad) <= 0)) { setErrors(["La cantidad debe ser mayor que 0."]); return; }
                   setErrors([]); setStep((s) => s + 1);
                 }} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${accent} 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: "pointer", opacity: (step === 1 && !form.tipo_elegido) ? 0.55 : 1 }}>
                   Siguiente →
