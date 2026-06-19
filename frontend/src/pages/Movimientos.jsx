@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   getMovimientos,
@@ -864,31 +863,23 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
 }
 
 
+
 function StepIndicator({ step, tipoMovimiento }) {
-  const steps = [
-    { n: 1, label: "Tipo" },
-    { n: 2, label: "Detalles" },
-    { n: 3, label: "Confirmar" },
-  ];
-  const colors = {
-    entrada: "#10b981",
-    salida: "#ef4444",
-    traslado_interno: "#3b82f6",
-    devolucion: "#f59e0b",
-  };
+  const steps = [{ n: 1, label: "Tipo" }, { n: 2, label: "Producto" }, { n: 3, label: "Zonas / Confirmar" }];
+  const colors = { entrada: "#10b981", salida: "#ef4444", traslado_interno: "#3b82f6", devolucion: "#f59e0b" };
   const accent = colors[tipoMovimiento] || "#06b6d4";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 24 }}>
       {steps.map((s, i) => (
         <React.Fragment key={s.n}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 15, background: step >= s.n ? accent : "rgba(255,255,255,0.10)", color: step >= s.n ? "#fff" : "rgba(255,255,255,0.40)", border: step === s.n ? `2px solid ${accent}` : "2px solid transparent", boxShadow: step === s.n ? `0 0 0 4px ${accent}22` : "none", transition: "all 0.25s ease" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 14, background: step >= s.n ? accent : "rgba(255,255,255,0.10)", color: step >= s.n ? "#fff" : "rgba(255,255,255,0.40)", border: step === s.n ? `2px solid ${accent}` : "2px solid transparent", transition: "all 0.25s ease" }}>
               {step > s.n ? "✓" : s.n}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: step >= s.n ? "#fff" : "rgba(255,255,255,0.40)", letterSpacing: "0.05em" }}>{s.label}</div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: step >= s.n ? "#fff" : "rgba(255,255,255,0.40)", letterSpacing: "0.05em" }}>{s.label}</div>
           </div>
           {i < steps.length - 1 && (
-            <div style={{ flex: 1, height: 2, marginBottom: 22, background: step > s.n ? accent : "rgba(255,255,255,0.12)", transition: "background 0.3s ease" }} />
+            <div style={{ flex: 1, height: 2, marginBottom: 18, background: step > s.n ? accent : "rgba(255,255,255,0.12)", transition: "background 0.3s ease" }} />
           )}
         </React.Fragment>
       ))}
@@ -905,16 +896,16 @@ function TipoCard({ tipo, label, desc, icon, selected, onClick }) {
   };
   const c = colors[tipo] || colors.traslado_interno;
   return (
-    <button type="button" onClick={onClick} style={{ padding: "16px 14px", borderRadius: 16, border: selected ? `2px solid ${c.accent}` : "2px solid transparent", background: selected ? c.bg : "rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", transition: "all 0.18s ease", boxShadow: selected ? `0 0 0 3px ${c.accent}22` : "none", outline: "none" }}>
-      <div style={{ fontSize: 26, marginBottom: 8 }}>{icon}</div>
-      <div style={{ fontWeight: 900, fontSize: 15, color: selected ? c.text : "#334155" }}>{label}</div>
-      <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: "#64748b", lineHeight: 1.4 }}>{desc}</div>
+    <button type="button" onClick={onClick} style={{ padding: "14px 12px", borderRadius: 14, border: selected ? `2px solid ${c.accent}` : "2px solid transparent", background: selected ? c.bg : "rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", transition: "all 0.18s ease", boxShadow: selected ? `0 0 0 3px ${c.accent}22` : "none", outline: "none" }}>
+      <div style={{ fontSize: 24, marginBottom: 6 }}>{icon}</div>
+      <div style={{ fontWeight: 900, fontSize: 14, color: selected ? c.text : "#334155" }}>{label}</div>
+      <div style={{ marginTop: 3, fontSize: 11, fontWeight: 700, color: "#64748b", lineHeight: 1.4 }}>{desc}</div>
     </button>
   );
 }
 
 function SLabel({ children }) {
-  return <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{children}</div>;
+  return <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>{children}</div>;
 }
 
 function MovimientoModal({
@@ -934,68 +925,368 @@ function MovimientoModal({
     origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "",
     tamano_origen: "", tamano_destino: "", distrito_destino: "",
     barrio_destino: "", direccion_destino: "", cp_destino: "",
-    observaciones: "", prestamo: false, tipo_elegido: "",
+    observaciones: "", prestamo: false, fecha_disponibilidad: "",
+    prestamo_referencia_id: null, tipo_elegido: "",
   });
   const [errors, setErrors] = useState([]);
   const [showPedidoModal, setShowPedidoModal] = useState(false);
   const [selectedPedidoLineKey, setSelectedPedidoLineKey] = useState("");
+  const [showPrestamoModal, setShowPrestamoModal] = useState(false);
+  const [distribucion, setDistribucion] = useState({});
+  const [batchPayloads, setBatchPayloads] = useState([]);
+  const [productoSearch, setProductoSearch] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
 
   useEffect(() => {
     if (!open) {
       setStep(1);
-      setForm({ pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: "", prestamo: false, tipo_elegido: "" });
+      setForm({ pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: "", prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: null, tipo_elegido: "" });
       setErrors([]);
       setSelectedPedidoLineKey("");
       setShowPedidoModal(false);
+      setShowPrestamoModal(false);
+      setDistribucion({});
+      setBatchPayloads([]);
+      setProductoSearch("");
+      setFiltroCategoria("");
+      setFiltroSubcategoria("");
     }
   }, [open]);
 
+  useEffect(() => {
+    const allowed = getDestinoOptions(form.origen_tipo);
+    if (form.origen_tipo && !allowed.includes(form.destino_tipo)) {
+      setForm((prev) => ({ ...prev, destino_tipo: allowed[0] || "", zona_destino: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", prestamo: false }));
+    }
+  }, [form.origen_tipo, form.destino_tipo]);
+
   const stockByProductZoneSize = useMemo(() => buildStockByProductZoneSize(movimientos), [movimientos]);
   const barriosDisponibles = useMemo(() => form.distrito_destino ? DISTRITO_BARRIOS[form.distrito_destino] || [] : [], [form.distrito_destino]);
-  const selectedPedido = useMemo(() => safeArray(pedidosAprobados).find((p) => String(p.id) === String(form.pedido_id)) || null, [pedidosAprobados, form.pedido_id]);
 
   const movimientosPreviosPorPedido = useMemo(() => {
     const map = new Map();
     for (const mov of safeArray(movimientos)) {
       const pedidoId = mov?.pedido_id; const productoId = mov?.producto_id;
-      const tamano = mov?.tamano_origen || mov?.tamano_destino || ""; const pedidoItemId = mov?.pedido_item_id;
+      const tamano = mov?.tamano_origen || mov?.tamano_destino || "";
+      const pedidoItemId = mov?.pedido_item_id;
       if (!pedidoId || !productoId) continue;
-      if (pedidoItemId) map.set(`item__${pedidoItemId}`, (map.get(`item__${pedidoItemId}`) || 0) + Number(mov?.cantidad || 0));
-      const k = `pedido__${pedidoId}__prod__${productoId}__tam__${tamano}`;
-      map.set(k, (map.get(k) || 0) + Number(mov?.cantidad || 0));
+      if (pedidoItemId) { const k = `item__${pedidoItemId}`; map.set(k, (map.get(k) || 0) + Number(mov?.cantidad || 0)); }
+      const kf = `pedido__${pedidoId}__prod__${productoId}__tam__${tamano}`;
+      map.set(kf, (map.get(kf) || 0) + Number(mov?.cantidad || 0));
     }
     return map;
   }, [movimientos]);
+
+  const cantidadesEnLote = useMemo(() => {
+    const m = new Map();
+    for (const p of batchPayloads) {
+      if (!p?.pedido_item_id) continue;
+      const k = Number(p.pedido_item_id);
+      m.set(k, (m.get(k) || 0) + Number(p.cantidad || 0));
+    }
+    return m;
+  }, [batchPayloads]);
+
+  const selectedPedido = useMemo(() => safeArray(pedidosAprobados).find((p) => String(p.id) === String(form.pedido_id)) || null, [pedidosAprobados, form.pedido_id]);
 
   const pedidoLineas = useMemo(() => {
     return safeArray(selectedPedido?.items).map((it, idx) => {
       const byItemKey = it?.id ? `item__${it.id}` : null;
       const fallbackKey = `pedido__${selectedPedido?.id || ""}__prod__${it?.producto_id || ""}__tam__${it?.tamano || ""}`;
-      const cantidadMovida = (byItemKey ? Number(movimientosPreviosPorPedido.get(byItemKey) || 0) : 0) || Number(movimientosPreviosPorPedido.get(fallbackKey) || 0);
-      return { ...it, _key: `${selectedPedido?.id}-${it?.producto_id}-${it?.tamano}-${idx}`, _cantidad_movida: cantidadMovida, _disabled: cantidadMovida > 0 };
+      const cantidadMovidaBackend = (byItemKey ? Number(movimientosPreviosPorPedido.get(byItemKey) || 0) : 0) || Number(movimientosPreviosPorPedido.get(fallbackKey) || 0);
+      const cantidadEnLoteLocal = it?.id ? Number(cantidadesEnLote.get(Number(it.id)) || 0) : 0;
+      const cantidadMovida = cantidadMovidaBackend + cantidadEnLoteLocal;
+      const estadoItemRaw = String(it?.estado_item || "APROBADO").toUpperCase();
+      const itemRechazado = estadoItemRaw === "DENEGADO";
+      const itemPendiente = estadoItemRaw === "RESERVA";
+      const itemNoServible = itemRechazado || itemPendiente;
+      return { ...it, _key: `${selectedPedido?.id || "pedido"}-${it?.producto_id || "prod"}-${it?.tamano || "tam"}-${idx}`, _cantidad_movida: cantidadMovida, _cantidad_en_lote: cantidadEnLoteLocal, _disabled: cantidadMovidaBackend > 0 || cantidadEnLoteLocal > 0 || itemNoServible, _razon_bloqueo: cantidadEnLoteLocal > 0 ? "ya_en_lote" : cantidadMovidaBackend > 0 ? "ya_servida" : itemRechazado ? "item_denegado" : itemPendiente ? "item_pendiente" : null };
     });
-  }, [selectedPedido, movimientosPreviosPorPedido]);
+  }, [selectedPedido, movimientosPreviosPorPedido, cantidadesEnLote]);
+
+  const selectedProducto = productos.find((p) => String(p.id) === String(form.producto_id));
+  const formatoConfig = useMemo(() => getProductFormatoConfig(selectedProducto), [selectedProducto]);
+
+  useEffect(() => {
+    if (!selectedProducto) return;
+    if (formatoConfig.kind === "formato_fijo") {
+      setForm((prev) => ({ ...prev, tamano_origen: formatoConfig.value, tamano_destino: formatoConfig.value }));
+      return;
+    }
+    const valid = new Set(formatoConfig.options || []);
+    setForm((prev) => {
+      const t_o = valid.has(prev.tamano_origen) ? prev.tamano_origen : "";
+      const t_d = valid.has(prev.tamano_destino) ? prev.tamano_destino : "";
+      if (t_o === prev.tamano_origen && t_d === prev.tamano_destino) return prev;
+      return { ...prev, tamano_origen: t_o, tamano_destino: t_d };
+    });
+  }, [selectedProducto?.id, formatoConfig.kind, formatoConfig.value]);
+
+  useEffect(() => {
+    if (!filtroCategoria) { if (filtroSubcategoria !== "") setFiltroSubcategoria(""); return; }
+    const valid = new Set(safeArray(productos).filter((p) => String(p?.categoria || "").trim() === filtroCategoria).map((p) => String(p?.subcategoria || "").trim()).filter(Boolean));
+    if (filtroSubcategoria && !valid.has(filtroSubcategoria)) setFiltroSubcategoria("");
+  }, [filtroCategoria, productos, filtroSubcategoria]);
+
+  useEffect(() => {
+    if (!form.producto_id) return;
+    const prod = safeArray(productos).find((p) => String(p.id) === String(form.producto_id));
+    if (!prod) return;
+    const catMismatch = filtroCategoria && String(prod?.categoria || "").trim() !== filtroCategoria;
+    const subMismatch = filtroSubcategoria && String(prod?.subcategoria || "").trim() !== filtroSubcategoria;
+    if (!catMismatch && !subMismatch) return;
+    setForm((prev) => ({ ...prev, producto_id: "", pedido_item_id: "", cantidad: "", tamano_origen: "", tamano_destino: "", zona_origen: "", zona_destino: "", fecha_disponibilidad: "" }));
+    setDistribucion({});
+  }, [filtroCategoria, filtroSubcategoria, form.producto_id, productos]);
+
+  const categoriasDisponibles = useMemo(() => {
+    const set = new Set();
+    for (const p of safeArray(productos)) { const c = String(p?.categoria || "").trim(); if (c) set.add(c); }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos]);
+
+  const subcategoriasDisponibles = useMemo(() => {
+    if (!filtroCategoria) return [];
+    const set = new Set();
+    for (const p of safeArray(productos)) {
+      if (String(p?.categoria || "").trim() !== filtroCategoria) continue;
+      const s = String(p?.subcategoria || "").trim(); if (s) set.add(s);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos, filtroCategoria]);
+
+  const productosConStockOrigen = useMemo(() => {
+    if (form.origen_tipo !== "Vivero") return null;
+    const set = new Set();
+    const zonaFiltro = form.zona_origen ? String(form.zona_origen).toLowerCase() : null;
+    const tamanoFiltro = form.tamano_origen ? normalizeTamanoForStock(form.tamano_origen) : null;
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__"); if (parts.length < 3) continue;
+      const [productoIdStr, zonaLower, tamano] = parts;
+      if (zonaFiltro && zonaLower !== zonaFiltro) continue;
+      if (tamanoFiltro && tamano !== tamanoFiltro) continue;
+      set.add(Number(productoIdStr));
+    }
+    return set;
+  }, [form.origen_tipo, form.zona_origen, form.tamano_origen, stockByProductZoneSize]);
+
+  const filteredProductos = useMemo(() => {
+    const needle = productoSearch.trim().toLowerCase();
+    return safeArray(productos).filter((p) => {
+      if (String(p.id) === String(form.producto_id)) return true;
+      if (productosConStockOrigen && !productosConStockOrigen.has(Number(p.id))) return false;
+      if (filtroCategoria && String(p?.categoria || "").trim() !== filtroCategoria) return false;
+      if (filtroSubcategoria && String(p?.subcategoria || "").trim() !== filtroSubcategoria) return false;
+      if (!needle) return true;
+      const display = String(getProductDisplayName(p) || "").toLowerCase();
+      const natural = String(p.nombre_natural || "").toLowerCase();
+      const cientifico = String(p.nombre_cientifico || "").toLowerCase();
+      return display.includes(needle) || natural.includes(needle) || cientifico.includes(needle);
+    });
+  }, [productos, productoSearch, form.producto_id, filtroCategoria, filtroSubcategoria, productosConStockOrigen]);
+
+  const zonasPermitidasPorCategoria = useMemo(() => getZonasPermitidasParaCategoria(selectedProducto, ZONAS), [selectedProducto, ZONAS]);
 
   const availableOriginZones = useMemo(() => {
-    if (form.origen_tipo !== "Vivero" || !form.producto_id) return ZONAS;
-    return ZONAS.filter((zona) => {
+    if (form.origen_tipo !== "Vivero" || !form.producto_id) return zonasPermitidasPorCategoria;
+    const formatoOptions = getFormatoOptions(formatoConfig);
+    return zonasPermitidasPorCategoria.filter((zona) => {
       if (form.tamano_origen) return Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, zona, form.tamano_origen)) || 0) > 0;
-      return TAMANOS.some((t) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, zona, t)) || 0) > 0);
+      return formatoOptions.some((t) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, zona, t)) || 0) > 0);
     });
-  }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize, ZONAS]);
+  }, [form.origen_tipo, form.producto_id, form.tamano_origen, stockByProductZoneSize, formatoConfig, zonasPermitidasPorCategoria]);
 
   const availableOriginSizes = useMemo(() => {
-    if (form.origen_tipo !== "Vivero" || !form.producto_id || !form.zona_origen) return TAMANOS;
-    return TAMANOS.filter((t) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, form.zona_origen, t)) || 0) > 0);
-  }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize]);
+    const formatoOptions = getFormatoOptions(formatoConfig);
+    if (form.origen_tipo !== "Vivero" || !form.producto_id) return formatoOptions;
+    return formatoOptions.filter((tamano) => {
+      if (form.zona_origen) return Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, form.zona_origen, tamano)) || 0) > 0;
+      return zonasPermitidasPorCategoria.some((z) => Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, tamano)) || 0) > 0);
+    });
+  }, [form.origen_tipo, form.producto_id, form.zona_origen, stockByProductZoneSize, formatoConfig, zonasPermitidasPorCategoria]);
 
-  const esDevolucion = form.destino_tipo === "Vivero" && isDevolucionOrigen(form.origen_tipo);
-  const tipoPreview = getMovimientoTipo(form);
-  const selectedProducto = productos.find((p) => String(p.id) === String(form.producto_id));
+  useEffect(() => {
+    if (form.origen_tipo === "Vivero" && form.zona_origen && !availableOriginZones.includes(form.zona_origen)) {
+      setForm((prev) => ({ ...prev, zona_origen: "", tamano_origen: "" }));
+    }
+  }, [form.origen_tipo, form.zona_origen, availableOriginZones]);
+
+  useEffect(() => {
+    if (!selectedProducto) return;
+    if (zonasPermitidasPorCategoria.length !== 1) return;
+    const zonaUnica = zonasPermitidasPorCategoria[0];
+    setForm((prev) => {
+      const next = { ...prev }; let changed = false;
+      if (prev.origen_tipo === "Vivero" && prev.zona_origen !== zonaUnica && availableOriginZones.includes(zonaUnica)) { next.zona_origen = zonaUnica; changed = true; }
+      if (prev.destino_tipo === "Vivero" && prev.zona_destino !== zonaUnica) { next.zona_destino = zonaUnica; changed = true; }
+      return changed ? next : prev;
+    });
+  }, [selectedProducto, zonasPermitidasPorCategoria, form.origen_tipo, form.destino_tipo, availableOriginZones]);
+
+  useEffect(() => {
+    if (!form.producto_id || !productosConStockOrigen) return;
+    if (productosConStockOrigen.has(Number(form.producto_id))) return;
+    setForm((prev) => ({ ...prev, producto_id: "", tamano_origen: prev.origen_tipo === "Vivero" ? "" : prev.tamano_origen, zona_origen: prev.origen_tipo === "Vivero" ? "" : prev.zona_origen, tamano_destino: prev.destino_tipo === "Vivero" ? "" : prev.tamano_destino, zona_destino: prev.destino_tipo === "Vivero" ? "" : prev.zona_destino }));
+  }, [form.producto_id, productosConStockOrigen]);
+
+  useEffect(() => {
+    if (form.destino_tipo === "Vivero" && form.zona_destino && selectedProducto && !zonasPermitidasPorCategoria.includes(form.zona_destino)) {
+      setForm((prev) => ({ ...prev, zona_destino: "" }));
+    }
+  }, [form.destino_tipo, form.zona_destino, selectedProducto, zonasPermitidasPorCategoria]);
+
+  useEffect(() => {
+    if (form.origen_tipo === "Vivero" && form.tamano_origen && !availableOriginSizes.includes(form.tamano_origen)) {
+      setForm((prev) => ({ ...prev, tamano_origen: "" }));
+    }
+  }, [form.origen_tipo, form.tamano_origen, availableOriginSizes]);
+
+  const esDevolucion = useMemo(() => form.destino_tipo === "Vivero" && isDevolucionOrigen(form.origen_tipo), [form.origen_tipo, form.destino_tipo]);
+  const distribucionActiva = form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen;
+
+  const distribucionDisponible = useMemo(() => {
+    if (!distribucionActiva) return {};
+    const out = {};
+    for (const z of zonasPermitidasPorCategoria) {
+      const key = buildStockKey(form.producto_id, z, form.tamano_origen);
+      const qty = Number(stockByProductZoneSize.get(key) || 0);
+      if (qty > 0) out[z] = qty;
+    }
+    return out;
+  }, [distribucionActiva, form.producto_id, form.tamano_origen, stockByProductZoneSize, zonasPermitidasPorCategoria]);
+
+  const totalDistribucion = useMemo(() => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0), [distribucion]);
+
+  useEffect(() => { setDistribucion({}); }, [form.producto_id, form.tamano_origen, form.origen_tipo]);
+
+  const tipoPreview = useMemo(() => getMovimientoTipo(form), [form]);
+
+  const prestamosActivos = useMemo(() => {
+    const arr = safeArray(movimientos);
+    const devolucionesPorRef = new Map();
+    for (const m of arr) {
+      if (m?.es_devolucion && m?.prestamo_referencia_id) {
+        const k = Number(m.prestamo_referencia_id);
+        devolucionesPorRef.set(k, (devolucionesPorRef.get(k) || 0) + Number(m.cantidad || 0));
+      }
+    }
+    return arr.filter((m) => !!m?.es_prestamo).map((m) => {
+      const devuelto = Number(devolucionesPorRef.get(Number(m.id)) || 0);
+      const prestado = Number(m.cantidad || 0);
+      return { ...m, _prestado: prestado, _devuelto: devuelto, _pendiente: Math.max(prestado - devuelto, 0) };
+    }).filter((m) => m._pendiente > 0).sort((a, b) => new Date(b.fecha_movimiento || 0) - new Date(a.fecha_movimiento || 0));
+  }, [movimientos]);
+
+  const handleSeleccionPrestamo = (prestamo) => {
+    const origenSugerido = prestamo?.destino_tipo || "Empresa";
+    const tamanoOriginal = prestamo?.tamano_origen || prestamo?.tamano_destino || "";
+    const notaBase = `Devolución del préstamo #${prestamo.id}${[prestamo?.distrito_destino, prestamo?.barrio_destino, prestamo?.direccion_destino].filter(Boolean).length ? ` (${[prestamo?.distrito_destino, prestamo?.barrio_destino, prestamo?.direccion_destino].filter(Boolean).join(" · ")})` : ""}`;
+    setForm((prev) => ({ ...prev, pedido_id: prestamo?.pedido_id ? String(prestamo.pedido_id) : "", pedido_item_id: "", producto_id: String(prestamo.producto_id), cantidad: String(prestamo._pendiente), origen_tipo: origenSugerido, destino_tipo: "Vivero", zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: tamanoOriginal, distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: prev.observaciones || notaBase, prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: prestamo.id }));
+    setErrors([]); setShowPrestamoModal(false);
+  };
+
+  const handleSeleccionPedido = (pedido) => {
+    const esReposicion = (pedido?.tipo || "salida") === "reposicion";
+    setForm((prev) => ({ ...prev, pedido_id: String(pedido.id), pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: esReposicion ? "Empresa Externa" : "Vivero", destino_tipo: esReposicion ? "Vivero" : (DESTINOS_EXTERNOS.includes("Empresa") ? "Empresa" : "Otro"), zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: esReposicion ? "" : (pedido.distrito_destino || ""), barrio_destino: esReposicion ? "" : (pedido.barrio_destino || ""), direccion_destino: esReposicion ? "" : (pedido.direccion_destino || ""), cp_destino: "", observaciones: prev.observaciones || `Movimiento asociado al pedido #${pedido.id}`, prestamo: false, tipo_elegido: esReposicion ? "entrada" : "salida" }));
+    setSelectedPedidoLineKey(""); setShowPedidoModal(false); setStep(2);
+  };
+
+  const usarLineaPedido = (linea) => {
+    if (linea._disabled) return;
+    const esReposicion = (selectedPedido?.tipo || "salida") === "reposicion";
+    if (esReposicion) {
+      setSelectedPedidoLineKey(linea._key);
+      setForm((prev) => ({ ...prev, pedido_item_id: String(linea.id || ""), producto_id: String(linea.producto_id), cantidad: String(linea.cantidad || ""), origen_tipo: "Empresa Externa", destino_tipo: "Vivero", tamano_origen: "", zona_origen: "", tamano_destino: linea.tamano || "", zona_destino: prev.zona_destino || "", distrito_destino: "", barrio_destino: "", direccion_destino: "", observaciones: prev.observaciones || `Movimiento asociado al pedido #${selectedPedido?.id || ""}`, prestamo: false }));
+      setErrors([]); return;
+    }
+    const destinoSugerido = DESTINOS_EXTERNOS.includes(form.destino_tipo) ? form.destino_tipo : "Empresa";
+    setSelectedPedidoLineKey(linea._key);
+    setForm((prev) => ({ ...prev, pedido_item_id: String(linea.id || ""), producto_id: String(linea.producto_id), cantidad: String(linea.cantidad || ""), origen_tipo: "Vivero", destino_tipo: destinoSugerido, tamano_origen: linea.tamano || "", zona_origen: prev.zona_origen || "", zona_destino: "", tamano_destino: "", distrito_destino: selectedPedido?.distrito_destino || prev.distrito_destino || "", barrio_destino: selectedPedido?.barrio_destino || prev.barrio_destino || "", direccion_destino: selectedPedido?.direccion_destino || prev.direccion_destino || "", observaciones: prev.observaciones || `Movimiento asociado al pedido #${selectedPedido?.id || ""}`, prestamo: prev.prestamo || false }));
+    setErrors([]);
+  };
+
+  const buildCurrentPayloads = () => {
+    const foundErrors = getFormErrors(form, formatoConfig);
+    let filtered = [...foundErrors];
+    if (distribucionActiva) {
+      filtered = filtered.filter((e) => !e.toLowerCase().includes("zona de origen") && !e.toLowerCase().includes("cantidad debe ser mayor"));
+      const zonasElegidas = Object.entries(distribucion).filter(([, q]) => Number(q) > 0);
+      if (zonasElegidas.length === 0) filtered.push("Indica al menos una zona con cantidad > 0 en la distribución.");
+      for (const [z, q] of zonasElegidas) {
+        const disp = Number(distribucionDisponible[z] || 0);
+        if (Number(q) > disp) filtered.push(`${getZonaLabel(z)}: solicitado ${q} supera el disponible (${disp}).`);
+      }
+    }
+    if (filtered.length > 0) return { ok: false, payloads: [], errors: filtered };
+    const basePayload = {
+      pedido_id: form.pedido_id ? Number(form.pedido_id) : null,
+      pedido_item_id: form.pedido_item_id ? Number(form.pedido_item_id) : null,
+      producto_id: Number(form.producto_id),
+      origen_tipo: form.origen_tipo, destino_tipo: form.destino_tipo,
+      tamano_origen: form.origen_tipo === "Vivero" ? form.tamano_origen || null : null,
+      tamano_destino: form.destino_tipo === "Vivero" ? form.tamano_destino || null : null,
+      zona_destino: form.destino_tipo === "Vivero" ? form.zona_destino || null : null,
+      distrito_destino: isExternalDestination(form.destino_tipo) ? form.distrito_destino || null : null,
+      barrio_destino: isExternalDestination(form.destino_tipo) ? form.barrio_destino || null : null,
+      direccion_destino: isExternalDestination(form.destino_tipo) ? form.direccion_destino || null : null,
+      cp_destino: isExternalDestination(form.destino_tipo) ? form.cp_destino || null : null,
+      observaciones: form.observaciones || null, nota: form.observaciones || null,
+      es_prestamo: form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? !!form.prestamo : false,
+      es_devolucion: esDevolucion,
+      prestamo_referencia_id: esDevolucion && form.prestamo_referencia_id ? Number(form.prestamo_referencia_id) : null,
+      fecha_disponibilidad: form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad ? form.fecha_disponibilidad : null,
+    };
+    let payloads;
+    if (distribucionActiva) {
+      payloads = Object.entries(distribucion).filter(([, q]) => Number(q) > 0).map(([zona, q]) => ({ ...basePayload, zona_origen: zona, cantidad: Number(q) }));
+    } else {
+      const cantidadFinal = formatoConfig.showCantidad ? parseFloat(form.cantidad) : 1;
+      payloads = [{ ...basePayload, zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null, cantidad: cantidadFinal }];
+    }
+    return { ok: true, payloads, errors: [] };
+  };
+
+  const formTieneLineaActual = () => {
+    if (!form.producto_id) return false;
+    if (distribucionActiva) return Object.values(distribucion).some((q) => Number(q) > 0);
+    return Number(form.cantidad) > 0;
+  };
+
+  const addCurrentToBatch = () => {
+    const result = buildCurrentPayloads();
+    setErrors(result.errors);
+    if (!result.ok) return;
+    setBatchPayloads((prev) => [...prev, ...result.payloads]);
+    setForm((prev) => ({ ...prev, pedido_item_id: "", producto_id: "", cantidad: "", tamano_origen: "", tamano_destino: prev.destino_tipo === "Vivero" ? "" : prev.tamano_destino, zona_origen: "", zona_destino: prev.destino_tipo === "Vivero" ? "" : prev.zona_destino, fecha_disponibilidad: "" }));
+    setDistribucion({}); setSelectedPedidoLineKey(""); setProductoSearch("");
+  };
+
+  const removeBatchItem = (idx) => setBatchPayloads((prev) => prev.filter((_, i) => i !== idx));
+
+  const submit = async () => {
+    const currentIsFilled = formTieneLineaActual();
+    if (!currentIsFilled && batchPayloads.length === 0) { setErrors(["No hay líneas que guardar. Rellena el formulario o añade al lote."]); return; }
+    let allPayloads = [...batchPayloads];
+    if (currentIsFilled) {
+      const result = buildCurrentPayloads();
+      setErrors(result.errors);
+      if (!result.ok) return;
+      allPayloads = [...allPayloads, ...result.payloads];
+    } else { setErrors([]); }
+    await onSubmit(allPayloads);
+  };
+
+  if (!open) return null;
+
+  const iStyle = () => ({ width: "100%", padding: "9px 11px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.10)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" });
+  const accentMap = { entrada: "#10b981", salida: "#ef4444", traslado_interno: "#3b82f6", devolucion: "#f59e0b" };
+  const accent = accentMap[form.tipo_elegido] || "#06b6d4";
 
   const esSalida = form.tipo_elegido === "salida";
   const esEntrada = form.tipo_elegido === "entrada";
-  const esTraslado = form.tipo_elegido === "traslado_interno";
+  const esTrasladoTipo = form.tipo_elegido === "traslado_interno";
   const esDevolucionTipo = form.tipo_elegido === "devolucion";
 
   const step1Valid = !!form.tipo_elegido &&
@@ -1003,172 +1294,196 @@ function MovimientoModal({
     (esEntrada ? !!form.origen_tipo : true) &&
     (esDevolucionTipo ? !!form.origen_tipo : true);
 
-  const step2Valid = !!form.producto_id && Number(form.cantidad) > 0 &&
-    ((esEntrada || esDevolucionTipo) ? !!form.zona_destino && !!form.tamano_destino : true) &&
-    (esSalida ? !!form.zona_origen && !!form.tamano_origen : true) &&
-    (esTraslado ? !!form.zona_origen && !!form.tamano_origen && !!form.zona_destino && !!form.tamano_destino : true) &&
-    (isExternalDestination(form.destino_tipo) ? !!(form.distrito_destino && form.barrio_destino && form.direccion_destino) : true);
+  const step2Valid = !!form.producto_id &&
+    (formatoConfig.showCantidad ? Number(form.cantidad) > 0 : true);
 
-  const handleSeleccionPedido = (pedido) => {
-    setForm((prev) => ({ ...prev, pedido_id: String(pedido.id), pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "Vivero", destino_tipo: "Empresa", distrito_destino: pedido.distrito_destino || "", barrio_destino: pedido.barrio_destino || "", direccion_destino: pedido.direccion_destino || "", cp_destino: "", observaciones: prev.observaciones || `Movimiento asociado al pedido #${pedido.id}`, prestamo: false, tipo_elegido: "salida" }));
-    setSelectedPedidoLineKey("");
-    setShowPedidoModal(false);
-    setStep(2);
-  };
-
-  const usarLineaPedido = (linea) => {
-    if (linea._disabled) return;
-    setSelectedPedidoLineKey(linea._key);
-    setForm((prev) => ({ ...prev, pedido_item_id: String(linea.id || ""), producto_id: String(linea.producto_id), cantidad: String(linea.cantidad || ""), tamano_origen: linea.tamano || "", zona_origen: prev.zona_origen || "", zona_destino: "", tamano_destino: "", distrito_destino: selectedPedido?.distrito_destino || prev.distrito_destino || "", barrio_destino: selectedPedido?.barrio_destino || prev.barrio_destino || "", direccion_destino: selectedPedido?.direccion_destino || prev.direccion_destino || "", observaciones: prev.observaciones || `Movimiento asociado al pedido #${selectedPedido?.id || ""}` }));
-    setErrors([]);
-  };
-
-  const submit = async () => {
-    const foundErrors = getFormErrors(form);
-    setErrors(foundErrors);
-    if (foundErrors.length > 0) return;
-    await onSubmit({
-      pedido_id: form.pedido_id ? Number(form.pedido_id) : null,
-      pedido_item_id: form.pedido_item_id ? Number(form.pedido_item_id) : null,
-      producto_id: Number(form.producto_id), cantidad: Number(form.cantidad),
-      origen_tipo: form.origen_tipo, destino_tipo: form.destino_tipo,
-      zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null,
-      zona_destino: form.destino_tipo === "Vivero" ? form.zona_destino || null : null,
-      tamano_origen: form.origen_tipo === "Vivero" ? form.tamano_origen || null : null,
-      tamano_destino: form.destino_tipo === "Vivero" ? form.tamano_destino || null : null,
-      distrito_destino: isExternalDestination(form.destino_tipo) ? form.distrito_destino || null : null,
-      barrio_destino: isExternalDestination(form.destino_tipo) ? form.barrio_destino || null : null,
-      direccion_destino: isExternalDestination(form.destino_tipo) ? form.direccion_destino || null : null,
-      cp_destino: isExternalDestination(form.destino_tipo) ? form.cp_destino || null : null,
-      observaciones: form.observaciones || null, nota: form.observaciones || null,
-      es_prestamo: esSalida && isExternalDestination(form.destino_tipo) ? !!form.prestamo : false,
-      es_devolucion: esDevolucion,
-    });
-  };
-
-  if (!open) return null;
-
-  const accentMap = { entrada: "#10b981", salida: "#ef4444", traslado_interno: "#3b82f6", devolucion: "#f59e0b" };
-  const accent = accentMap[form.tipo_elegido] || "#06b6d4";
-  const iStyle = () => ({ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(15,23,42,0.10)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" });
-
-  const stepTitles = { 1: "¿Qué tipo de movimiento?", 2: esEntrada ? "Detalles de entrada" : esSalida ? "Detalles de salida" : esTraslado ? "Detalles del traslado" : "Detalles de devolución", 3: "Confirmar movimiento" };
+  const step3Valid = (() => {
+    if (form.origen_tipo === "Vivero") {
+      if (distribucionActiva) {
+        if (Object.values(distribucion).filter(q => Number(q) > 0).length === 0) return false;
+      } else {
+        if (!form.zona_origen || !form.tamano_origen) return false;
+      }
+    }
+    if (form.destino_tipo === "Vivero") {
+      if (!form.zona_destino || !form.tamano_destino) return false;
+    }
+    if (isExternalDestination(form.destino_tipo)) {
+      if (!form.distrito_destino || !form.barrio_destino || !form.direccion_destino) return false;
+    }
+    return true;
+  })();
 
   return (
     <>
-      <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(5px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ width: "min(860px, 96vw)", maxHeight: "94vh", background: "#fff", borderRadius: 24, overflow: "hidden", boxShadow: "0 32px 80px rgba(2,6,23,0.38)", border: "1px solid rgba(15,23,42,0.08)", display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(5px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ width: "min(900px, 97vw)", maxHeight: "95vh", background: "#fff", borderRadius: 22, overflow: "hidden", boxShadow: "0 32px 80px rgba(2,6,23,0.38)", border: "1px solid rgba(15,23,42,0.08)", display: "flex", flexDirection: "column" }}>
 
           {/* Header */}
-          <div style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", padding: "20px 24px 16px", color: "#fff" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 20 }}>
+          <div style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", padding: "18px 22px 14px", color: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 18 }}>
               <div>
-                <div style={{ fontSize: 22, fontWeight: 900 }}>Nuevo movimiento</div>
-                <div style={{ marginTop: 4, color: "rgba(255,255,255,0.65)", fontWeight: 700, fontSize: 14 }}>{stepTitles[step]}</div>
+                <div style={{ fontSize: 20, fontWeight: 900 }}>Nuevo movimiento</div>
+                <div style={{ marginTop: 3, color: "rgba(255,255,255,0.60)", fontWeight: 700, fontSize: 13 }}>
+                  {step === 1 ? "¿Qué tipo de movimiento?" : step === 2 ? "Elige el producto" : "Zonas, cantidades y confirmación"}
+                </div>
               </div>
-              <button onClick={onClose} style={{ padding: "10px 16px", borderRadius: 14, fontWeight: 900, cursor: "pointer", background: "#f59e0b", color: "#111827", border: "2px solid #000", boxShadow: "0 8px 18px rgba(0,0,0,0.18)" }}>Cerrar</button>
+              <button onClick={onClose} style={{ padding: "8px 14px", borderRadius: 12, fontWeight: 900, cursor: "pointer", background: "#f59e0b", color: "#111827", border: "2px solid #000", boxShadow: "0 6px 14px rgba(0,0,0,0.18)" }}>Cerrar</button>
             </div>
             <StepIndicator step={step} tipoMovimiento={form.tipo_elegido} />
           </div>
 
           {/* Body */}
-          <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
+          <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
 
-            {/* STEP 1 */}
+            {/* STEP 1 — Tipo */}
             {step === 1 && (
               <div>
-                <div style={{ padding: "14px 18px", borderRadius: 16, background: "linear-gradient(90deg, rgba(59,130,246,0.08) 0%, rgba(6,182,212,0.06) 100%)", border: "1px solid rgba(59,130,246,0.18)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+                {/* Banner pedido */}
+                <div style={{ padding: "12px 16px", borderRadius: 14, background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.18)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 15 }}>¿Tienes un pedido aprobado?</div>
-                    <div style={{ marginTop: 3, color: "#475569", fontWeight: 700, fontSize: 13 }}>Asocia un pedido y se rellenarán automáticamente producto, cantidad y destino.</div>
+                    <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 14 }}>¿Tienes un pedido aprobado?</div>
+                    <div style={{ marginTop: 2, color: "#475569", fontWeight: 700, fontSize: 12 }}>Asocia un pedido y se rellenarán producto, cantidad y destino automáticamente.</div>
                   </div>
-                  <button type="button" onClick={() => setShowPedidoModal(true)} style={{ padding: "10px 16px", borderRadius: 12, border: "1px solid rgba(59,130,246,0.30)", background: "rgba(59,130,246,0.10)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer", fontSize: 14, whiteSpace: "nowrap" }}>📋 Asociar pedido</button>
+                  <button type="button" onClick={() => setShowPedidoModal(true)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid rgba(59,130,246,0.30)", background: "rgba(59,130,246,0.10)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>📋 Asociar pedido</button>
                 </div>
+
                 {form.pedido_id && (
-                  <div style={{ marginBottom: 20, padding: "10px 14px", borderRadius: 12, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", fontWeight: 800, color: "#065f46", fontSize: 14, display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ marginBottom: 16, padding: "8px 14px", borderRadius: 10, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", fontWeight: 800, color: "#065f46", fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
                     ✓ Pedido #{form.pedido_id} asociado
-                    <button type="button" onClick={() => setForm((p) => ({ ...p, pedido_id: "", pedido_item_id: "" }))} style={{ background: "transparent", border: "none", color: "#991b1b", cursor: "pointer", fontWeight: 900, fontSize: 13 }}>Quitar</button>
+                    <button type="button" onClick={() => setForm((p) => ({ ...p, pedido_id: "", pedido_item_id: "" }))} style={{ background: "transparent", border: "none", color: "#991b1b", cursor: "pointer", fontWeight: 900, fontSize: 12 }}>Quitar</button>
                   </div>
                 )}
-                <div style={{ fontSize: 13, fontWeight: 900, color: "#475569", marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.06em" }}>Selecciona el tipo de movimiento</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-                  <TipoCard tipo="entrada" label="Entrada al vivero" desc="Material que llega al vivero desde un proveedor externo u otra entidad." icon="📥" selected={form.tipo_elegido === "entrada"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "entrada", destino_tipo: "Vivero", origen_tipo: "", zona_origen: "", tamano_origen: "" }))} />
+
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#475569", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>Selecciona el tipo de movimiento</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+                  <TipoCard tipo="entrada" label="Entrada al vivero" desc="Material que llega al vivero desde un proveedor externo u otra entidad." icon="📦" selected={form.tipo_elegido === "entrada"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "entrada", destino_tipo: "Vivero", origen_tipo: "", zona_origen: "", tamano_origen: "" }))} />
                   <TipoCard tipo="salida" label="Salida del vivero" desc="Material que sale del vivero hacia un destino externo." icon="📤" selected={form.tipo_elegido === "salida"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "salida", origen_tipo: "Vivero", destino_tipo: "", zona_destino: "", tamano_destino: "" }))} />
                   <TipoCard tipo="traslado_interno" label="Traslado interno" desc="Movimiento entre zonas del vivero, con posible cambio de tamaño." icon="🔄" selected={form.tipo_elegido === "traslado_interno"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "traslado_interno", origen_tipo: "Vivero", destino_tipo: "Vivero" }))} />
                   <TipoCard tipo="devolucion" label="Devolución" desc="Planta prestada que regresa al vivero desde una entidad externa." icon="↩️" selected={form.tipo_elegido === "devolucion"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "devolucion", destino_tipo: "Vivero", zona_destino: "", tamano_destino: "" }))} />
                 </div>
 
+                {/* Sub-campos según tipo */}
                 {esSalida && (
-                  <div style={{ marginTop: 22, padding: 18, borderRadius: 18, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.04)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 15, color: "#991b1b", marginBottom: 14 }}>📍 Destino de la salida</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                      <div style={{ gridColumn: "span 2" }}>
-                        <SLabel>Tipo de destinatario</SLabel>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                          {DESTINOS_SALIDA_VIVERO.filter((d) => d !== "Vivero").map((d) => (
-                            <button key={d} type="button" onClick={() => setForm((p) => ({ ...p, destino_tipo: d, distrito_destino: "", barrio_destino: "", direccion_destino: "" }))} style={{ padding: "8px 14px", borderRadius: 10, border: form.destino_tipo === d ? "2px solid #ef4444" : "1px solid rgba(15,23,42,0.12)", background: form.destino_tipo === d ? "rgba(239,68,68,0.12)" : "#fff", color: form.destino_tipo === d ? "#991b1b" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>{d}</button>
-                          ))}
-                        </div>
+                  <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#991b1b", marginBottom: 12 }}>🗺️ Destino de la salida</div>
+                    <div>
+                      <SLabel>Tipo de destinatario</SLabel>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                        {DESTINOS_SALIDA_VIVERO.filter((d) => d !== "Vivero").map((d) => (
+                          <button key={d} type="button" onClick={() => setForm((p) => ({ ...p, destino_tipo: d, distrito_destino: "", barrio_destino: "", direccion_destino: "" }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.destino_tipo === d ? "2px solid #ef4444" : "1px solid rgba(15,23,42,0.12)", background: form.destino_tipo === d ? "rgba(239,68,68,0.12)" : "#fff", color: form.destino_tipo === d ? "#991b1b" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{d}</button>
+                        ))}
                       </div>
                       {isExternalDestination(form.destino_tipo) && (
-                        <>
-                          <div><SLabel>Distrito</SLabel><select value={form.distrito_destino} onChange={(e) => setForm((p) => ({ ...p, distrito_destino: e.target.value, barrio_destino: "" }))} style={iStyle()}><option value="">Seleccionar distrito</option>{Object.keys(DISTRITO_BARRIOS).map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
-                          <div><SLabel>Barrio</SLabel><select value={form.barrio_destino} onChange={(e) => setForm((p) => ({ ...p, barrio_destino: e.target.value }))} style={iStyle()} disabled={!form.distrito_destino}><option value="">{form.distrito_destino ? "Seleccionar barrio" : "Primero elige el distrito"}</option>{barriosDisponibles.map((b) => <option key={b} value={b}>{b}</option>)}</select></div>
-                          <div style={{ gridColumn: "span 2" }}><SLabel>Dirección</SLabel><input value={form.direccion_destino} onChange={(e) => setForm((p) => ({ ...p, direccion_destino: e.target.value }))} style={iStyle()} placeholder="Calle, número..." /></div>
-                        </>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div>
+                            <SLabel>Distrito</SLabel>
+                            <select value={form.distrito_destino} onChange={(e) => setForm((p) => ({ ...p, distrito_destino: e.target.value, barrio_destino: "" }))} style={iStyle()}>
+                              <option value="">Seleccionar distrito</option>
+                              {Object.keys(DISTRITO_BARRIOS).map((d) => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <SLabel>Barrio</SLabel>
+                            <select value={form.barrio_destino} onChange={(e) => setForm((p) => ({ ...p, barrio_destino: e.target.value }))} style={iStyle()} disabled={!form.distrito_destino}>
+                              <option value="">{form.distrito_destino ? "Seleccionar barrio" : "Primero elige el distrito"}</option>
+                              {barriosDisponibles.map((b) => <option key={b} value={b}>{b}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ gridColumn: "span 2" }}>
+                            <SLabel>Dirección</SLabel>
+                            <input value={form.direccion_destino} onChange={(e) => setForm((p) => ({ ...p, direccion_destino: e.target.value }))} style={iStyle()} placeholder="Calle, número..." />
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
                 )}
 
                 {esEntrada && (
-                  <div style={{ marginTop: 22, padding: 18, borderRadius: 18, border: "1px solid rgba(16,185,129,0.15)", background: "rgba(16,185,129,0.04)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 15, color: "#065f46", marginBottom: 14 }}>📦 Origen del material</div>
-                    <SLabel>¿De dónde viene?</SLabel>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(16,185,129,0.15)", background: "rgba(16,185,129,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#065f46", marginBottom: 10 }}>📦 ¿De dónde viene el material?</div>
+                    <SLabel>Origen</SLabel>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {ORIGENES.filter((o) => o !== "Vivero").map((o) => (
-                        <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "8px 14px", borderRadius: 10, border: form.origen_tipo === o ? "2px solid #10b981" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(16,185,129,0.12)" : "#fff", color: form.origen_tipo === o ? "#065f46" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>{o}</button>
+                        <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.origen_tipo === o ? "2px solid #10b981" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(16,185,129,0.12)" : "#fff", color: form.origen_tipo === o ? "#065f46" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{o}</button>
                       ))}
                     </div>
                   </div>
                 )}
 
                 {esDevolucionTipo && (
-                  <div style={{ marginTop: 22, padding: 18, borderRadius: 18, border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.05)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 15, color: "#92400e", marginBottom: 14 }}>↩️ ¿Quién devuelve?</div>
-                    <SLabel>Entidad que devuelve</SLabel>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.04)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#92400e", marginBottom: 10 }}>↩️ ¿Quién devuelve?</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
                       {["Empresa", "Organismo oficial", "Colegio", "Otro"].map((o) => (
-                        <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "8px 14px", borderRadius: 10, border: form.origen_tipo === o ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(245,158,11,0.14)" : "#fff", color: form.origen_tipo === o ? "#92400e" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>{o}</button>
+                        <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.origen_tipo === o ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(245,158,11,0.14)" : "#fff", color: form.origen_tipo === o ? "#92400e" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{o}</button>
                       ))}
                     </div>
+                    <button type="button" onClick={() => setShowPrestamoModal(true)} style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid rgba(245,158,11,0.30)", background: "rgba(245,158,11,0.08)", color: "#92400e", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>📋 Seleccionar préstamo activo</button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* STEP 2 */}
+            {/* STEP 2 — Producto */}
             {step === 2 && (
-              <div style={{ display: "grid", gap: 20 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "end" }}>
-                  <div><SLabel>Producto</SLabel><select value={form.producto_id} onChange={(e) => setForm((p) => ({ ...p, producto_id: e.target.value, zona_origen: "", tamano_origen: "" }))} style={iStyle()}><option value="">Seleccionar producto</option>{productos.map((p) => <option key={p.id} value={p.id}>{getProductDisplayName(p)}</option>)}</select></div>
-                  <div style={{ width: 110 }}><SLabel>Cantidad</SLabel><input type="number" min={1} value={form.cantidad} onChange={(e) => setForm((p) => ({ ...p, cantidad: e.target.value }))} style={iStyle()} placeholder="0" /></div>
+              <div style={{ display: "grid", gap: 16 }}>
+                {/* Filtros */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 10 }}>
+                  <div>
+                    <SLabel>Categoría</SLabel>
+                    <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={iStyle()}>
+                      <option value="">Todas</option>
+                      {categoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <SLabel>Subcategoría</SLabel>
+                    <select value={filtroSubcategoria} onChange={(e) => setFiltroSubcategoria(e.target.value)} style={iStyle()} disabled={!filtroCategoria || subcategoriasDisponibles.length === 0}>
+                      <option value="">Todas</option>
+                      {subcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <SLabel>Buscar producto</SLabel>
+                    <input value={productoSearch} onChange={(e) => setProductoSearch(e.target.value)} style={iStyle()} placeholder="Escribe nombre científico o común..." />
+                  </div>
                 </div>
 
+                {/* Lista de productos */}
+                <div>
+                  <SLabel>Producto ({filteredProductos.length} disponibles{form.origen_tipo === "Vivero" ? " con stock" : ""})</SLabel>
+                  <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 12, background: "#fafafa" }}>
+                    {filteredProductos.length === 0 ? (
+                      <div style={{ padding: 16, color: "#64748b", fontWeight: 700, fontSize: 13 }}>No hay productos{form.origen_tipo === "Vivero" ? " con stock" : ""} que coincidan.</div>
+                    ) : filteredProductos.map((p) => {
+                      const active = String(p.id) === String(form.producto_id);
+                      return (
+                        <div key={p.id} onClick={() => { setForm((prev) => ({ ...prev, producto_id: String(p.id), zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: "" })); setDistribucion({}); }} style={{ padding: "10px 14px", borderBottom: "1px solid rgba(15,23,42,0.06)", cursor: "pointer", background: active ? `${accent}12` : "transparent", borderLeft: active ? `3px solid ${accent}` : "3px solid transparent", fontWeight: active ? 900 : 700, color: active ? "#0f172a" : "#334155", fontSize: 13, transition: "all 0.12s" }}>
+                          <div>{getProductDisplayName(p)}</div>
+                          {p.categoria && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{p.categoria}{p.subcategoria ? ` · ${p.subcategoria}` : ""}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Líneas de pedido si hay pedido */}
                 {selectedPedido && (
-                  <div style={{ padding: 16, borderRadius: 16, background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)" }}>
-                    <div style={{ fontWeight: 900, color: "#1e3a8a", marginBottom: 12 }}>Líneas del pedido #{selectedPedido.id}</div>
-                    <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ padding: 14, borderRadius: 14, background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)" }}>
+                    <div style={{ fontWeight: 900, color: "#1e3a8a", marginBottom: 10, fontSize: 13 }}>Líneas del pedido #{selectedPedido.id}</div>
+                    <div style={{ display: "grid", gap: 6 }}>
                       {pedidoLineas.map((linea) => {
                         const active = selectedPedidoLineKey === linea._key;
                         const disabled = !!linea._disabled;
                         return (
-                          <div key={linea._key} style={{ padding: "10px 12px", borderRadius: 12, border: disabled ? "1px solid rgba(148,163,184,0.18)" : active ? "1px solid rgba(6,182,212,0.35)" : "1px solid rgba(15,23,42,0.08)", background: disabled ? "rgba(148,163,184,0.06)" : active ? "rgba(6,182,212,0.08)" : "#fff", display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", opacity: disabled ? 0.6 : 1 }}>
+                          <div key={linea._key} style={{ padding: "9px 12px", borderRadius: 10, border: disabled ? "1px solid rgba(148,163,184,0.18)" : active ? "1px solid rgba(6,182,212,0.35)" : "1px solid rgba(15,23,42,0.08)", background: disabled ? "rgba(148,163,184,0.06)" : active ? "rgba(6,182,212,0.08)" : "#fff", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", opacity: disabled ? 0.6 : 1 }}>
                             <div>
-                              <div style={{ fontWeight: 900, color: "#0f172a" }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
-                              <div style={{ marginTop: 3, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · Ya movida: ${linea._cantidad_movida}` : ""}</div>
+                              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
+                              <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · Ya movida: ${linea._cantidad_movida}` : ""}</div>
                             </div>
-                            <button type="button" onClick={() => usarLineaPedido(linea)} disabled={disabled} style={{ padding: "8px 12px", borderRadius: 10, border: disabled ? "1px solid rgba(148,163,184,0.18)" : "1px solid rgba(16,185,129,0.25)", background: disabled ? "rgba(148,163,184,0.14)" : "rgba(16,185,129,0.10)", color: disabled ? "#64748b" : "#065f46", fontWeight: 900, cursor: disabled ? "not-allowed" : "pointer", fontSize: 13 }}>{disabled ? "Ya usada" : "Usar"}</button>
+                            <button type="button" onClick={() => usarLineaPedido(linea)} disabled={disabled} style={{ padding: "6px 10px", borderRadius: 8, border: disabled ? "1px solid rgba(148,163,184,0.18)" : "1px solid rgba(16,185,129,0.25)", background: disabled ? "rgba(148,163,184,0.14)" : "rgba(16,185,129,0.10)", color: disabled ? "#64748b" : "#065f46", fontWeight: 900, cursor: disabled ? "not-allowed" : "pointer", fontSize: 12 }}>{disabled ? "Ya usada" : "Usar"}</button>
                           </div>
                         );
                       })}
@@ -1176,81 +1491,166 @@ function MovimientoModal({
                   </div>
                 )}
 
-                {(esSalida || esTraslado) && (
-                  <div style={{ padding: 18, borderRadius: 16, border: `1px solid ${esSalida ? "rgba(239,68,68,0.15)" : "rgba(59,130,246,0.15)"}`, background: esSalida ? "rgba(239,68,68,0.03)" : "rgba(59,130,246,0.03)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 14, color: esSalida ? "#991b1b" : "#1e3a8a", marginBottom: 12 }}>{esSalida ? "📦 ¿De qué zona sale?" : "📦 Zona de origen"}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      <div><SLabel>Zona origen</SLabel>
-                        <select value={form.zona_origen} onChange={(e) => setForm((p) => ({ ...p, zona_origen: e.target.value, tamano_origen: "" }))} style={iStyle()} disabled={!form.producto_id || availableOriginZones.length === 0}>
-                          <option value="">{!form.producto_id ? "Primero elige producto" : availableOriginZones.length === 0 ? "Sin stock para este producto" : "Seleccionar zona"}</option>
-                          {availableOriginZones.map((z) => { const stockTotal = TAMANOS.reduce((s, t) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0); return <option key={z} value={z}>Zona {z} {form.producto_id ? `(${stockTotal})` : ""}</option>; })}
-                        </select>
-                      </div>
-                      <div><SLabel>Tamaño origen</SLabel>
-                        <select value={form.tamano_origen} onChange={(e) => setForm((p) => ({ ...p, tamano_origen: e.target.value }))} style={iStyle()} disabled={!form.zona_origen || availableOriginSizes.length === 0}>
-                          <option value="">{!form.zona_origen ? "Primero elige zona" : "Seleccionar tamaño"}</option>
-                          {availableOriginSizes.map((t) => { const qty = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, form.zona_origen, t)) || 0); return <option key={t} value={t}>{t} ({qty} uds)</option>; })}
-                        </select>
-                      </div>
+                {/* Cantidad */}
+                {selectedProducto && formatoConfig.showCantidad !== false && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <SLabel>Cantidad {formatoConfig.unit ? `(${formatoConfig.unit})` : ""}</SLabel>
+                      <input type="number" min={0} step="0.1" value={form.cantidad} onChange={(e) => setForm((p) => ({ ...p, cantidad: e.target.value }))} style={iStyle()} placeholder="0" />
+                    </div>
+                    <div>
+                      <SLabel>Observaciones (opcional)</SLabel>
+                      <input value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={iStyle()} placeholder="Información adicional..." />
                     </div>
                   </div>
                 )}
-
-                {(esEntrada || esTraslado || esDevolucionTipo) && (
-                  <div style={{ padding: 18, borderRadius: 16, border: `1px solid ${esEntrada ? "rgba(16,185,129,0.15)" : esTraslado ? "rgba(59,130,246,0.15)" : "rgba(245,158,11,0.18)"}`, background: esEntrada ? "rgba(16,185,129,0.03)" : esTraslado ? "rgba(59,130,246,0.03)" : "rgba(245,158,11,0.04)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 14, color: esEntrada ? "#065f46" : esTraslado ? "#1e3a8a" : "#92400e", marginBottom: 12 }}>{esEntrada ? "🎯 ¿A qué zona entra?" : esTraslado ? "🎯 Zona de destino" : "🎯 ¿A qué zona vuelve?"}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      <div><SLabel>Zona destino</SLabel><select value={form.zona_destino} onChange={(e) => setForm((p) => ({ ...p, zona_destino: e.target.value }))} style={iStyle()}><option value="">Seleccionar zona</option>{ZONAS.map((z) => <option key={z} value={z}>Zona {z}</option>)}</select></div>
-                      <div><SLabel>Tamaño destino</SLabel><select value={form.tamano_destino} onChange={(e) => setForm((p) => ({ ...p, tamano_destino: e.target.value }))} style={iStyle()}><option value="">Seleccionar tamaño</option>{TAMANOS.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-                    </div>
+                {selectedProducto && formatoConfig.showCantidad === false && (
+                  <div>
+                    <SLabel>Observaciones — indica cantidad y envase (obligatorio para fito/fert)</SLabel>
+                    <textarea value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={{ ...iStyle(), minHeight: 70, resize: "vertical" }} placeholder="Ej: 2,5 litros de glifosato 360 en envase de 5L..." />
                   </div>
                 )}
 
-                <div><SLabel>Observaciones (opcional)</SLabel><textarea value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={{ ...iStyle(), minHeight: 80, resize: "vertical" }} placeholder="Información adicional..." /></div>
+                {/* Lote actual */}
+                {batchPayloads.length > 0 && (
+                  <div style={{ padding: 12, borderRadius: 12, background: "rgba(16,185,129,0.05)", border: "1px solid rgba(16,185,129,0.18)" }}>
+                    <div style={{ fontWeight: 900, color: "#065f46", fontSize: 12, marginBottom: 8 }}>EN EL LOTE ({batchPayloads.length} líneas)</div>
+                    {batchPayloads.map((p, idx) => {
+                      const prod = productos.find((x) => String(x.id) === String(p.producto_id));
+                      return (
+                        <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: "1px solid rgba(16,185,129,0.10)", fontSize: 12, fontWeight: 700 }}>
+                          <span>{getProductDisplayName(prod)} · {p.cantidad} {p.tamano_origen || p.tamano_destino || ""}</span>
+                          <button type="button" onClick={() => removeBatchItem(idx)} style={{ background: "transparent", border: "none", color: "#991b1b", cursor: "pointer", fontWeight: 900, fontSize: 13 }}>✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {selectedProducto && formTieneLineaActual() && selectedPedido && (
+                  <button type="button" onClick={addCurrentToBatch} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(59,130,246,0.30)", background: "rgba(59,130,246,0.10)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>+ Añadir al lote y seleccionar otra línea</button>
+                )}
               </div>
             )}
 
-            {/* STEP 3 */}
+            {/* STEP 3 — Zonas + Confirmar */}
             {step === 3 && (
               <div style={{ display: "grid", gap: 16 }}>
-                <div style={{ padding: 20, borderRadius: 18, background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", color: "#fff" }}>
-                  <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 16, color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Resumen del movimiento</div>
-                  <div style={{ display: "grid", gap: 12 }}>
+                {/* Origen zona (para salida y traslado) */}
+                {(esSalida || esTrasladoTipo) && (
+                  <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${esSalida ? "rgba(239,68,68,0.15)" : "rgba(59,130,246,0.15)"}`, background: esSalida ? "rgba(239,68,68,0.03)" : "rgba(59,130,246,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13, color: esSalida ? "#991b1b" : "#1e3a8a", marginBottom: 10 }}>📍 Zona origen</div>
+                    {distribucionActiva ? (
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>Indica cuántas unidades salen de cada zona:</div>
+                        {Object.keys(distribucionDisponible).length === 0 ? (
+                          <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 13 }}>No hay stock en ninguna zona para este producto y tamaño.</div>
+                        ) : Object.entries(distribucionDisponible).map(([zona, disponible]) => (
+                          <div key={zona} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                            <div style={{ fontWeight: 800, fontSize: 13 }}>{getZonaLabel(zona)} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>(disponible: {disponible})</span></div>
+                            <input type="number" min={0} max={disponible} value={distribucion[zona] || ""} onChange={(e) => setDistribucion((prev) => ({ ...prev, [zona]: e.target.value }))} style={{ ...iStyle(), width: 90 }} placeholder="0" />
+                            <span style={{ fontSize: 11, fontWeight: 700, color: Number(distribucion[zona] || 0) > disponible ? "#991b1b" : "#64748b" }}>{Number(distribucion[zona] || 0) > disponible ? "⚠️ excede" : ""}</span>
+                          </div>
+                        ))}
+                        {totalDistribucion > 0 && <div style={{ marginTop: 8, fontWeight: 900, color: "#065f46", fontSize: 13 }}>Total: {totalDistribucion}</div>}
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <SLabel>Zona origen</SLabel>
+                          <select value={form.zona_origen} onChange={(e) => setForm((p) => ({ ...p, zona_origen: e.target.value, tamano_origen: "" }))} style={iStyle()} disabled={!form.producto_id || availableOriginZones.length === 0}>
+                            <option value="">{!form.producto_id ? "Primero elige producto" : availableOriginZones.length === 0 ? "Sin stock para este producto" : "Seleccionar zona"}</option>
+                            {availableOriginZones.map((z) => {
+                              const stockTotal = getFormatoOptions(formatoConfig).reduce((s, t) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0);
+                              return <option key={z} value={z}>Zona {z}{form.producto_id ? ` (${stockTotal})` : ""}</option>;
+                            })}
+                          </select>
+                        </div>
+                        <div>
+                          <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño origen" : "Formato origen"}</SLabel>
+                          <select value={form.tamano_origen} onChange={(e) => setForm((p) => ({ ...p, tamano_origen: e.target.value }))} style={iStyle()} disabled={!form.zona_origen || availableOriginSizes.length === 0}>
+                            <option value="">{!form.zona_origen ? "Primero elige zona" : "Seleccionar"}</option>
+                            {availableOriginSizes.map((t) => {
+                              const qty = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, form.zona_origen, t)) || 0);
+                              return <option key={t} value={t}>{t} ({qty} uds)</option>;
+                            })}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Destino zona (para entrada, traslado, devolución) */}
+                {(esEntrada || esTrasladoTipo || esDevolucionTipo) && (
+                  <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${esEntrada ? "rgba(16,185,129,0.15)" : esTrasladoTipo ? "rgba(59,130,246,0.15)" : "rgba(245,158,11,0.18)"}`, background: esEntrada ? "rgba(16,185,129,0.03)" : esTrasladoTipo ? "rgba(59,130,246,0.03)" : "rgba(245,158,11,0.04)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13, color: esEntrada ? "#065f46" : esTrasladoTipo ? "#1e3a8a" : "#92400e", marginBottom: 10 }}>🎯 Zona destino</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <SLabel>Zona destino</SLabel>
+                        <select value={form.zona_destino} onChange={(e) => setForm((p) => ({ ...p, zona_destino: e.target.value }))} style={iStyle()}>
+                          <option value="">Seleccionar zona</option>
+                          {zonasPermitidasPorCategoria.map((z) => <option key={z} value={z}>Zona {z}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño destino" : "Formato destino"}</SLabel>
+                        <select value={form.tamano_destino} onChange={(e) => setForm((p) => ({ ...p, tamano_destino: e.target.value }))} style={iStyle()}>
+                          <option value="">Seleccionar</option>
+                          {getFormatoOptions(formatoConfig).map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && (
+                        <div style={{ gridColumn: "span 2" }}>
+                          <SLabel>Fecha disponibilidad (opcional, solo M35)</SLabel>
+                          <input type="date" value={form.fecha_disponibilidad || ""} onChange={(e) => setForm((p) => ({ ...p, fecha_disponibilidad: e.target.value }))} style={iStyle()} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Resumen */}
+                <div style={{ padding: 18, borderRadius: 16, background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", color: "#fff" }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, marginBottom: 12, color: "rgba(255,255,255,0.60)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Resumen del movimiento</div>
+                  <div style={{ display: "grid", gap: 8 }}>
                     {[
                       { label: "Tipo", value: <span style={tipoTextStyle(tipoPreview)}>{getTipoDisplayLabel(tipoPreview)}</span> },
                       { label: "Producto", value: selectedProducto ? getProductDisplayName(selectedProducto) : "—" },
-                      { label: "Cantidad", value: form.cantidad || "—" },
-                      { label: "Origen", value: form.origen_tipo === "Vivero" ? `Vivero · Zona ${form.zona_origen || "—"} · ${form.tamano_origen || "—"}` : form.origen_tipo || "—" },
+                      form.cantidad ? { label: "Cantidad", value: `${form.cantidad} ${formatoConfig.unit || ""}`.trim() } : null,
+                      { label: "Origen", value: form.origen_tipo === "Vivero" ? (distribucionActiva ? `Vivero · ${Object.keys(distribucion).filter(z => Number(distribucion[z]) > 0).map(z => `${getZonaLabel(z)}: ${distribucion[z]}`).join(", ") || "—"}` : `Vivero · Zona ${form.zona_origen || "—"} · ${form.tamano_origen || "—"}`) : form.origen_tipo || "—" },
                       { label: "Destino", value: form.destino_tipo === "Vivero" ? `Vivero · Zona ${form.zona_destino || "—"} · ${form.tamano_destino || "—"}` : isExternalDestination(form.destino_tipo) ? [form.destino_tipo, form.distrito_destino, form.barrio_destino, form.direccion_destino].filter(Boolean).join(" · ") : form.destino_tipo || "—" },
                       form.pedido_id ? { label: "Pedido", value: `#${form.pedido_id}` } : null,
-                      form.observaciones ? { label: "Observaciones", value: form.observaciones } : null,
+                      batchPayloads.length > 0 ? { label: "En lote", value: `${batchPayloads.length} líneas adicionales` } : null,
                     ].filter(Boolean).map(({ label, value }) => (
                       <div key={label} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(255,255,255,0.50)", textTransform: "uppercase", letterSpacing: "0.06em", minWidth: 100, paddingTop: 2 }}>{label}</div>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(255,255,255,0.50)", textTransform: "uppercase", letterSpacing: "0.06em", minWidth: 90, paddingTop: 1 }}>{label}</div>
                         <div style={{ fontWeight: 800, color: "#fff", flex: 1 }}>{value}</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
+                {/* Préstamo checkbox para salida externa */}
                 {esSalida && isExternalDestination(form.destino_tipo) && (
-                  <label style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 12, padding: "14px 18px", borderRadius: 16, border: form.prestamo ? "2px solid #3b82f6" : "1px solid rgba(59,130,246,0.20)", background: form.prestamo ? "rgba(59,130,246,0.08)" : "#f8fafc", cursor: "pointer", userSelect: "none" }}>
-                    <input type="checkbox" checked={!!form.prestamo} onChange={(e) => setForm((p) => ({ ...p, prestamo: e.target.checked }))} style={{ width: 18, height: 18, margin: 0, flexShrink: 0, cursor: "pointer", accentColor: "#1d4ed8" }} />
+                  <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 14, border: form.prestamo ? "2px solid #3b82f6" : "1px solid rgba(59,130,246,0.20)", background: form.prestamo ? "rgba(59,130,246,0.08)" : "#f8fafc", cursor: "pointer", userSelect: "none" }}>
+                    <input type="checkbox" checked={!!form.prestamo} onChange={(e) => setForm((p) => ({ ...p, prestamo: e.target.checked }))} style={{ width: 16, height: 16, margin: 0, flexShrink: 0, cursor: "pointer", accentColor: "#1d4ed8" }} />
                     <div>
-                      <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 15 }}>Marcar como préstamo</div>
-                      <div style={{ marginTop: 2, color: "#475569", fontWeight: 700, fontSize: 13 }}>El material saldrá temporalmente y se esperará su devolución.</div>
+                      <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 14 }}>Marcar como préstamo</div>
+                      <div style={{ marginTop: 2, color: "#475569", fontWeight: 700, fontSize: 12 }}>El material saldrá temporalmente y se esperará su devolución.</div>
                     </div>
                   </label>
                 )}
 
                 {esDevolucion && (
-                  <div style={{ padding: "12px 18px", borderRadius: 16, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", fontWeight: 800, color: "#92400e" }}>
+                  <div style={{ padding: "10px 16px", borderRadius: 14, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", fontWeight: 800, color: "#92400e", fontSize: 13 }}>
                     ↩️ Este movimiento se registrará como <strong>devolución</strong>.
                   </div>
                 )}
 
+                {/* Errors */}
                 {errors.length > 0 && (
-                  <div style={{ padding: 14, borderRadius: 14, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "#991b1b", fontWeight: 800 }}>
+                  <div style={{ padding: 12, borderRadius: 12, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>
                     {errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
                   </div>
                 )}
@@ -1259,32 +1659,55 @@ function MovimientoModal({
           </div>
 
           {/* Footer */}
-          <div style={{ padding: "16px 24px", borderTop: "1px solid rgba(15,23,42,0.08)", background: "#f8fafc", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
-            <button onClick={() => { if (step === 1) { onClose(); } else { setStep((s) => s - 1); setErrors([]); } }} style={{ padding: "10px 20px", borderRadius: 12, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>
+          <div style={{ padding: "14px 22px", borderTop: "1px solid rgba(15,23,42,0.08)", background: "#f8fafc", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+            <button onClick={() => { if (step === 1) { onClose(); } else { setStep((s) => s - 1); setErrors([]); } }} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>
               {step === 1 ? "Cancelar" : "← Atrás"}
             </button>
-            {step < 3 && (
-              <button onClick={() => { if (step === 1 && !step1Valid) { setErrors(["Completa los campos requeridos antes de continuar."]); return; } if (step === 2 && !step2Valid) { setErrors(["Completa todos los campos requeridos antes de continuar."]); return; } setErrors([]); setStep((s) => s + 1); }} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: `linear-gradient(90deg, ${accent} 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: "pointer", opacity: (step === 1 && !form.tipo_elegido) ? 0.55 : 1 }}>
-                Siguiente →
-              </button>
-            )}
-            {step === 3 && (
-              <button onClick={submit} disabled={saving} style={{ padding: "12px 28px", borderRadius: 12, border: "none", background: saving ? "#94a3b8" : "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)", color: "#fff", fontWeight: 900, cursor: saving ? "not-allowed" : "pointer", minWidth: 200 }}>
-                {saving ? "Guardando..." : "✓ Confirmar movimiento"}
-              </button>
-            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              {step < 3 && (
+                <button onClick={() => {
+                  if (step === 1 && !step1Valid) { setErrors(["Completa los campos requeridos antes de continuar."]); return; }
+                  if (step === 2 && !form.producto_id) { setErrors(["Selecciona un producto antes de continuar."]); return; }
+                  setErrors([]); setStep((s) => s + 1);
+                }} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${accent} 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: "pointer", opacity: (step === 1 && !form.tipo_elegido) ? 0.55 : 1 }}>
+                  Siguiente →
+                </button>
+              )}
+              {step === 3 && (
+                <button onClick={submit} disabled={saving} style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: saving ? "#94a3b8" : `linear-gradient(90deg, #10b981 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: saving ? "not-allowed" : "pointer", minWidth: 180 }}>
+                  {saving ? "Guardando..." : "✓ Confirmar movimiento"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       <PedidoSelectorModal open={showPedidoModal} pedidos={pedidosAprobados} onClose={() => setShowPedidoModal(false)} onSelect={handleSeleccionPedido} />
+      {showPrestamoModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.45)", backdropFilter: "blur(3px)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setShowPrestamoModal(false)}>
+          <div style={{ width: "min(680px, 95vw)", background: "white", borderRadius: 20, padding: 24, boxShadow: "0 30px 80px rgba(2,6,23,0.35)", maxHeight: "85vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a", marginBottom: 16 }}>Préstamos activos</div>
+            {prestamosActivos.length === 0 ? (
+              <div style={{ color: "#64748b", fontWeight: 700 }}>No hay préstamos activos pendientes de devolución.</div>
+            ) : prestamosActivos.map((m) => (
+              <div key={m.id} style={{ padding: 14, borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", marginBottom: 10, background: "#fbfdff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 900, color: "#0f172a" }}>Préstamo #{m.id} · {fmtFechaES(m.fecha_movimiento)}</div>
+                    <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13, marginTop: 3 }}>Prestado: {m._prestado} · Devuelto: {m._devuelto} · Pendiente: {m._pendiente}</div>
+                    <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginTop: 2 }}>{buildLabelDestino(m)}</div>
+                  </div>
+                  <button onClick={() => handleSeleccionPrestamo(m)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid rgba(245,158,11,0.30)", background: "rgba(245,158,11,0.10)", color: "#92400e", fontWeight: 900, cursor: "pointer" }}>Usar préstamo</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }
-
-
-
-
 
 
 export default function Movimientos() {
