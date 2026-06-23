@@ -1056,19 +1056,29 @@ function MovimientoModal({
   // Clave compuesta zona+tamaño para el reparto de una salida.
   const salidaKey = (zona, tamano) => `${zona}__${tamano}`;
 
-  // Todas las combinaciones (zona, tamaño) con stock del producto seleccionado.
+  // Todas las combinaciones (zona, tamaño) con stock real del producto. Se
+  // recorren las entradas reales del mapa de stock (no una lista fija de
+  // tamaños) para no perder ninguna combinación, sea cual sea el tamaño con el
+  // que esté guardada (M12, M20, M35, etc.).
   const salidaStockRows = useMemo(() => {
     if (!salidaPorZonas || !form.producto_id) return [];
-    const sizes = getFormatoOptions(formatoConfig);
+    const pid = String(form.producto_id);
     const rows = [];
-    for (const z of zonasPermitidasPorCategoria) {
-      for (const t of sizes) {
-        const qty = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0);
-        if (qty > 0) rows.push({ zona: z, tamano: t, disponible: qty });
-      }
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      if (parts.length < 3) continue;
+      const [keyPid, zona, ...rest] = parts;
+      if (keyPid !== pid) continue;
+      rows.push({ zona, tamano: rest.join("__"), disponible: Number(qty) });
     }
+    rows.sort(
+      (a, b) =>
+        String(a.zona).localeCompare(String(b.zona), undefined, { numeric: true }) ||
+        String(a.tamano).localeCompare(String(b.tamano))
+    );
     return rows;
-  }, [salidaPorZonas, form.producto_id, formatoConfig, zonasPermitidasPorCategoria, stockByProductZoneSize]);
+  }, [salidaPorZonas, form.producto_id, stockByProductZoneSize]);
 
   const totalSalida = useMemo(
     () => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0),
@@ -1153,8 +1163,12 @@ function MovimientoModal({
       const elegidas = Object.entries(distribucion).filter(([, q]) => Number(q) > 0);
       if (elegidas.length === 0) filtered.push("Indica al menos una zona con cantidad > 0.");
       for (const [k, q] of elegidas) {
-        const [zona, tamano] = k.split("__");
-        const disp = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, zona, tamano)) || 0);
+        const parts = k.split("__");
+        const zona = parts[0];
+        const tamano = parts.slice(1).join("__");
+        // La clave coincide con la del mapa de stock (zona ya en minúsculas,
+        // tamaño tal cual), por eso no usamos buildStockKey (que normaliza).
+        const disp = Number(stockByProductZoneSize.get(`${form.producto_id}__${zona}__${tamano}`) || 0);
         if (Number(q) > disp) filtered.push(`${getZonaLabel(zona)} · ${tamano}: solicitado ${q} supera el disponible (${disp}).`);
       }
     } else if (form.origen_tipo === "Vivero" && form.zona_origen && form.tamano_origen) {
@@ -1476,7 +1490,7 @@ function MovimientoModal({
                           const excede = Number(val || 0) > disponible;
                           return (
                             <div key={k} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                              <div style={{ fontWeight: 800, fontSize: 13 }}>Zona {zona} · {tamano} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>(disponible: {disponible})</span></div>
+                              <div style={{ fontWeight: 800, fontSize: 13 }}>{getZonaLabel(zona)} · {tamano} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>({disponible} uds disponibles)</span></div>
                               <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={val} onChange={(e) => { const raw = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [k]: raw })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
                               <span style={{ fontSize: 11, fontWeight: 700, color: excede ? "#991b1b" : "#64748b" }}>{excede ? "⚠️ excede" : ""}</span>
                             </div>
