@@ -10,7 +10,7 @@
 // imagen (probe). El resultado se cachea por slug para no repetir peticiones
 // aunque el producto aparezca en muchas filas.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const BASE = "/imagenes/plantas/";
 // Extensiones que se prueban, en orden. Nos quedamos con la primera que cargue.
@@ -71,4 +71,38 @@ export function usePlantImage(nombreCientifico) {
     };
   }, [nombreCientifico]);
   return url;
+}
+
+// Hook: dada una lista de productos, sondea sus imágenes (reutilizando la
+// caché) y devuelve un Set con los ids de los que SÍ tienen imagen. El Set se
+// va rellenando a medida que cada probe resuelve, así el filtro reacciona en
+// cuanto hay resultados sin esperar a sondear todo el catálogo.
+export function usePlantsWithImage(productos) {
+  const lista = Array.isArray(productos) ? productos : [];
+  const sig = useMemo(
+    () => lista.map((p) => `${p.id}:${p.nombre_cientifico || ""}`).join("|"),
+    [lista]
+  );
+  const [ids, setIds] = useState(() => new Set());
+  useEffect(() => {
+    let active = true;
+    setIds(new Set());
+    lista.forEach((p) => {
+      resolvePlantImage(p.nombre_cientifico).then((url) => {
+        if (active && url) {
+          setIds((prev) => {
+            if (prev.has(p.id)) return prev;
+            const next = new Set(prev);
+            next.add(p.id);
+            return next;
+          });
+        }
+      });
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+  return ids;
 }
