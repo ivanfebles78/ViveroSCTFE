@@ -15,6 +15,7 @@ import {
   getProductFormatoConfig,
   getFormatoOptions,
 } from "../utils/formato";
+import VerPlanta from "../components/VerPlanta";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -68,7 +69,10 @@ const ProductoRow = memo(function ProductoRow({
   return (
     <tr style={low ? { color: "crimson", fontWeight: 800 } : undefined}>
       <td>
-        <div style={{ fontWeight: 900 }}>{productScientificName(p)}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 900 }}>{productScientificName(p)}</span>
+          <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="icon" stopPropagation={false} />
+        </div>
       </td>
       <td>
         <div style={{ color: "#475569", fontWeight: 700 }}>{productCommonName(p)}</div>

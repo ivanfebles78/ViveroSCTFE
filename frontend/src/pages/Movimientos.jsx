@@ -18,6 +18,7 @@ import {
   getZonaDisplayName,
   getZonaLabel,
 } from "../utils/zonas";
+import VerPlanta from "../components/VerPlanta";
 
 // Zonas especiales (no numéricas) — dedicadas a categorías concretas.
 // El almacén general original se ha subdividido en tres almacenes
@@ -1394,9 +1395,12 @@ function MovimientoModal({
                     ) : filteredProductos.map((p) => {
                       const active = String(p.id) === String(form.producto_id);
                       return (
-                        <div key={p.id} onClick={() => { setForm((prev) => ({ ...prev, producto_id: String(p.id), zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: "" })); setDistribucion({}); }} style={{ padding: "10px 14px", borderBottom: "1px solid rgba(15,23,42,0.06)", cursor: "pointer", background: active ? `${accent}12` : "transparent", borderLeft: active ? `3px solid ${accent}` : "3px solid transparent", fontWeight: active ? 900 : 700, color: active ? "#0f172a" : "#334155", fontSize: 13, transition: "all 0.12s" }}>
-                          <div>{getProductDisplayName(p)}</div>
-                          {p.categoria && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{p.categoria}{p.subcategoria ? ` · ${p.subcategoria}` : ""}</div>}
+                        <div key={p.id} onClick={() => { setForm((prev) => ({ ...prev, producto_id: String(p.id), zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: "" })); setDistribucion({}); }} style={{ padding: "10px 14px", borderBottom: "1px solid rgba(15,23,42,0.06)", cursor: "pointer", background: active ? `${accent}12` : "transparent", borderLeft: active ? `3px solid ${accent}` : "3px solid transparent", fontWeight: active ? 900 : 700, color: active ? "#0f172a" : "#334155", fontSize: 13, transition: "all 0.12s", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                          <div>
+                            <div>{getProductDisplayName(p)}</div>
+                            {p.categoria && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{p.categoria}{p.subcategoria ? ` · ${p.subcategoria}` : ""}</div>}
+                          </div>
+                          <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="button" stopPropagation={true} />
                         </div>
                       );
                     })}
