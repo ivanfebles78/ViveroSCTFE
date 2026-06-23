@@ -69,9 +69,10 @@ const ProductoRow = memo(function ProductoRow({
   return (
     <tr style={low ? { color: "crimson", fontWeight: 800 } : undefined}>
       <td>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 900 }}>{productScientificName(p)}</span>
-          <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="icon" stopPropagation={false} />
+        <div style={{ fontWeight: 900 }}>
+          <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="link" stopPropagation={false}>
+            {productScientificName(p)}
+          </VerPlanta>
         </div>
       </td>
       <td>
