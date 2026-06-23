@@ -1318,9 +1318,13 @@ function MovimientoModal({
     (esEntrada ? !!form.origen_tipo && !entradaOtrosSinEspecificar : true) &&
     (esDevolucionTipo ? !!form.origen_tipo : true);
 
+  // ¿Alguna fila de la salida supera el stock disponible de su zona/tamaño?
+  const hayExcesoSalida = salidaPorZonas &&
+    Object.entries(distribucion).some(([k, q]) => Number(q) > Number(salidaDispByKey[k] || 0));
+
   const step2Valid = !!form.producto_id && (
     salidaPorZonas
-      ? totalSalida > 0
+      ? totalSalida > 0 && !hayExcesoSalida
       : (formatoConfig.showCantidad ? Number(form.cantidad) > 0 : true) && (formatoFijo || !!form[formatoField])
   );
 
@@ -1552,8 +1556,8 @@ function MovimientoModal({
                                 return (
                                   <div key={k} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
                                     <div style={{ fontWeight: 800, fontSize: 13 }}>{tamano} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>({disponible} uds disponibles)</span></div>
-                                    <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={val} onChange={(e) => { const raw = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [k]: raw })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: excede ? "#991b1b" : "#64748b" }}>{excede ? "⚠️ excede" : ""}</span>
+                                    <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={val} onChange={(e) => { let raw = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); if (raw !== "" && Number(raw) > disponible) raw = String(disponible); setDistribucion((prev) => ({ ...prev, [k]: raw })); }} style={{ ...iStyle(), width: 90, ...(excede ? { borderColor: "#ef4444", background: "#fef2f2" } : {}) }} placeholder="0" />
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: excede ? "#991b1b" : "#64748b" }}>{excede ? `máx. ${disponible}` : ""}</span>
                                   </div>
                                 );
                               })}
@@ -1771,6 +1775,7 @@ function MovimientoModal({
                   if (step === 1 && !step1Valid) { setErrors([entradaOtrosSinEspecificar ? "Especifica la procedencia del material." : "Completa los campos requeridos antes de continuar."]); return; }
                   if (step === 2 && !form.producto_id) { setErrors(["Selecciona un producto antes de continuar."]); return; }
                   if (step === 2 && salidaPorZonas && !(totalSalida > 0)) { setErrors(["Indica cuántas unidades sacar de al menos una zona."]); return; }
+                  if (step === 2 && salidaPorZonas && hayExcesoSalida) { setErrors(["Hay zonas donde pides más de lo disponible. Corrige las cantidades en rojo."]); return; }
                   if (step === 2 && !salidaPorZonas && formatoConfig.showCantidad !== false && (!form.cantidad || Number(form.cantidad) <= 0)) { setErrors(["La cantidad debe ser mayor que 0."]); return; }
                   if (step === 2 && !salidaPorZonas && !formatoFijo && !form[formatoField]) { setErrors([`Selecciona el ${formatoConfig.kind === "tamano" ? "tamaño" : "formato"} antes de continuar.`]); return; }
                   setErrors([]); setStep((s) => s + 1);
