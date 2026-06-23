@@ -1048,24 +1048,34 @@ function MovimientoModal({
   }, [form.origen_tipo, form.tamano_origen, availableOriginSizes]);
 
   const esDevolucion = useMemo(() => form.tipo_elegido === "devolucion", [form.tipo_elegido]);
-  // El "reparto por zonas" queda desactivado: la cantidad se elige en el paso 2
-  // y en el paso 3 solo se indica de qué zona sale (sin volver a pedir unidades).
-  const distribucionActiva = false;
+  // Para las SALIDAS, el paso 2 muestra todas las zonas (con su tamaño) que
+  // tienen stock del producto y se indica cuánto sacar de cada una.
+  // ¿Estamos eligiendo unidades por zona+tamaño (salida desde el vivero)?
+  const salidaPorZonas = form.tipo_elegido === "salida" && form.origen_tipo === "Vivero";
 
-  const distribucionDisponible = useMemo(() => {
-    if (!distribucionActiva) return {};
-    const out = {};
+  // Clave compuesta zona+tamaño para el reparto de una salida.
+  const salidaKey = (zona, tamano) => `${zona}__${tamano}`;
+
+  // Todas las combinaciones (zona, tamaño) con stock del producto seleccionado.
+  const salidaStockRows = useMemo(() => {
+    if (!salidaPorZonas || !form.producto_id) return [];
+    const sizes = getFormatoOptions(formatoConfig);
+    const rows = [];
     for (const z of zonasPermitidasPorCategoria) {
-      const key = buildStockKey(form.producto_id, z, form.tamano_origen);
-      const qty = Number(stockByProductZoneSize.get(key) || 0);
-      if (qty > 0) out[z] = qty;
+      for (const t of sizes) {
+        const qty = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0);
+        if (qty > 0) rows.push({ zona: z, tamano: t, disponible: qty });
+      }
     }
-    return out;
-  }, [distribucionActiva, form.producto_id, form.tamano_origen, stockByProductZoneSize, zonasPermitidasPorCategoria]);
+    return rows;
+  }, [salidaPorZonas, form.producto_id, formatoConfig, zonasPermitidasPorCategoria, stockByProductZoneSize]);
 
-  const totalDistribucion = useMemo(() => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0), [distribucion]);
+  const totalSalida = useMemo(
+    () => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0),
+    [distribucion]
+  );
 
-  useEffect(() => { setDistribucion({}); }, [form.producto_id, form.tamano_origen, form.origen_tipo]);
+  useEffect(() => { setDistribucion({}); }, [form.producto_id, form.origen_tipo]);
 
   // En un traslado interno el formato se elige una vez (paso 2, sobre el
   // origen) y por defecto el destino conserva el mismo tamaño. El usuario aún
@@ -1133,13 +1143,19 @@ function MovimientoModal({
   const buildCurrentPayloads = () => {
     const foundErrors = getFormErrors(form, formatoConfig);
     let filtered = [...foundErrors];
-    if (distribucionActiva) {
-      filtered = filtered.filter((e) => !e.toLowerCase().includes("zona de origen") && !e.toLowerCase().includes("cantidad debe ser mayor"));
-      const zonasElegidas = Object.entries(distribucion).filter(([, q]) => Number(q) > 0);
-      if (zonasElegidas.length === 0) filtered.push("Indica al menos una zona con cantidad > 0 en la distribución.");
-      for (const [z, q] of zonasElegidas) {
-        const disp = Number(distribucionDisponible[z] || 0);
-        if (Number(q) > disp) filtered.push(`${getZonaLabel(z)}: solicitado ${q} supera el disponible (${disp}).`);
+    if (salidaPorZonas) {
+      // La cantidad y la zona/tamaño se eligen por fila en el paso 2; ignoramos
+      // los errores de los campos únicos zona/tamaño/cantidad.
+      filtered = filtered.filter((e) => {
+        const l = e.toLowerCase();
+        return !l.includes("zona de origen") && !l.includes("tamaño de origen") && !l.includes("tamano de origen") && !l.includes("cantidad debe ser mayor");
+      });
+      const elegidas = Object.entries(distribucion).filter(([, q]) => Number(q) > 0);
+      if (elegidas.length === 0) filtered.push("Indica al menos una zona con cantidad > 0.");
+      for (const [k, q] of elegidas) {
+        const [zona, tamano] = k.split("__");
+        const disp = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, zona, tamano)) || 0);
+        if (Number(q) > disp) filtered.push(`${getZonaLabel(zona)} · ${tamano}: solicitado ${q} supera el disponible (${disp}).`);
       }
     } else if (form.origen_tipo === "Vivero" && form.zona_origen && form.tamano_origen) {
       // Salida/traslado desde una sola zona: la cantidad (paso 2) no puede
@@ -1179,8 +1195,14 @@ function MovimientoModal({
     // enteras; kg/litros/m³/metros admiten decimales.
     const normCantidad = (n) => (formatoConfig.allowDecimals ? Number(n) : Math.round(Number(n)));
     let payloads;
-    if (distribucionActiva) {
-      payloads = Object.entries(distribucion).filter(([, q]) => Number(q) > 0).map(([zona, q]) => ({ ...basePayload, zona_origen: zona, cantidad: normCantidad(q) }));
+    if (salidaPorZonas) {
+      // Una línea por cada (zona, tamaño) con cantidad > 0.
+      payloads = Object.entries(distribucion)
+        .filter(([, q]) => Number(q) > 0)
+        .map(([k, q]) => {
+          const [zona, tamano] = k.split("__");
+          return { ...basePayload, zona_origen: zona, tamano_origen: tamano, cantidad: normCantidad(q) };
+        });
     } else {
       const cantidadFinal = formatoConfig.showCantidad ? normCantidad(parseFloat(form.cantidad)) : 1;
       payloads = [{ ...basePayload, zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null, cantidad: cantidadFinal }];
@@ -1190,7 +1212,7 @@ function MovimientoModal({
 
   const formTieneLineaActual = () => {
     if (!form.producto_id) return false;
-    if (distribucionActiva) return Object.values(distribucion).some((q) => Number(q) > 0);
+    if (salidaPorZonas) return Object.values(distribucion).some((q) => Number(q) > 0);
     return Number(form.cantidad) > 0;
   };
 
@@ -1245,17 +1267,16 @@ function MovimientoModal({
     (esEntrada ? !!form.origen_tipo && !entradaOtrosSinEspecificar : true) &&
     (esDevolucionTipo ? !!form.origen_tipo : true);
 
-  const step2Valid = !!form.producto_id &&
-    (formatoConfig.showCantidad ? Number(form.cantidad) > 0 : true) &&
-    (formatoFijo || !!form[formatoField]);
+  const step2Valid = !!form.producto_id && (
+    salidaPorZonas
+      ? totalSalida > 0
+      : (formatoConfig.showCantidad ? Number(form.cantidad) > 0 : true) && (formatoFijo || !!form[formatoField])
+  );
 
   const step3Valid = (() => {
-    if (form.origen_tipo === "Vivero") {
-      if (distribucionActiva) {
-        if (Object.values(distribucion).filter(q => Number(q) > 0).length === 0) return false;
-      } else {
-        if (!form.zona_origen || !form.tamano_origen) return false;
-      }
+    // En las salidas el origen (zonas + cantidades) ya se definió en el paso 2.
+    if (form.origen_tipo === "Vivero" && !salidaPorZonas) {
+      if (!form.zona_origen || !form.tamano_origen) return false;
     }
     if (form.destino_tipo === "Vivero") {
       if (!form.zona_destino || !form.tamano_destino) return false;
@@ -1440,8 +1461,39 @@ function MovimientoModal({
                   </div>
                 )}
 
+                {/* Salida: zonas con stock + cuánto sacar de cada una (con su tamaño) */}
+                {selectedProducto && salidaPorZonas && (
+                  <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 4 }}>📍 ¿De qué zonas sale y cuánto?</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 10 }}>Indica las unidades a sacar de cada zona (con su tamaño):</div>
+                    {salidaStockRows.length === 0 ? (
+                      <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 13 }}>Este producto no tiene stock en ninguna zona.</div>
+                    ) : (
+                      <>
+                        {salidaStockRows.map(({ zona, tamano, disponible }) => {
+                          const k = salidaKey(zona, tamano);
+                          const val = distribucion[k] || "";
+                          const excede = Number(val || 0) > disponible;
+                          return (
+                            <div key={k} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                              <div style={{ fontWeight: 800, fontSize: 13 }}>Zona {zona} · {tamano} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>(disponible: {disponible})</span></div>
+                              <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={val} onChange={(e) => { const raw = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [k]: raw })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
+                              <span style={{ fontSize: 11, fontWeight: 700, color: excede ? "#991b1b" : "#64748b" }}>{excede ? "⚠️ excede" : ""}</span>
+                            </div>
+                          );
+                        })}
+                        {totalSalida > 0 && <div style={{ marginTop: 8, fontWeight: 900, color: "#065f46", fontSize: 13 }}>Total a sacar: {totalSalida}</div>}
+                        <div style={{ marginTop: 10 }}>
+                          <SLabel>Observaciones (opcional)</SLabel>
+                          <input value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={iStyle()} placeholder="Información adicional..." />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Cantidad + formato (en la misma pantalla) */}
-                {selectedProducto && formatoConfig.showCantidad !== false && (
+                {selectedProducto && !salidaPorZonas && formatoConfig.showCantidad !== false && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                     <div>
                       <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}</SLabel>
@@ -1468,7 +1520,7 @@ function MovimientoModal({
                     </div>
                   </div>
                 )}
-                {selectedProducto && formatoConfig.showCantidad === false && (
+                {selectedProducto && !salidaPorZonas && formatoConfig.showCantidad === false && (
                   <div>
                     <SLabel>Observaciones — indica cantidad y envase (obligatorio para fito/fert)</SLabel>
                     <textarea value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={{ ...iStyle(), minHeight: 70, resize: "vertical" }} placeholder="Ej: 2,5 litros de glifosato 360 en envase de 5L..." />
@@ -1500,44 +1552,28 @@ function MovimientoModal({
             {/* STEP 3 — Zonas + Confirmar */}
             {step === 3 && (
               <div style={{ display: "grid", gap: 16 }}>
-                {/* Origen zona (para salida y traslado) */}
-                {(esSalida || esTrasladoTipo) && (
-                  <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${esSalida ? "rgba(239,68,68,0.15)" : "rgba(59,130,246,0.15)"}`, background: esSalida ? "rgba(239,68,68,0.03)" : "rgba(59,130,246,0.03)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 13, color: esSalida ? "#991b1b" : "#1e3a8a", marginBottom: 10 }}>📍 Zona origen</div>
-                    {distribucionActiva ? (
+                {/* Origen zona (solo traslado interno; en salidas se define en el paso 2) */}
+                {esTrasladoTipo && (
+                  <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(59,130,246,0.15)", background: "rgba(59,130,246,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13, color: "#1e3a8a", marginBottom: 10 }}>📍 Zona origen</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>Indica cuántas unidades salen de cada zona:</div>
-                        {Object.keys(distribucionDisponible).length === 0 ? (
-                          <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 13 }}>No hay stock en ninguna zona para este producto y tamaño.</div>
-                        ) : Object.entries(distribucionDisponible).map(([zona, disponible]) => (
-                          <div key={zona} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                            <div style={{ fontWeight: 800, fontSize: 13 }}>{getZonaLabel(zona)} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>(disponible: {disponible})</span></div>
-                            <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={distribucion[zona] || ""} onChange={(e) => { const v = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [zona]: v })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
-                            <span style={{ fontSize: 11, fontWeight: 700, color: Number(distribucion[zona] || 0) > disponible ? "#991b1b" : "#64748b" }}>{Number(distribucion[zona] || 0) > disponible ? "⚠️ excede" : ""}</span>
-                          </div>
-                        ))}
-                        {totalDistribucion > 0 && <div style={{ marginTop: 8, fontWeight: 900, color: "#065f46", fontSize: 13 }}>Total: {totalDistribucion}</div>}
+                        <SLabel>Zona origen</SLabel>
+                        <select value={form.zona_origen} onChange={(e) => setForm((p) => ({ ...p, zona_origen: e.target.value }))} style={iStyle()} disabled={!form.producto_id || availableOriginZones.length === 0}>
+                          <option value="">{!form.producto_id ? "Primero elige producto" : availableOriginZones.length === 0 ? "Sin stock para este producto" : "Seleccionar zona"}</option>
+                          {availableOriginZones.map((z) => {
+                            const qty = form.tamano_origen
+                              ? Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, form.tamano_origen)) || 0)
+                              : getFormatoOptions(formatoConfig).reduce((s, t) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0);
+                            return <option key={z} value={z}>Zona {z}{form.producto_id ? ` (${qty} uds)` : ""}</option>;
+                          })}
+                        </select>
                       </div>
-                    ) : (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div>
-                          <SLabel>Zona origen</SLabel>
-                          <select value={form.zona_origen} onChange={(e) => setForm((p) => ({ ...p, zona_origen: e.target.value }))} style={iStyle()} disabled={!form.producto_id || availableOriginZones.length === 0}>
-                            <option value="">{!form.producto_id ? "Primero elige producto" : availableOriginZones.length === 0 ? "Sin stock para este producto" : "Seleccionar zona"}</option>
-                            {availableOriginZones.map((z) => {
-                              const qty = form.tamano_origen
-                                ? Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, form.tamano_origen)) || 0)
-                                : getFormatoOptions(formatoConfig).reduce((s, t) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0);
-                              return <option key={z} value={z}>Zona {z}{form.producto_id ? ` (${qty} uds)` : ""}</option>;
-                            })}
-                          </select>
-                        </div>
-                        <div>
-                          <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño" : "Formato"}</SLabel>
-                          <div style={{ ...iStyle(), background: "#f1f5f9", color: "#475569" }}>{form.tamano_origen || "—"}</div>
-                        </div>
+                      <div>
+                        <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño" : "Formato"}</SLabel>
+                        <div style={{ ...iStyle(), background: "#f1f5f9", color: "#475569" }}>{form.tamano_origen || "—"}</div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
@@ -1608,8 +1644,12 @@ function MovimientoModal({
                     {[
                       { label: "Tipo", value: <span style={tipoTextStyle(tipoPreview)}>{getTipoDisplayLabel(tipoPreview)}</span> },
                       { label: "Producto", value: selectedProducto ? getProductDisplayName(selectedProducto) : "—" },
-                      form.cantidad ? { label: "Cantidad", value: `${form.cantidad} ${formatoConfig.kind === "tamano" ? "uds" : formatoConfig.kind === "formato_fijo" ? formatoConfig.value : formatoConfig.unit || ""}`.trim() } : null,
-                      { label: "Origen", value: form.origen_tipo === "Vivero" ? (distribucionActiva ? `Vivero · ${Object.keys(distribucion).filter(z => Number(distribucion[z]) > 0).map(z => `${getZonaLabel(z)}: ${distribucion[z]}`).join(", ") || "—"}` : `Vivero · Zona ${form.zona_origen || "—"} · ${form.tamano_origen || "—"}`) : form.origen_tipo || "—" },
+                      salidaPorZonas
+                        ? (totalSalida > 0 ? { label: "Cantidad", value: `${totalSalida} uds (total)` } : null)
+                        : (form.cantidad ? { label: "Cantidad", value: `${form.cantidad} ${formatoConfig.kind === "tamano" ? "uds" : formatoConfig.kind === "formato_fijo" ? formatoConfig.value : formatoConfig.unit || ""}`.trim() } : null),
+                      { label: "Origen", value: salidaPorZonas
+                          ? `Vivero · ${Object.entries(distribucion).filter(([, q]) => Number(q) > 0).map(([k, q]) => { const [z, t] = k.split("__"); return `Zona ${z}·${t}: ${q}`; }).join(", ") || "—"}`
+                          : form.origen_tipo === "Vivero" ? `Vivero · Zona ${form.zona_origen || "—"} · ${form.tamano_origen || "—"}` : form.origen_tipo || "—" },
                       { label: "Destino", value: form.destino_tipo === "Vivero" ? `Vivero · Zona ${form.zona_destino || "—"} · ${form.tamano_destino || "—"}` : isExternalDestination(form.destino_tipo) ? [form.destino_tipo, form.distrito_destino, form.barrio_destino, form.direccion_destino].filter(Boolean).join(" · ") : form.destino_tipo || "—" },
                       form.pedido_id ? { label: "Pedido", value: `#${form.pedido_id}` } : null,
                       batchPayloads.length > 0 ? { label: "En lote", value: `${batchPayloads.length} líneas adicionales` } : null,
@@ -1659,8 +1699,9 @@ function MovimientoModal({
                 <button onClick={() => {
                   if (step === 1 && !step1Valid) { setErrors([entradaOtrosSinEspecificar ? "Especifica la procedencia del material." : "Completa los campos requeridos antes de continuar."]); return; }
                   if (step === 2 && !form.producto_id) { setErrors(["Selecciona un producto antes de continuar."]); return; }
-                  if (step === 2 && formatoConfig.showCantidad !== false && (!form.cantidad || Number(form.cantidad) <= 0)) { setErrors(["La cantidad debe ser mayor que 0."]); return; }
-                  if (step === 2 && !formatoFijo && !form[formatoField]) { setErrors([`Selecciona el ${formatoConfig.kind === "tamano" ? "tamaño" : "formato"} antes de continuar.`]); return; }
+                  if (step === 2 && salidaPorZonas && !(totalSalida > 0)) { setErrors(["Indica cuántas unidades sacar de al menos una zona."]); return; }
+                  if (step === 2 && !salidaPorZonas && formatoConfig.showCantidad !== false && (!form.cantidad || Number(form.cantidad) <= 0)) { setErrors(["La cantidad debe ser mayor que 0."]); return; }
+                  if (step === 2 && !salidaPorZonas && !formatoFijo && !form[formatoField]) { setErrors([`Selecciona el ${formatoConfig.kind === "tamano" ? "tamaño" : "formato"} antes de continuar.`]); return; }
                   setErrors([]); setStep((s) => s + 1);
                 }} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${accent} 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: "pointer", opacity: (step === 1 && !form.tipo_elegido) ? 0.55 : 1 }}>
                   Siguiente →
