@@ -833,6 +833,8 @@ function MovimientoModal({
   const [selectedPedidoLineKey, setSelectedPedidoLineKey] = useState("");
   const [showPrestamoModal, setShowPrestamoModal] = useState(false);
   const [distribucion, setDistribucion] = useState({});
+  // Zonas que el usuario ha añadido al reparto de una salida (vía desplegable).
+  const [zonasSalida, setZonasSalida] = useState([]);
   const [batchPayloads, setBatchPayloads] = useState([]);
   const [productoSearch, setProductoSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -1060,6 +1062,15 @@ function MovimientoModal({
   // recorren las entradas reales del mapa de stock (no una lista fija de
   // tamaños) para no perder ninguna combinación, sea cual sea el tamaño con el
   // que esté guardada (M12, M20, M35, etc.).
+  // El mapa de stock guarda la zona en minúsculas; para enviar al backend la
+  // zona con su grafía real (coincide exactamente con InventarioLote) la
+  // resolvemos contra la lista de zonas reales.
+  const zonaIdByLower = useMemo(() => {
+    const m = new Map();
+    for (const z of ZONAS) m.set(String(z).toLowerCase(), z);
+    return m;
+  }, [ZONAS]);
+
   const salidaStockRows = useMemo(() => {
     if (!salidaPorZonas || !form.producto_id) return [];
     const pid = String(form.producto_id);
@@ -1068,8 +1079,9 @@ function MovimientoModal({
       if (Number(qty) <= 0) continue;
       const parts = key.split("__");
       if (parts.length < 3) continue;
-      const [keyPid, zona, ...rest] = parts;
+      const [keyPid, zonaLower, ...rest] = parts;
       if (keyPid !== pid) continue;
+      const zona = zonaIdByLower.get(zonaLower) || zonaLower;
       rows.push({ zona, tamano: rest.join("__"), disponible: Number(qty) });
     }
     rows.sort(
@@ -1078,14 +1090,41 @@ function MovimientoModal({
         String(a.tamano).localeCompare(String(b.tamano))
     );
     return rows;
-  }, [salidaPorZonas, form.producto_id, stockByProductZoneSize]);
+  }, [salidaPorZonas, form.producto_id, stockByProductZoneSize, zonaIdByLower]);
+
+  // Disponible por clave zona__tamaño, para validar sin re-derivar de claves
+  // en minúsculas.
+  const salidaDispByKey = useMemo(() => {
+    const m = {};
+    for (const r of salidaStockRows) m[`${r.zona}__${r.tamano}`] = r.disponible;
+    return m;
+  }, [salidaStockRows]);
 
   const totalSalida = useMemo(
     () => Object.values(distribucion).reduce((a, b) => a + Number(b || 0), 0),
     [distribucion]
   );
 
-  useEffect(() => { setDistribucion({}); }, [form.producto_id, form.origen_tipo]);
+  // Stock de la salida agrupado por zona → [{ tamaño, disponible }].
+  const salidaStockByZona = useMemo(() => {
+    const m = new Map();
+    for (const r of salidaStockRows) {
+      if (!m.has(r.zona)) m.set(r.zona, []);
+      m.get(r.zona).push({ tamano: r.tamano, disponible: r.disponible });
+    }
+    return m;
+  }, [salidaStockRows]);
+
+  const zonasConStock = useMemo(() => Array.from(salidaStockByZona.keys()), [salidaStockByZona]);
+
+  useEffect(() => { setDistribucion({}); setZonasSalida([]); }, [form.producto_id, form.origen_tipo]);
+
+  // Si solo hay una zona con stock, la añadimos automáticamente.
+  useEffect(() => {
+    if (salidaPorZonas && zonasConStock.length === 1 && zonasSalida.length === 0) {
+      setZonasSalida([zonasConStock[0]]);
+    }
+  }, [salidaPorZonas, zonasConStock, zonasSalida.length]);
 
   // En un traslado interno el formato se elige una vez (paso 2, sobre el
   // origen) y por defecto el destino conserva el mismo tamaño. El usuario aún
@@ -1166,9 +1205,7 @@ function MovimientoModal({
         const parts = k.split("__");
         const zona = parts[0];
         const tamano = parts.slice(1).join("__");
-        // La clave coincide con la del mapa de stock (zona ya en minúsculas,
-        // tamaño tal cual), por eso no usamos buildStockKey (que normaliza).
-        const disp = Number(stockByProductZoneSize.get(`${form.producto_id}__${zona}__${tamano}`) || 0);
+        const disp = Number(salidaDispByKey[k] || 0);
         if (Number(q) > disp) filtered.push(`${getZonaLabel(zona)} · ${tamano}: solicitado ${q} supera el disponible (${disp}).`);
       }
     } else if (form.origen_tipo === "Vivero" && form.zona_origen && form.tamano_origen) {
@@ -1475,32 +1512,56 @@ function MovimientoModal({
                   </div>
                 )}
 
-                {/* Salida: zonas con stock + cuánto sacar de cada una (con su tamaño) */}
+                {/* Salida: se añaden zonas con un desplegable y se indican las
+                    unidades por tamaño de cada zona. */}
                 {selectedProducto && salidaPorZonas && (
                   <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 4 }}>📍 ¿De qué zonas sale y cuánto?</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 10 }}>Indica las unidades a sacar de cada zona (con su tamaño):</div>
-                    {salidaStockRows.length === 0 ? (
+                    <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 10 }}>📍 ¿De qué zonas sale y cuánto?</div>
+                    {zonasConStock.length === 0 ? (
                       <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 13 }}>Este producto no tiene stock en ninguna zona.</div>
                     ) : (
                       <>
-                        {salidaStockRows.map(({ zona, tamano, disponible }) => {
-                          const k = salidaKey(zona, tamano);
-                          const val = distribucion[k] || "";
-                          const excede = Number(val || 0) > disponible;
+                        <div>
+                          <SLabel>Añadir zona</SLabel>
+                          <select
+                            value=""
+                            onChange={(e) => { const z = e.target.value; if (z && !zonasSalida.includes(z)) setZonasSalida((prev) => [...prev, z]); }}
+                            style={iStyle()}
+                            disabled={zonasConStock.every((z) => zonasSalida.includes(z))}
+                          >
+                            <option value="">{zonasConStock.every((z) => zonasSalida.includes(z)) ? "Todas las zonas añadidas" : "+ Selecciona una zona…"}</option>
+                            {zonasConStock.filter((z) => !zonasSalida.includes(z)).map((z) => {
+                              const total = (salidaStockByZona.get(z) || []).reduce((s, r) => s + r.disponible, 0);
+                              return <option key={z} value={z}>{getZonaLabel(z)} ({total} uds)</option>;
+                            })}
+                          </select>
+                        </div>
+
+                        {zonasSalida.map((z) => {
+                          const filas = salidaStockByZona.get(z) || [];
                           return (
-                            <div key={k} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                              <div style={{ fontWeight: 800, fontSize: 13 }}>{getZonaLabel(zona)} · {tamano} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>({disponible} uds disponibles)</span></div>
-                              <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={val} onChange={(e) => { const raw = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [k]: raw })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
-                              <span style={{ fontSize: 11, fontWeight: 700, color: excede ? "#991b1b" : "#64748b" }}>{excede ? "⚠️ excede" : ""}</span>
+                            <div key={z} style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid rgba(15,23,42,0.10)", background: "#fff" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a" }}>{getZonaLabel(z)}</div>
+                                <button type="button" onClick={() => { setZonasSalida((prev) => prev.filter((x) => x !== z)); setDistribucion((prev) => { const next = { ...prev }; for (const r of filas) delete next[salidaKey(z, r.tamano)]; return next; }); }} style={{ background: "transparent", border: "none", color: "#991b1b", cursor: "pointer", fontWeight: 900, fontSize: 13 }}>Quitar</button>
+                              </div>
+                              {filas.map(({ tamano, disponible }) => {
+                                const k = salidaKey(z, tamano);
+                                const val = distribucion[k] || "";
+                                const excede = Number(val || 0) > disponible;
+                                return (
+                                  <div key={k} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                                    <div style={{ fontWeight: 800, fontSize: 13 }}>{tamano} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>({disponible} uds disponibles)</span></div>
+                                    <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={val} onChange={(e) => { const raw = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [k]: raw })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: excede ? "#991b1b" : "#64748b" }}>{excede ? "⚠️ excede" : ""}</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}
-                        {totalSalida > 0 && <div style={{ marginTop: 8, fontWeight: 900, color: "#065f46", fontSize: 13 }}>Total a sacar: {totalSalida}</div>}
-                        <div style={{ marginTop: 10 }}>
-                          <SLabel>Observaciones (opcional)</SLabel>
-                          <input value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={iStyle()} placeholder="Información adicional..." />
-                        </div>
+
+                        {totalSalida > 0 && <div style={{ marginTop: 10, fontWeight: 900, color: "#065f46", fontSize: 13 }}>Total a sacar: {totalSalida}</div>}
                       </>
                     )}
                   </div>
@@ -1508,7 +1569,7 @@ function MovimientoModal({
 
                 {/* Cantidad + formato (en la misma pantalla) */}
                 {selectedProducto && !salidaPorZonas && formatoConfig.showCantidad !== false && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
                       <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}</SLabel>
                       <input key={`qty-${form.producto_id}`} autoFocus type="number" min={formatoConfig.allowDecimals ? 0 : 1} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={form.cantidad} onChange={(e) => { const v = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setForm((p) => ({ ...p, cantidad: v })); }} style={iStyle()} placeholder="0" />
@@ -1528,16 +1589,6 @@ function MovimientoModal({
                         </select>
                       )}
                     </div>
-                    <div>
-                      <SLabel>Observaciones (opcional)</SLabel>
-                      <input value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={iStyle()} placeholder="Información adicional..." />
-                    </div>
-                  </div>
-                )}
-                {selectedProducto && !salidaPorZonas && formatoConfig.showCantidad === false && (
-                  <div>
-                    <SLabel>Observaciones — indica cantidad y envase (obligatorio para fito/fert)</SLabel>
-                    <textarea value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={{ ...iStyle(), minHeight: 70, resize: "vertical" }} placeholder="Ej: 2,5 litros de glifosato 360 en envase de 5L..." />
                   </div>
                 )}
 
@@ -1650,6 +1701,12 @@ function MovimientoModal({
                     </div>
                   </div>
                 )}
+
+                {/* Observaciones (movidas desde el paso 2) */}
+                <div>
+                  <SLabel>Observaciones (opcional)</SLabel>
+                  <textarea value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={{ ...iStyle(), minHeight: 64, resize: "vertical" }} placeholder="Información adicional..." />
+                </div>
 
                 {/* Resumen */}
                 <div style={{ padding: 18, borderRadius: 16, background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", color: "#fff" }}>
