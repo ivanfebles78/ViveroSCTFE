@@ -140,6 +140,32 @@ const DESTINOS_SALIDA_VIVERO = [
   "Vivero",
 ];
 
+// ── Opciones de subtipo según el tipo de movimiento (paso 1) ──
+// Entrada: de dónde llega el material al vivero. "Otros" abre un campo para
+// especificar (Palmetum u otra entidad).
+const ENTRADA_ORIGENES = [
+  "Producción propia",
+  "Proveedores del vivero",
+  "Otros",
+];
+
+// Devolución: quién devuelve material prestado al vivero.
+const DEVOLUCION_ORIGENES = ["Organismo oficial", "Colegio", "Otros"];
+
+// Salida: hacia dónde sale el material. En todas salvo "Baja Vivero" se exige
+// distrito, zona y dirección (ver isExternalDestination / DESTINOS_EXTERNOS).
+const SALIDA_DESTINOS = [
+  "Baja Vivero",
+  "UTE",
+  "Palmetum",
+  "Organismo oficial",
+  "Colegio",
+  "Otros",
+];
+
+// El valor de subtipo de entrada que activa el campo "especificar".
+const ENTRADA_ORIGEN_OTROS = "Otros";
+
 const TIPOS_MOVIMIENTO = [
   { value: "entrada", label: "Entrada" },
   { value: "salida", label: "Salida" },
@@ -241,7 +267,10 @@ const DISTRITO_BARRIOS = {
   ],
 };
 
-const DESTINOS_EXTERNOS = ["Empresa", "Organismo oficial", "Colegio", "Otro", "Palmetum"];
+// Destinos que exigen distrito/zona/dirección. Incluye los valores históricos
+// ("Empresa", "Otro") y los nuevos ("UTE", "Otros"). "Baja Vivero" queda fuera
+// a propósito: dar de baja no requiere dirección.
+const DESTINOS_EXTERNOS = ["Empresa", "Organismo oficial", "Colegio", "Otro", "Otros", "Palmetum", "UTE"];
 
 const safeArray = (x) => (Array.isArray(x) ? x : []);
 
@@ -300,7 +329,7 @@ function isExternalDestination(value) {
 }
 
 function isDevolucionOrigen(value) {
-  return ["Empresa", "Organismo oficial", "Colegio", "Otro"].includes(String(value || "").trim());
+  return ["Empresa", "Organismo oficial", "Colegio", "Otro", "Otros"].includes(String(value || "").trim());
 }
 
 function getMovimientoTipo(m) {
@@ -311,7 +340,7 @@ function getMovimientoTipo(m) {
 
   if (
     d === "vivero" &&
-    ["empresa", "organismo oficial", "colegio", "otro"].includes(o)
+    ["empresa", "organismo oficial", "colegio", "otro", "otros"].includes(o)
   ) {
     return "devolucion";
   }
@@ -353,19 +382,10 @@ function prestamoTextStyle(kind) {
 
 function getDestinoOptions(origenTipo) {
   if (!origenTipo) return [];
-
-  if (origenTipo === "Empresa Externa") return ["Vivero"];
-  if (origenTipo === "Otro") return ["Vivero"];
-  if (origenTipo === "Palmetum") return ["Vivero"];
-  if (origenTipo === "Empresa") return ["Vivero"];
-  if (origenTipo === "Organismo oficial") return ["Vivero"];
-  if (origenTipo === "Colegio") return ["Vivero"];
-
-  if (origenTipo === "Vivero") {
-    return DESTINOS_SALIDA_VIVERO;
-  }
-
-  return [];
+  // Desde el vivero: salida hacia destinos externos (lista nueva).
+  if (origenTipo === "Vivero") return SALIDA_DESTINOS;
+  // Cualquier otro origen (proveedor, producción propia, devolución…) entra al vivero.
+  return ["Vivero"];
 }
 
 function thStyle() {
@@ -744,7 +764,7 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
 
 
 function StepIndicator({ step, tipoMovimiento }) {
-  const steps = [{ n: 1, label: "Tipo" }, { n: 2, label: "Producto" }, { n: 3, label: "Zonas / Confirmar" }];
+  const steps = [{ n: 1, label: "Tipo" }, { n: 2, label: "Producto y cantidad" }, { n: 3, label: "Destino" }];
   const colors = { entrada: "#10b981", salida: "#ef4444", traslado_interno: "#3b82f6", devolucion: "#f59e0b" };
   const accent = colors[tipoMovimiento] || "#06b6d4";
   return (
@@ -805,7 +825,7 @@ function MovimientoModal({
     tamano_origen: "", tamano_destino: "", distrito_destino: "",
     barrio_destino: "", direccion_destino: "", cp_destino: "",
     observaciones: "", prestamo: false, fecha_disponibilidad: "",
-    prestamo_referencia_id: null, tipo_elegido: "",
+    prestamo_referencia_id: null, tipo_elegido: "", origen_especificar: "",
   });
   const [errors, setErrors] = useState([]);
   const [showPedidoModal, setShowPedidoModal] = useState(false);
@@ -820,7 +840,7 @@ function MovimientoModal({
   useEffect(() => {
     if (!open) {
       setStep(1);
-      setForm({ pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: "", prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: null, tipo_elegido: "" });
+      setForm({ pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: "", prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: null, tipo_elegido: "", origen_especificar: "" });
       setErrors([]);
       setSelectedPedidoLineKey("");
       setShowPedidoModal(false);
@@ -836,7 +856,11 @@ function MovimientoModal({
   useEffect(() => {
     const allowed = getDestinoOptions(form.origen_tipo);
     if (form.origen_tipo && !allowed.includes(form.destino_tipo)) {
-      setForm((prev) => ({ ...prev, destino_tipo: allowed[0] || "", zona_destino: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", prestamo: false }));
+      // Si solo hay una opción de destino (entradas/devoluciones → "Vivero"),
+      // la fijamos. Para salidas (varias opciones) dejamos vacío para que el
+      // usuario elija explícitamente el destinatario.
+      const fallback = allowed.length === 1 ? allowed[0] : "";
+      setForm((prev) => ({ ...prev, destino_tipo: fallback, zona_destino: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", prestamo: false }));
     }
   }, [form.origen_tipo, form.destino_tipo]);
 
@@ -1022,7 +1046,7 @@ function MovimientoModal({
     }
   }, [form.origen_tipo, form.tamano_origen, availableOriginSizes]);
 
-  const esDevolucion = useMemo(() => form.destino_tipo === "Vivero" && isDevolucionOrigen(form.origen_tipo), [form.origen_tipo, form.destino_tipo]);
+  const esDevolucion = useMemo(() => form.tipo_elegido === "devolucion", [form.tipo_elegido]);
   const distribucionActiva = form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen && form.tipo_elegido === "salida";
 
   const distribucionDisponible = useMemo(() => {
@@ -1040,7 +1064,24 @@ function MovimientoModal({
 
   useEffect(() => { setDistribucion({}); }, [form.producto_id, form.tamano_origen, form.origen_tipo]);
 
-  const tipoPreview = useMemo(() => getMovimientoTipo(form), [form]);
+  // En un traslado interno el formato se elige una vez (paso 2, sobre el
+  // origen) y por defecto el destino conserva el mismo tamaño. El usuario aún
+  // puede cambiarlo en el paso 3 ("posible cambio de tamaño").
+  useEffect(() => {
+    if (form.tipo_elegido !== "traslado_interno") return;
+    if (form.tamano_origen && !form.tamano_destino) {
+      setForm((prev) => ({ ...prev, tamano_destino: prev.tamano_origen }));
+    }
+  }, [form.tipo_elegido, form.tamano_origen, form.tamano_destino]);
+
+  // Limpia el texto "especificar" cuando la entrada deja de ser "Otros".
+  useEffect(() => {
+    if (!(form.tipo_elegido === "entrada" && form.origen_tipo === ENTRADA_ORIGEN_OTROS) && form.origen_especificar) {
+      setForm((prev) => ({ ...prev, origen_especificar: "" }));
+    }
+  }, [form.tipo_elegido, form.origen_tipo, form.origen_especificar]);
+
+  const tipoPreview = useMemo(() => form.tipo_elegido || getMovimientoTipo(form), [form]);
 
   const prestamosActivos = useMemo(() => {
     const arr = safeArray(movimientos);
@@ -1099,11 +1140,19 @@ function MovimientoModal({
       }
     }
     if (filtered.length > 0) return { ok: false, payloads: [], errors: filtered };
+    // Para una entrada "Otros", el origen real es el texto especificado
+    // (p. ej. "Palmetum"). La columna origen_tipo admite hasta 30 caracteres.
+    const origenTipoFinal =
+      form.tipo_elegido === "entrada" &&
+      form.origen_tipo === ENTRADA_ORIGEN_OTROS &&
+      (form.origen_especificar || "").trim()
+        ? (form.origen_especificar || "").trim().slice(0, 30)
+        : form.origen_tipo;
     const basePayload = {
       pedido_id: form.pedido_id ? Number(form.pedido_id) : null,
       pedido_item_id: form.pedido_item_id ? Number(form.pedido_item_id) : null,
       producto_id: Number(form.producto_id),
-      origen_tipo: form.origen_tipo, destino_tipo: form.destino_tipo,
+      origen_tipo: origenTipoFinal, destino_tipo: form.destino_tipo,
       tamano_origen: form.origen_tipo === "Vivero" ? form.tamano_origen || null : null,
       tamano_destino: form.destino_tipo === "Vivero" ? form.tamano_destino || null : null,
       zona_destino: form.destino_tipo === "Vivero" ? form.zona_destino || null : null,
@@ -1168,13 +1217,25 @@ function MovimientoModal({
   const esTrasladoTipo = form.tipo_elegido === "traslado_interno";
   const esDevolucionTipo = form.tipo_elegido === "devolucion";
 
+  // Campo de formato/tamaño relevante para este movimiento. Para salidas y
+  // traslados el material sale del vivero (tamaño origen); para entradas y
+  // devoluciones llega al vivero (tamaño destino). El formato se elige en el
+  // paso 2 junto a la cantidad.
+  const formatoField = esSalida || esTrasladoTipo ? "tamano_origen" : "tamano_destino";
+  const formatoFijo = formatoConfig.kind === "formato_fijo";
+
+  // En entrada "Otros" hay que especificar la procedencia (Palmetum u otra).
+  const entradaOtrosSinEspecificar =
+    esEntrada && form.origen_tipo === ENTRADA_ORIGEN_OTROS && !(form.origen_especificar || "").trim();
+
   const step1Valid = !!form.tipo_elegido &&
     (esSalida ? !!form.destino_tipo : true) &&
-    (esEntrada ? !!form.origen_tipo : true) &&
+    (esEntrada ? !!form.origen_tipo && !entradaOtrosSinEspecificar : true) &&
     (esDevolucionTipo ? !!form.origen_tipo : true);
 
   const step2Valid = !!form.producto_id &&
-    (formatoConfig.showCantidad ? Number(form.cantidad) > 0 : true);
+    (formatoConfig.showCantidad ? Number(form.cantidad) > 0 : true) &&
+    (formatoFijo || !!form[formatoField]);
 
   const step3Valid = (() => {
     if (form.origen_tipo === "Vivero") {
@@ -1204,7 +1265,7 @@ function MovimientoModal({
               <div>
                 <div style={{ fontSize: 20, fontWeight: 900 }}>Nuevo movimiento</div>
                 <div style={{ marginTop: 3, color: "rgba(255,255,255,0.60)", fontWeight: 700, fontSize: 13 }}>
-                  {step === 1 ? "¿Qué tipo de movimiento?" : step === 2 ? "Elige el producto" : "Zonas, cantidades y confirmación"}
+                  {step === 1 ? "¿Qué tipo de movimiento?" : step === 2 ? "Producto, cantidad y formato" : "Destino y confirmación"}
                 </div>
               </div>
               <button onClick={onClose} style={{ padding: "8px 14px", borderRadius: 12, fontWeight: 900, cursor: "pointer", background: "#f59e0b", color: "#111827", border: "2px solid #000", boxShadow: "0 6px 14px rgba(0,0,0,0.18)" }}>Cerrar</button>
@@ -1245,37 +1306,18 @@ function MovimientoModal({
                 {/* Sub-campos según tipo */}
                 {esSalida && (
                   <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 14, color: "#991b1b", marginBottom: 12 }}>🗺️ Destino de la salida</div>
-                    <div>
-                      <SLabel>Tipo de destinatario</SLabel>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                        {DESTINOS_SALIDA_VIVERO.filter((d) => d !== "Vivero").map((d) => (
-                          <button key={d} type="button" onClick={() => setForm((p) => ({ ...p, destino_tipo: d, distrito_destino: "", barrio_destino: "", direccion_destino: "" }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.destino_tipo === d ? "2px solid #ef4444" : "1px solid rgba(15,23,42,0.12)", background: form.destino_tipo === d ? "rgba(239,68,68,0.12)" : "#fff", color: form.destino_tipo === d ? "#991b1b" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{d}</button>
-                        ))}
-                      </div>
-                      {isExternalDestination(form.destino_tipo) && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                          <div>
-                            <SLabel>Distrito</SLabel>
-                            <select value={form.distrito_destino} onChange={(e) => setForm((p) => ({ ...p, distrito_destino: e.target.value, barrio_destino: "" }))} style={iStyle()}>
-                              <option value="">Seleccionar distrito</option>
-                              {Object.keys(DISTRITO_BARRIOS).map((d) => <option key={d} value={d}>{d}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <SLabel>Barrio</SLabel>
-                            <select value={form.barrio_destino} onChange={(e) => setForm((p) => ({ ...p, barrio_destino: e.target.value }))} style={iStyle()} disabled={!form.distrito_destino}>
-                              <option value="">{form.distrito_destino ? "Seleccionar barrio" : "Primero elige el distrito"}</option>
-                              {barriosDisponibles.map((b) => <option key={b} value={b}>{b}</option>)}
-                            </select>
-                          </div>
-                          <div style={{ gridColumn: "span 2" }}>
-                            <SLabel>Dirección</SLabel>
-                            <input value={form.direccion_destino} onChange={(e) => setForm((p) => ({ ...p, direccion_destino: e.target.value }))} style={iStyle()} placeholder="Calle, número..." />
-                          </div>
-                        </div>
-                      )}
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#991b1b", marginBottom: 12 }}>📤 ¿A dónde va el material?</div>
+                    <SLabel>Tipo de destinatario</SLabel>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {SALIDA_DESTINOS.map((d) => (
+                        <button key={d} type="button" onClick={() => setForm((p) => ({ ...p, destino_tipo: d, distrito_destino: "", barrio_destino: "", direccion_destino: "" }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.destino_tipo === d ? "2px solid #ef4444" : "1px solid rgba(15,23,42,0.12)", background: form.destino_tipo === d ? "rgba(239,68,68,0.12)" : "#fff", color: form.destino_tipo === d ? "#991b1b" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{d}</button>
+                      ))}
                     </div>
+                    {isExternalDestination(form.destino_tipo) && (
+                      <div style={{ marginTop: 10, color: "#991b1b", fontWeight: 700, fontSize: 12 }}>
+                        Indicarás distrito, zona y dirección en el último paso.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1284,10 +1326,23 @@ function MovimientoModal({
                     <div style={{ fontWeight: 900, fontSize: 14, color: "#065f46", marginBottom: 10 }}>📦 ¿De dónde viene el material?</div>
                     <SLabel>Origen</SLabel>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {ORIGENES.filter((o) => o !== "Vivero").map((o) => (
+                      {ENTRADA_ORIGENES.map((o) => (
                         <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.origen_tipo === o ? "2px solid #10b981" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(16,185,129,0.12)" : "#fff", color: form.origen_tipo === o ? "#065f46" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{o}</button>
                       ))}
                     </div>
+                    {form.origen_tipo === ENTRADA_ORIGEN_OTROS && (
+                      <div style={{ marginTop: 12 }}>
+                        <SLabel>Especificar procedencia</SLabel>
+                        <input value={form.origen_especificar} onChange={(e) => setForm((p) => ({ ...p, origen_especificar: e.target.value }))} style={iStyle()} placeholder="Palmetum u otra entidad..." maxLength={30} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {esTrasladoTipo && (
+                  <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(59,130,246,0.15)", background: "rgba(59,130,246,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#1e3a8a", marginBottom: 4 }}>🔄 Traslado entre zonas</div>
+                    <div style={{ color: "#475569", fontWeight: 700, fontSize: 12 }}>Elegirás la zona origen y la zona destino del vivero en el último paso.</div>
                   </div>
                 )}
 
@@ -1295,7 +1350,7 @@ function MovimientoModal({
                   <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.04)" }}>
                     <div style={{ fontWeight: 900, fontSize: 14, color: "#92400e", marginBottom: 10 }}>↩️ ¿Quién devuelve?</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                      {["Empresa", "Organismo oficial", "Colegio", "Otro"].map((o) => (
+                      {DEVOLUCION_ORIGENES.map((o) => (
                         <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.origen_tipo === o ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(245,158,11,0.14)" : "#fff", color: form.origen_tipo === o ? "#92400e" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{o}</button>
                       ))}
                     </div>
@@ -1370,12 +1425,27 @@ function MovimientoModal({
                   </div>
                 )}
 
-                {/* Cantidad */}
+                {/* Cantidad + formato (en la misma pantalla) */}
                 {selectedProducto && formatoConfig.showCantidad !== false && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                     <div>
                       <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}</SLabel>
                       <input key={`qty-${form.producto_id}`} autoFocus type="number" min={0} step="0.1" value={form.cantidad} onChange={(e) => setForm((p) => ({ ...p, cantidad: e.target.value }))} style={iStyle()} placeholder="0" />
+                    </div>
+                    <div>
+                      <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño" : formatoConfig.label || "Formato"}</SLabel>
+                      {formatoFijo ? (
+                        <div style={{ ...iStyle(), background: "#f1f5f9", color: "#475569" }}>{formatoConfig.value}</div>
+                      ) : (
+                        <select value={form[formatoField] || ""} onChange={(e) => setForm((p) => ({ ...p, [formatoField]: e.target.value }))} style={iStyle()}>
+                          <option value="">Seleccionar</option>
+                          {((esSalida || esTrasladoTipo) ? availableOriginSizes : getFormatoOptions(formatoConfig)).map((t) => {
+                            const showStock = form.origen_tipo === "Vivero" && form.producto_id;
+                            const qty = showStock ? zonasPermitidasPorCategoria.reduce((s, z) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0) : null;
+                            return <option key={t} value={t}>{t}{qty != null ? ` (${qty} uds)` : ""}</option>;
+                          })}
+                        </select>
+                      )}
                     </div>
                     <div>
                       <SLabel>Observaciones (opcional)</SLabel>
@@ -1437,26 +1507,49 @@ function MovimientoModal({
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
                           <SLabel>Zona origen</SLabel>
-                          <select value={form.zona_origen} onChange={(e) => setForm((p) => ({ ...p, zona_origen: e.target.value, tamano_origen: "" }))} style={iStyle()} disabled={!form.producto_id || availableOriginZones.length === 0}>
+                          <select value={form.zona_origen} onChange={(e) => setForm((p) => ({ ...p, zona_origen: e.target.value }))} style={iStyle()} disabled={!form.producto_id || availableOriginZones.length === 0}>
                             <option value="">{!form.producto_id ? "Primero elige producto" : availableOriginZones.length === 0 ? "Sin stock para este producto" : "Seleccionar zona"}</option>
                             {availableOriginZones.map((z) => {
-                              const stockTotal = getFormatoOptions(formatoConfig).reduce((s, t) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0);
-                              return <option key={z} value={z}>Zona {z}{form.producto_id ? ` (${stockTotal})` : ""}</option>;
+                              const qty = form.tamano_origen
+                                ? Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, form.tamano_origen)) || 0)
+                                : getFormatoOptions(formatoConfig).reduce((s, t) => s + Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, z, t)) || 0), 0);
+                              return <option key={z} value={z}>Zona {z}{form.producto_id ? ` (${qty} uds)` : ""}</option>;
                             })}
                           </select>
                         </div>
                         <div>
-                          <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño origen" : "Formato origen"}</SLabel>
-                          <select value={form.tamano_origen} onChange={(e) => setForm((p) => ({ ...p, tamano_origen: e.target.value }))} style={iStyle()} disabled={!form.zona_origen || availableOriginSizes.length === 0}>
-                            <option value="">{!form.zona_origen ? "Primero elige zona" : "Seleccionar"}</option>
-                            {availableOriginSizes.map((t) => {
-                              const qty = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, form.zona_origen, t)) || 0);
-                              return <option key={t} value={t}>{t} ({qty} uds)</option>;
-                            })}
-                          </select>
+                          <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño" : "Formato"}</SLabel>
+                          <div style={{ ...iStyle(), background: "#f1f5f9", color: "#475569" }}>{form.tamano_origen || "—"}</div>
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Dirección de la salida (todos los destinos salvo Baja Vivero) */}
+                {esSalida && isExternalDestination(form.destino_tipo) && (
+                  <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 10 }}>🗺️ Dirección de destino · {form.destino_tipo}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <SLabel>Distrito</SLabel>
+                        <select value={form.distrito_destino} onChange={(e) => setForm((p) => ({ ...p, distrito_destino: e.target.value, barrio_destino: "" }))} style={iStyle()}>
+                          <option value="">Seleccionar distrito</option>
+                          {Object.keys(DISTRITO_BARRIOS).map((d) => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <SLabel>Zona</SLabel>
+                        <select value={form.barrio_destino} onChange={(e) => setForm((p) => ({ ...p, barrio_destino: e.target.value }))} style={iStyle()} disabled={!form.distrito_destino}>
+                          <option value="">{form.distrito_destino ? "Seleccionar zona" : "Primero elige el distrito"}</option>
+                          {barriosDisponibles.map((b) => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ gridColumn: "span 2" }}>
+                        <SLabel>Dirección</SLabel>
+                        <input value={form.direccion_destino} onChange={(e) => setForm((p) => ({ ...p, direccion_destino: e.target.value }))} style={iStyle()} placeholder="Calle, número..." />
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1474,10 +1567,14 @@ function MovimientoModal({
                       </div>
                       <div>
                         <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño destino" : "Formato destino"}</SLabel>
-                        <select value={form.tamano_destino} onChange={(e) => setForm((p) => ({ ...p, tamano_destino: e.target.value }))} style={iStyle()}>
-                          <option value="">Seleccionar</option>
-                          {getFormatoOptions(formatoConfig).map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                        {esTrasladoTipo && !formatoFijo ? (
+                          <select value={form.tamano_destino} onChange={(e) => setForm((p) => ({ ...p, tamano_destino: e.target.value }))} style={iStyle()}>
+                            <option value="">Seleccionar</option>
+                            {getFormatoOptions(formatoConfig).map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        ) : (
+                          <div style={{ ...iStyle(), background: "#f1f5f9", color: "#475569" }}>{form.tamano_destino || "—"}</div>
+                        )}
                       </div>
                       {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && (
                         <div style={{ gridColumn: "span 2" }}>
@@ -1545,9 +1642,10 @@ function MovimientoModal({
             <div style={{ display: "flex", gap: 10 }}>
               {step < 3 && (
                 <button onClick={() => {
-                  if (step === 1 && !step1Valid) { setErrors(["Completa los campos requeridos antes de continuar."]); return; }
+                  if (step === 1 && !step1Valid) { setErrors([entradaOtrosSinEspecificar ? "Especifica la procedencia del material." : "Completa los campos requeridos antes de continuar."]); return; }
                   if (step === 2 && !form.producto_id) { setErrors(["Selecciona un producto antes de continuar."]); return; }
                   if (step === 2 && formatoConfig.showCantidad !== false && (!form.cantidad || Number(form.cantidad) <= 0)) { setErrors(["La cantidad debe ser mayor que 0."]); return; }
+                  if (step === 2 && !formatoFijo && !form[formatoField]) { setErrors([`Selecciona el ${formatoConfig.kind === "tamano" ? "tamaño" : "formato"} antes de continuar.`]); return; }
                   setErrors([]); setStep((s) => s + 1);
                 }} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${accent} 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: "pointer", opacity: (step === 1 && !form.tipo_elegido) ? 0.55 : 1 }}>
                   Siguiente →
