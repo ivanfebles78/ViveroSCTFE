@@ -1048,7 +1048,9 @@ function MovimientoModal({
   }, [form.origen_tipo, form.tamano_origen, availableOriginSizes]);
 
   const esDevolucion = useMemo(() => form.tipo_elegido === "devolucion", [form.tipo_elegido]);
-  const distribucionActiva = form.origen_tipo === "Vivero" && !!form.producto_id && !!form.tamano_origen && form.tipo_elegido === "salida";
+  // El "reparto por zonas" queda desactivado: la cantidad se elige en el paso 2
+  // y en el paso 3 solo se indica de qué zona sale (sin volver a pedir unidades).
+  const distribucionActiva = false;
 
   const distribucionDisponible = useMemo(() => {
     if (!distribucionActiva) return {};
@@ -1139,6 +1141,12 @@ function MovimientoModal({
         const disp = Number(distribucionDisponible[z] || 0);
         if (Number(q) > disp) filtered.push(`${getZonaLabel(z)}: solicitado ${q} supera el disponible (${disp}).`);
       }
+    } else if (form.origen_tipo === "Vivero" && form.zona_origen && form.tamano_origen) {
+      // Salida/traslado desde una sola zona: la cantidad (paso 2) no puede
+      // superar el stock disponible en esa zona y tamaño.
+      const disp = Number(stockByProductZoneSize.get(buildStockKey(form.producto_id, form.zona_origen, form.tamano_origen)) || 0);
+      const pedido = formatoConfig.allowDecimals ? Number(form.cantidad) : Math.round(Number(form.cantidad));
+      if (pedido > disp) filtered.push(`La zona ${getZonaLabel(form.zona_origen)} solo tiene ${disp} disponibles para ${form.tamano_origen}.`);
     }
     if (filtered.length > 0) return { ok: false, payloads: [], errors: filtered };
     // Para una entrada "Otros", el origen real es el texto especificado
