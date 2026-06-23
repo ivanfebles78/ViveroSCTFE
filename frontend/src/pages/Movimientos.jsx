@@ -1167,11 +1167,14 @@ function MovimientoModal({
       prestamo_referencia_id: esDevolucion && form.prestamo_referencia_id ? Number(form.prestamo_referencia_id) : null,
       fecha_disponibilidad: form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad ? form.fecha_disponibilidad : null,
     };
+    // Las cantidades de productos por unidades (plantas, ferretería en uds) son
+    // enteras; kg/litros/m³/metros admiten decimales.
+    const normCantidad = (n) => (formatoConfig.allowDecimals ? Number(n) : Math.round(Number(n)));
     let payloads;
     if (distribucionActiva) {
-      payloads = Object.entries(distribucion).filter(([, q]) => Number(q) > 0).map(([zona, q]) => ({ ...basePayload, zona_origen: zona, cantidad: Number(q) }));
+      payloads = Object.entries(distribucion).filter(([, q]) => Number(q) > 0).map(([zona, q]) => ({ ...basePayload, zona_origen: zona, cantidad: normCantidad(q) }));
     } else {
-      const cantidadFinal = formatoConfig.showCantidad ? parseFloat(form.cantidad) : 1;
+      const cantidadFinal = formatoConfig.showCantidad ? normCantidad(parseFloat(form.cantidad)) : 1;
       payloads = [{ ...basePayload, zona_origen: form.origen_tipo === "Vivero" ? form.zona_origen || null : null, cantidad: cantidadFinal }];
     }
     return { ok: true, payloads, errors: [] };
@@ -1434,7 +1437,7 @@ function MovimientoModal({
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                     <div>
                       <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}</SLabel>
-                      <input key={`qty-${form.producto_id}`} autoFocus type="number" min={0} step="0.1" value={form.cantidad} onChange={(e) => setForm((p) => ({ ...p, cantidad: e.target.value }))} style={iStyle()} placeholder="0" />
+                      <input key={`qty-${form.producto_id}`} autoFocus type="number" min={formatoConfig.allowDecimals ? 0 : 1} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={form.cantidad} onChange={(e) => { const v = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setForm((p) => ({ ...p, cantidad: v })); }} style={iStyle()} placeholder="0" />
                     </div>
                     <div>
                       <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño" : formatoConfig.label || "Formato"}</SLabel>
@@ -1501,7 +1504,7 @@ function MovimientoModal({
                         ) : Object.entries(distribucionDisponible).map(([zona, disponible]) => (
                           <div key={zona} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginBottom: 6 }}>
                             <div style={{ fontWeight: 800, fontSize: 13 }}>{getZonaLabel(zona)} <span style={{ color: "#64748b", fontWeight: 700, fontSize: 11 }}>(disponible: {disponible})</span></div>
-                            <input type="number" min={0} max={disponible} value={distribucion[zona] || ""} onChange={(e) => setDistribucion((prev) => ({ ...prev, [zona]: e.target.value }))} style={{ ...iStyle(), width: 90 }} placeholder="0" />
+                            <input type="number" min={0} max={disponible} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={distribucion[zona] || ""} onChange={(e) => { const v = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setDistribucion((prev) => ({ ...prev, [zona]: v })); }} style={{ ...iStyle(), width: 90 }} placeholder="0" />
                             <span style={{ fontSize: 11, fontWeight: 700, color: Number(distribucion[zona] || 0) > disponible ? "#991b1b" : "#64748b" }}>{Number(distribucion[zona] || 0) > disponible ? "⚠️ excede" : ""}</span>
                           </div>
                         ))}

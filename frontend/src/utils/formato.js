@@ -129,6 +129,8 @@ export function getProductFormatoConfig(product) {
       value: "metros cúbicos",
       showCantidad: true,
       cantidadLabel: "Cantidad (m³)",
+      // Volumen: se mide con decimales (ej. 2,5 m³).
+      allowDecimals: true,
       observacionesRequired: false,
       observacionesHint: null,
     };
@@ -142,6 +144,8 @@ export function getProductFormatoConfig(product) {
         value: "metros",
         showCantidad: true,
         cantidadLabel: "Cantidad (m)",
+        // Longitud: se mide con decimales (ej. 3,5 m).
+        allowDecimals: true,
         observacionesRequired: false,
         observacionesHint: null,
       };

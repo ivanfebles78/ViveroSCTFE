@@ -298,7 +298,7 @@ function PedirMasModal({ open, producto, onClose, onAddToCart, saving }) {
               min={formatoConfig.allowDecimals ? "0.001" : 1}
               step={formatoConfig.allowDecimals ? "0.001" : "1"}
               value={cantidad}
-              onChange={(e) => setCantidad(e.target.value)}
+              onChange={(e) => setCantidad(formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""))}
               placeholder={formatoConfig.allowDecimals ? "0.00" : "0"}
               style={{
                 width: "100%",
@@ -481,6 +481,7 @@ function CartModal({ open, cart, onClose, onRemove, onUpdate, onFinalizar, onAdd
             <div style={{ display: "grid", gap: 8 }}>
               {cart.map((it, idx) => {
                 const unidad = getUnidadProducto({ categoria: it.producto_categoria, nombre_cientifico: it.producto_nombre });
+                const itemDecimales = getProductFormatoConfig({ categoria: it.producto_categoria, nombre_cientifico: it.producto_nombre }).allowDecimals;
                 return (
                   <div
                     key={`${it.producto_id}-${it.tamano}-${idx}`}
@@ -503,10 +504,10 @@ function CartModal({ open, cart, onClose, onRemove, onUpdate, onFinalizar, onAdd
                     </div>
                     <input
                       type="number"
-                      min={0.001}
-                      step="any"
+                      min={itemDecimales ? 0.001 : 1}
+                      step={itemDecimales ? "any" : "1"}
                       value={it.cantidad}
-                      onChange={(e) => onUpdate(idx, { cantidad: e.target.value })}
+                      onChange={(e) => onUpdate(idx, { cantidad: itemDecimales ? e.target.value : e.target.value.replace(/[^\d]/g, "") })}
                       style={{
                         padding: "8px 10px",
                         borderRadius: 10,
