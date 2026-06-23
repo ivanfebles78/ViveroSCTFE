@@ -14,7 +14,8 @@ import { useEffect, useState } from "react";
 
 const BASE = "/imagenes/plantas/";
 // Extensiones que se prueban, en orden. Nos quedamos con la primera que cargue.
-const EXTS = ["jpg", "jpeg", "png", "webp"];
+// Las fotos reales (jpg/png) tienen prioridad sobre los SVG de ejemplo.
+const EXTS = ["jpg", "jpeg", "png", "webp", "svg"];
 
 export function plantSlug(nombreCientifico) {
   return (nombreCientifico || "")
