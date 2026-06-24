@@ -2895,34 +2895,62 @@ def _normalize_zona_id(value: str | None) -> str:
     return raw
 
 
+def _num_clean(n) -> float | int:
+    """Devuelve int si el valor es entero (unidades) o float redondeado si no
+    (kg/litros/m³). Mantiene limpia la respuesta del mapa."""
+    f = float(n)
+    r = round(f, 3)
+    return int(r) if abs(r - round(r)) < 1e-9 else r
+
+
 @app.get("/zonas/{zona_id}/items")
 def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
     zona_norm = _normalize_zona_id(zona_id)
 
-    # No filtramos por zona en SQL: el normalizador de Python ya elimina
-    # tildes/guiones/prefijos para comparar, pero los operadores SQL `=` e
-    # `ILIKE` son sensibles a acentos (sin extensión `unaccent`), así que
-    # "Almacén" guardado en BD no haría match con "almacen" en la URL. El
-    # filtrado se hace abajo en Python; el inventario del vivero es pequeño,
-    # así que el coste es despreciable.
-    inventarios = (
-        db.query(InventarioLote, Producto)
-        .join(Producto, Producto.id == InventarioLote.producto_id)
-        .filter(InventarioLote.cantidad_disponible > 0)
-        .all()
-    )
+    # El stock de la zona se calcula DESDE LOS MOVIMIENTOS (misma lógica que el
+    # modal de movimientos en el frontend), no desde InventarioLote, para que el
+    # mapa y la lista de movimientos siempre concuerden: se suma lo que entra a
+    # la zona (movimientos con destino Vivero y zona_destino = esta) y se resta
+    # lo que sale (origen Vivero y zona_origen = esta). El inventario del vivero
+    # es pequeño, así que recorrer los movimientos en Python es barato.
+    movimientos = db.query(Movimiento).all()
 
-    productos: dict[int, dict] = {}
-
-    for inv, prod in inventarios:
-        inv_zona_norm = _normalize_zona_id(getattr(inv, "zona", None))
-        if inv_zona_norm != zona_norm:
+    # (producto_id, tamaño) -> cantidad neta en esta zona.
+    agg: dict[tuple[int, str], float] = {}
+    for m in movimientos:
+        cant = float(getattr(m, "cantidad", 0) or 0)
+        if cant == 0:
             continue
-
-        producto_id = getattr(inv, "producto_id", None)
+        producto_id = getattr(m, "producto_id", None)
         if producto_id is None:
             continue
 
+        destino = _norm_str(getattr(m, "destino_tipo", None))
+        origen = _norm_str(getattr(m, "origen_tipo", None))
+        zona_destino = getattr(m, "zona_destino", None)
+        zona_origen = getattr(m, "zona_origen", None)
+        tam_destino = (getattr(m, "tamano_destino", None) or "").strip()
+        tam_origen = (getattr(m, "tamano_origen", None) or "").strip()
+
+        if destino == "vivero" and zona_destino and tam_destino and _normalize_zona_id(zona_destino) == zona_norm:
+            key = (producto_id, tam_destino)
+            agg[key] = agg.get(key, 0.0) + cant
+        if origen == "vivero" and zona_origen and tam_origen and _normalize_zona_id(zona_origen) == zona_norm:
+            key = (producto_id, tam_origen)
+            agg[key] = agg.get(key, 0.0) - cant
+
+    # Solo productos con stock neto positivo.
+    prod_ids = {pid for (pid, _t), q in agg.items() if q > 1e-9}
+    prod_rows: dict[int, Producto] = {}
+    if prod_ids:
+        for prod in db.query(Producto).filter(Producto.id.in_(prod_ids)).all():
+            prod_rows[prod.id] = prod
+
+    productos: dict[int, dict] = {}
+    for (producto_id, tamano), qty in agg.items():
+        if qty <= 1e-9:
+            continue
+        prod = prod_rows.get(producto_id)
         if producto_id not in productos:
             productos[producto_id] = {
                 "producto_id": producto_id,
@@ -2930,22 +2958,19 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
                 "nombre_natural": getattr(prod, "nombre_natural", None),
                 "categoria": getattr(prod, "categoria", None),
                 "subcategoria": getattr(prod, "subcategoria", None),
-                "cantidad": 0,
+                "cantidad": 0.0,
                 "tamanos_map": {},
             }
-
-        cantidad = int(getattr(inv, "cantidad_disponible", 0) or 0)
-        tamano = (getattr(inv, "tamano", None) or "N/A").strip() or "N/A"
-
-        productos[producto_id]["cantidad"] += cantidad
-        productos[producto_id]["tamanos_map"][tamano] = (
-            productos[producto_id]["tamanos_map"].get(tamano, 0) + cantidad
+        tam = tamano or "N/A"
+        productos[producto_id]["cantidad"] += qty
+        productos[producto_id]["tamanos_map"][tam] = (
+            productos[producto_id]["tamanos_map"].get(tam, 0.0) + qty
         )
 
     items = []
     for item in productos.values():
         tamanos = [
-            {"tamano": tamano, "cantidad": cantidad}
+            {"tamano": tamano, "cantidad": _num_clean(cantidad)}
             for tamano, cantidad in sorted(item["tamanos_map"].items(), key=lambda x: x[0])
         ]
         items.append(
@@ -2955,7 +2980,7 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
                 "nombre_natural": item["nombre_natural"],
                 "categoria": item["categoria"],
                 "subcategoria": item["subcategoria"],
-                "cantidad": item["cantidad"],
+                "cantidad": _num_clean(item["cantidad"]),
                 "tamanos": tamanos,
             }
         )
