@@ -970,13 +970,33 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
     zonePolygons.find((z) => String(z.id) === String(selectedZone))?.nombre ||
     (selectedZone ? `Zona ${String(selectedZone).toUpperCase()}` : "Selecciona una zona");
 
+  // Resuelve el identificador a consultar contra el backend. La config de zonas
+  // del servidor puede tener ids corruptos (p. ej. "zona-3" para la celda 3b),
+  // así que mapeamos la zona contra la config canónica (zonasConfig) por nombre
+  // o apiId normalizado y usamos su apiId real. Así "Zona 3b" consulta "3b".
+  const resolveZoneApiId = (zone) => {
+    const norm = (s) =>
+      String(s || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]/g, "");
+    const porNombre = zonasDefault.find((c) => norm(c.nombre) === norm(zone?.nombre));
+    if (porNombre?.apiId) return porNombre.apiId;
+    const porId = zonasDefault.find(
+      (c) => norm(c.id) === norm(zone?.id) || (zone?.apiId && norm(c.apiId) === norm(zone?.apiId))
+    );
+    if (porId?.apiId) return porId.apiId;
+    return zone?.apiId || String(zone?.id || "").replace(/^zona[-_]?/i, "");
+  };
+
   const loadZone = async (zone) => {
-    const zoneId = zone?.id;
-    setSelectedZone(zoneId);
+    setSelectedZone(zone?.id);
     setZonaError("");
     setLoading(true);
     setZonaData(null);
 
+    const zoneId = resolveZoneApiId(zone);
     try {
       const data = await getZonaItems(zoneId);
       setZonaData({ ...(data || {}), _resolvedZone: zoneId });
