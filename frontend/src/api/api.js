@@ -29,6 +29,27 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Si el backend responde 401 (token caducado/ inválido) en cualquier llamada
+// con sesión activa, limpiamos la sesión y mandamos al login con un aviso, en
+// vez de fallar silenciosamente en segundo plano.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const url = String(error?.config?.url || "");
+    const esLogin = url.includes("/auth/login");
+    if (status === 401 && !esLogin && getStoredToken()) {
+      clearStoredToken();
+      try { localStorage.removeItem("user"); } catch { /* noop */ }
+      try { sessionStorage.setItem("session_expired", "1"); } catch { /* noop */ }
+      if (!window.location.pathname.toLowerCase().includes("/login")) {
+        window.location.assign("/login");
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // ---------------- AUTH ----------------
 
 export const login = async (payloadOrUsername, maybePassword) => {

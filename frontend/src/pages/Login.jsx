@@ -222,6 +222,16 @@ export default function Login() {
     }
   };
 
+  // Aviso si llegamos aquí por una sesión caducada (401 en otra pantalla).
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("session_expired")) {
+        sessionStorage.removeItem("session_expired");
+        setError("Tu sesión caducó. Vuelve a iniciar sesión.");
+      }
+    } catch { /* noop */ }
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       setViewport({
