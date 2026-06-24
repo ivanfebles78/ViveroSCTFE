@@ -1677,7 +1677,7 @@ function MovimientoModal({
                 {(esEntrada || esTrasladoTipo || esDevolucionTipo) && (
                   <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${esEntrada ? "rgba(16,185,129,0.15)" : esTrasladoTipo ? "rgba(59,130,246,0.15)" : "rgba(245,158,11,0.18)"}`, background: esEntrada ? "rgba(16,185,129,0.03)" : esTrasladoTipo ? "rgba(59,130,246,0.03)" : "rgba(245,158,11,0.04)" }}>
                     <div style={{ fontWeight: 900, fontSize: 13, color: esEntrada ? "#065f46" : esTrasladoTipo ? "#1e3a8a" : "#92400e", marginBottom: 10 }}>🎯 Zona destino</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: (esTrasladoTipo && !formatoFijo) ? "1fr 1fr" : "1fr", gap: 10 }}>
                       <div>
                         <SLabel>Zona destino</SLabel>
                         <select value={form.zona_destino} onChange={(e) => setForm((p) => ({ ...p, zona_destino: e.target.value }))} style={iStyle()}>
@@ -1685,17 +1685,17 @@ function MovimientoModal({
                           {zonasPermitidasPorCategoria.map((z) => <option key={z} value={z}>Zona {z}</option>)}
                         </select>
                       </div>
-                      <div>
-                        <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño destino" : "Formato destino"}</SLabel>
-                        {esTrasladoTipo && !formatoFijo ? (
+                      {/* El tamaño solo es editable en traslados (repicado a otro tamaño).
+                          En entrada/devolución ya se eligió en el paso 2: no se repite aquí. */}
+                      {esTrasladoTipo && !formatoFijo && (
+                        <div>
+                          <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño destino" : "Formato destino"}</SLabel>
                           <select value={form.tamano_destino} onChange={(e) => setForm((p) => ({ ...p, tamano_destino: e.target.value }))} style={iStyle()}>
                             <option value="">Seleccionar</option>
                             {getFormatoOptions(formatoConfig).map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
-                        ) : (
-                          <div style={{ ...iStyle(), background: "#f1f5f9", color: "#475569" }}>{form.tamano_destino || "—"}</div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                       {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && (
                         <div style={{ gridColumn: "span 2" }}>
                           <SLabel>Fecha disponibilidad (opcional, solo M35)</SLabel>
