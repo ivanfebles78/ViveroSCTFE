@@ -2147,10 +2147,13 @@ def crear_movimiento(
 
         _asegurar_no_caducado(pedido, db)
 
-        if (pedido.estado or "").upper() != "APROBADO":
+        # Se admite asociar movimientos a pedidos que ya tienen líneas aprobadas
+        # (APROBADO o APROBADO_PARCIAL). El control real de no exceder lo pedido
+        # se hace por línea (cantidad_servida vs cantidad) más abajo.
+        if (pedido.estado or "").upper() not in ("APROBADO", "APROBADO_PARCIAL"):
             raise HTTPException(
                 status_code=400,
-                detail="Solo se puede asociar el movimiento a pedidos en estado APROBADO",
+                detail="Solo se puede asociar el movimiento a pedidos aprobados",
             )
 
         if payload.pedido_item_id is None:
