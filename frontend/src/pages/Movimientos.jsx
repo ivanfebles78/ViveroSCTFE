@@ -1377,7 +1377,18 @@ function MovimientoModal({
       if (!result.ok) return;
       allPayloads = [...allPayloads, ...result.payloads];
     } else { setErrors([]); }
-    await onSubmit(allPayloads);
+    // La fecha/hora personalizada y las observaciones se eligen en el paso 3,
+    // pero las líneas del lote (salida por zonas, pedido…) se construyeron en el
+    // paso 2. Aplicamos aquí esos campos globales a TODAS las líneas.
+    const fechaMov = form.usar_fecha_personalizada && form.fecha_movimiento ? form.fecha_movimiento : null;
+    const obs = (form.observaciones || "").trim();
+    const finalPayloads = allPayloads.map((p) => ({
+      ...p,
+      fecha_movimiento: fechaMov,
+      observaciones: obs || p.observaciones || null,
+      nota: obs || p.nota || null,
+    }));
+    await onSubmit(finalPayloads);
   };
 
   if (!open) return null;
