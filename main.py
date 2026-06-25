@@ -168,6 +168,9 @@ class MovimientoCreate(BaseModel):
     es_devolucion: bool = False
     prestamo_referencia_id: Optional[int] = None
     fecha_disponibilidad: Optional[date] = None
+    # Fecha/hora del movimiento. Si no se envía, se usa el momento actual.
+    # Permite registrar a posteriori un movimiento que ocurrió en otra fecha.
+    fecha_movimiento: Optional[datetime] = None
 
 class MovimientoOut(BaseModel):
     id: int
@@ -2207,7 +2210,13 @@ def crear_movimiento(
                 detail=f"Stock insuficiente en zona/tamaño. Disponible={disponible}, solicitado={payload.cantidad}",
             )
 
-    fecha_base_movimiento = datetime.utcnow()
+    # Fecha del movimiento: la indicada por el usuario (registro a posteriori) o
+    # el momento actual. No se admiten fechas futuras.
+    fecha_base_movimiento = payload.fecha_movimiento or datetime.utcnow()
+    if isinstance(fecha_base_movimiento, datetime) and fecha_base_movimiento.tzinfo is not None:
+        fecha_base_movimiento = fecha_base_movimiento.replace(tzinfo=None)
+    if fecha_base_movimiento > datetime.utcnow() + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="No se puede registrar un movimiento con fecha futura")
     tamano_aplicable_caducidad = _tamano_aplicable_para_caducidad(payload)
     fecha_caducidad, dias_caducidad_aplicados = _calcular_fecha_caducidad(
         db=db,

@@ -296,6 +296,17 @@ const dateInputValue = (value) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// "YYYY-MM-DDTHH:mm" de la fecha/hora local actual, para inputs datetime-local.
+const defaultFechaLocal = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+};
+
 
 function normalizeTamanoForStock(value) {
   const raw = String(value || "").trim().toLowerCase();
@@ -827,6 +838,7 @@ function MovimientoModal({
     barrio_destino: "", direccion_destino: "", cp_destino: "",
     observaciones: "", prestamo: false, fecha_disponibilidad: "",
     prestamo_referencia_id: null, tipo_elegido: "", origen_especificar: "",
+    usar_fecha_personalizada: false, fecha_movimiento: "", prestamo_max: null,
   });
   const [errors, setErrors] = useState([]);
   const [showPedidoModal, setShowPedidoModal] = useState(false);
@@ -843,7 +855,7 @@ function MovimientoModal({
   useEffect(() => {
     if (!open) {
       setStep(1);
-      setForm({ pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: "", prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: null, tipo_elegido: "", origen_especificar: "" });
+      setForm({ pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "", origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "", tamano_origen: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: "", prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: null, tipo_elegido: "", origen_especificar: "", usar_fecha_personalizada: false, fecha_movimiento: "", prestamo_max: null });
       setErrors([]);
       setSelectedPedidoLineKey("");
       setShowPedidoModal(false);
@@ -1165,7 +1177,7 @@ function MovimientoModal({
     const origenSugerido = prestamo?.destino_tipo || "Empresa";
     const tamanoOriginal = prestamo?.tamano_origen || prestamo?.tamano_destino || "";
     const notaBase = `Devolución del préstamo #${prestamo.id}${[prestamo?.distrito_destino, prestamo?.barrio_destino, prestamo?.direccion_destino].filter(Boolean).length ? ` (${[prestamo?.distrito_destino, prestamo?.barrio_destino, prestamo?.direccion_destino].filter(Boolean).join(" · ")})` : ""}`;
-    setForm((prev) => ({ ...prev, pedido_id: prestamo?.pedido_id ? String(prestamo.pedido_id) : "", pedido_item_id: "", producto_id: String(prestamo.producto_id), cantidad: String(prestamo._pendiente), origen_tipo: origenSugerido, destino_tipo: "Vivero", zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: tamanoOriginal, distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: prev.observaciones || notaBase, prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: prestamo.id }));
+    setForm((prev) => ({ ...prev, pedido_id: prestamo?.pedido_id ? String(prestamo.pedido_id) : "", pedido_item_id: "", producto_id: String(prestamo.producto_id), cantidad: String(prestamo._pendiente), origen_tipo: origenSugerido, destino_tipo: "Vivero", zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: tamanoOriginal, distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", observaciones: prev.observaciones || notaBase, prestamo: false, fecha_disponibilidad: "", prestamo_referencia_id: prestamo.id, prestamo_max: Number(prestamo._pendiente) || null }));
     setErrors([]); setShowPrestamoModal(false);
   };
 
@@ -1192,6 +1204,10 @@ function MovimientoModal({
   const buildCurrentPayloads = () => {
     const foundErrors = getFormErrors(form, formatoConfig);
     let filtered = [...foundErrors];
+    // Devolución: no se puede devolver más de lo que queda pendiente del préstamo.
+    if (esDevolucionTipo && form.prestamo_max && Number(form.cantidad) > Number(form.prestamo_max)) {
+      filtered.push(`No puedes devolver más de lo pendiente del préstamo (${form.prestamo_max}).`);
+    }
     if (salidaPorZonas) {
       // La cantidad y la zona/tamaño se eligen por fila en el paso 2; ignoramos
       // los errores de los campos únicos zona/tamaño/cantidad.
@@ -1241,6 +1257,9 @@ function MovimientoModal({
       es_devolucion: esDevolucion,
       prestamo_referencia_id: esDevolucion && form.prestamo_referencia_id ? Number(form.prestamo_referencia_id) : null,
       fecha_disponibilidad: form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad ? form.fecha_disponibilidad : null,
+      // Fecha/hora personalizada (registro a posteriori). Si no se marca, va null
+      // y el backend usa el momento actual.
+      fecha_movimiento: form.usar_fecha_personalizada && form.fecha_movimiento ? form.fecha_movimiento : null,
     };
     // Las cantidades de productos por unidades (plantas, ferretería en uds) son
     // enteras; kg/litros/m³/metros admiten decimales.
@@ -1575,8 +1594,9 @@ function MovimientoModal({
                 {selectedProducto && !salidaPorZonas && formatoConfig.showCantidad !== false && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}</SLabel>
-                      <input key={`qty-${form.producto_id}`} autoFocus type="number" min={formatoConfig.allowDecimals ? 0 : 1} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={form.cantidad} onChange={(e) => { const v = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setForm((p) => ({ ...p, cantidad: v })); }} style={iStyle()} placeholder="0" />
+                      <SLabel>Cantidad {formatoConfig.kind === "tamano" ? "(uds)" : formatoConfig.kind === "formato_fijo" ? `(${formatoConfig.value})` : formatoConfig.unit ? `(${formatoConfig.unit})` : "(uds)"}{esDevolucionTipo && form.prestamo_max ? ` · pendiente: ${form.prestamo_max}` : ""}</SLabel>
+                      <input key={`qty-${form.producto_id}`} autoFocus type="number" min={formatoConfig.allowDecimals ? 0 : 1} max={esDevolucionTipo && form.prestamo_max ? form.prestamo_max : undefined} step={formatoConfig.allowDecimals ? "0.01" : "1"} value={form.cantidad} onChange={(e) => { let v = formatoConfig.allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); if (esDevolucionTipo && form.prestamo_max && v !== "" && Number(v) > Number(form.prestamo_max)) v = String(form.prestamo_max); setForm((p) => ({ ...p, cantidad: v })); }} style={iStyle()} placeholder="0" />
+                      {esDevolucionTipo && form.prestamo_max ? <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "#64748b" }}>Puedes devolver menos: el resto queda pendiente.</div> : null}
                     </div>
                     <div>
                       <SLabel>{formatoConfig.kind === "tamano" ? "Tamaño" : formatoConfig.label || "Formato"}</SLabel>
@@ -1710,6 +1730,32 @@ function MovimientoModal({
                 <div>
                   <SLabel>Observaciones (opcional)</SLabel>
                   <textarea value={form.observaciones} onChange={(e) => setForm((p) => ({ ...p, observaciones: e.target.value }))} style={{ ...iStyle(), minHeight: 64, resize: "vertical" }} placeholder="Información adicional..." />
+                </div>
+
+                {/* Fecha/hora del movimiento (registro a posteriori) */}
+                <div style={{ padding: 12, borderRadius: 12, border: form.usar_fecha_personalizada ? "1px solid rgba(6,182,212,0.35)" : "1px solid rgba(15,23,42,0.10)", background: form.usar_fecha_personalizada ? "rgba(6,182,212,0.05)" : "#fff" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none", fontWeight: 800, fontSize: 13, color: "#0f172a" }}>
+                    <input
+                      type="checkbox"
+                      checked={form.usar_fecha_personalizada}
+                      onChange={(e) => setForm((p) => ({ ...p, usar_fecha_personalizada: e.target.checked, fecha_movimiento: e.target.checked && !p.fecha_movimiento ? defaultFechaLocal() : p.fecha_movimiento }))}
+                      style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#06b6d4" }}
+                    />
+                    🕒 Registrar en otra fecha/hora (no la actual)
+                  </label>
+                  {form.usar_fecha_personalizada && (
+                    <div style={{ marginTop: 10 }}>
+                      <SLabel>Fecha y hora del movimiento</SLabel>
+                      <input
+                        type="datetime-local"
+                        value={form.fecha_movimiento}
+                        max={defaultFechaLocal()}
+                        onChange={(e) => setForm((p) => ({ ...p, fecha_movimiento: e.target.value }))}
+                        style={iStyle()}
+                      />
+                      <div className="" style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "#64748b" }}>Se usará esta fecha para el movimiento (no puede ser futura).</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Resumen */}
