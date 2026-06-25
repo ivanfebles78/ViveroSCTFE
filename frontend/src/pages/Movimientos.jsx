@@ -1801,8 +1801,10 @@ function MovimientoModal({
                   </div>
                 )}
 
-                {/* Destino zona (para entrada, traslado, devolución) */}
-                {(esEntrada || esTrasladoTipo || esDevolucionTipo) && (
+                {/* Destino zona (para entrada, traslado, devolución).
+                    Con un pedido la zona ya se eligió por línea en el paso 2,
+                    así que aquí no se repite. */}
+                {!selectedPedido && (esEntrada || esTrasladoTipo || esDevolucionTipo) && (
                   <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${esEntrada ? "rgba(16,185,129,0.15)" : esTrasladoTipo ? "rgba(59,130,246,0.15)" : "rgba(245,158,11,0.18)"}`, background: esEntrada ? "rgba(16,185,129,0.03)" : esTrasladoTipo ? "rgba(59,130,246,0.03)" : "rgba(245,158,11,0.04)" }}>
                     <div style={{ fontWeight: 900, fontSize: 13, color: esEntrada ? "#065f46" : esTrasladoTipo ? "#1e3a8a" : "#92400e", marginBottom: 10 }}>🎯 Zona destino</div>
                     <div style={{ display: "grid", gridTemplateColumns: (esTrasladoTipo && !formatoFijo) ? "1fr 1fr" : "1fr", gap: 10 }}>
