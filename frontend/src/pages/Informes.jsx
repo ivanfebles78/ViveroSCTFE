@@ -1040,6 +1040,7 @@ async function exportReportToPdf({
         ["Subcategoría", stockExportData.filters.subcategoria || "Todas"],
         ["Texto", stockExportData.filters.search || "—"],
         ["Solo bajo stock", stockExportData.filters.onlyLowStock ? "Sí" : "No"],
+        ["Solo productos en stock", stockExportData.filters.onlyInStock ? "Sí" : "No"],
         ["Productos visibles", fmtNum(stockExportData.totalProductos)],
         ["Categorías visibles", fmtNum(stockExportData.totalCategorias)],
       ],
@@ -1367,6 +1368,7 @@ export default function Informes() {
   const [stockCategoriaFilter, setStockCategoriaFilter] = useState("");
   const [stockSubcategoriaFilter, setStockSubcategoriaFilter] = useState("");
   const [stockOnlyLow, setStockOnlyLow] = useState(false);
+  const [stockOnlyInStock, setStockOnlyInStock] = useState(false);
 
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
@@ -1521,13 +1523,14 @@ export default function Informes() {
       const matchesSubcategory =
         !stockSubcategoriaFilter || item.subcategoria === stockSubcategoriaFilter;
       const matchesLowStock = !stockOnlyLow || item.estado === "Bajo stock";
+      const matchesInStock = !stockOnlyInStock || Number(item.stockActual) > 0;
       const matchesSearch =
         !term ||
         item.nombre.toLowerCase().includes(term) ||
         item.categoria.toLowerCase().includes(term) ||
         item.subcategoria.toLowerCase().includes(term);
 
-      return matchesCategory && matchesSubcategory && matchesLowStock && matchesSearch;
+      return matchesCategory && matchesSubcategory && matchesLowStock && matchesInStock && matchesSearch;
     });
   }, [
     normalizedStockItems,
@@ -1535,6 +1538,7 @@ export default function Informes() {
     stockCategoriaFilter,
     stockSubcategoriaFilter,
     stockOnlyLow,
+    stockOnlyInStock,
   ]);
 
   const stockGroupedByCategory = useMemo(() => {
@@ -1582,6 +1586,7 @@ export default function Informes() {
         subcategoria: stockSubcategoriaFilter,
         search: stockSearch,
         onlyLowStock: stockOnlyLow,
+        onlyInStock: stockOnlyInStock,
       },
       totalCategorias: stockSummary.totalCategorias,
       totalProductos: stockSummary.totalProductos,
@@ -1592,6 +1597,7 @@ export default function Informes() {
     stockSubcategoriaFilter,
     stockSearch,
     stockOnlyLow,
+    stockOnlyInStock,
     stockSummary,
     stockGroupedByCategory,
   ]);
@@ -1944,6 +1950,7 @@ export default function Informes() {
     setStockCategoriaFilter("");
     setStockSubcategoriaFilter("");
     setStockOnlyLow(false);
+    setStockOnlyInStock(false);
   };
 
   const onBuscarExternos = async () => {
@@ -2428,6 +2435,27 @@ export default function Informes() {
                   style={{ width: 18, height: 18 }}
                 />
                 Productos con bajo stock
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  minHeight: 48,
+                  padding: "0 4px",
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={stockOnlyInStock}
+                  onChange={(e) => setStockOnlyInStock(e.target.checked)}
+                  style={{ width: 18, height: 18 }}
+                />
+                Solo productos en stock
               </label>
 
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
