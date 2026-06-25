@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios from "axios";
+import { formatFechaHoraCanaria } from "../utils/fecha";
 
 export default function Lotetracking() {
   const [uuid, setUuid] = useState("");
@@ -59,7 +60,7 @@ export default function Lotetracking() {
                 }}
               >
                 <strong>
-                  {new Date(m.fecha).toLocaleString()}
+                  {formatFechaHoraCanaria(m.fecha)}
                 </strong>
 
                 <div style={{ marginTop: 8 }}>

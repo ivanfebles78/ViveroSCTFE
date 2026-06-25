@@ -10,6 +10,7 @@ import {
 } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
+import { formatFechaCanaria } from "../utils/fecha";
 import WelcomeModal, { shouldShowWelcomeOnStart } from "../components/welcome/WelcomeModal";
 
 // Flip to true to re-enable the in-app zone editor (button + drag UI).
@@ -533,7 +534,7 @@ function buildPedidoCaducidadNotifications(pedidos) {
     const f = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const diffDays = Math.floor((f - hoy) / (1000 * 60 * 60 * 24));
 
-    const fechaTxt = new Intl.DateTimeFormat("es-ES", { dateStyle: "short" }).format(f);
+    const fechaTxt = formatFechaCanaria(p.fecha_caducidad);
 
     if (diffDays < 0) {
       notifications.push({

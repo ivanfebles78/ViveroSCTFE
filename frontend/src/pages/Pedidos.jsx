@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
 import { formatUsername } from "../utils/format";
+import { formatFechaCanaria } from "../utils/fecha";
 import { getProductFormatoConfig, getFormatoOptions } from "../utils/formato";
 import { formatCantidad } from "../utils/numero";
 import {
@@ -137,16 +138,7 @@ const DISTRITOS = Object.keys(DISTRITO_BARRIOS);
 
 const safeArray = (x) => (Array.isArray(x) ? x : []);
 
-const fmtFechaES = (value) => {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(d);
-};
+const fmtFechaES = (value) => formatFechaCanaria(value);
 
 const dateInputValue = (value) => {
   if (!value) return "";
@@ -335,12 +327,7 @@ function sanitizeFileName(name) {
     .slice(0, 80);
 }
 
-const _fmtFechaPdf = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-ES", { dateStyle: "short" }).format(d);
-};
+const _fmtFechaPdf = (v) => formatFechaCanaria(v);
 
 // Renderiza UN pedido en el jsPDF actual. Si es el primero, no añade página previa.
 async function renderPedidoEnPdf(doc, pedido, mapProdName, isFirst, logoDataUrl) {

@@ -19,6 +19,7 @@ import {
   getZonaLabel,
 } from "../utils/zonas";
 import VerPlanta from "../components/VerPlanta";
+import { formatFechaCanaria, formatFechaHoraCanaria, datetimeLocalToUtcIso } from "../utils/fecha";
 
 // Zonas especiales (no numéricas) — dedicadas a categorías concretas.
 // El almacén general original se ha subdividido en tres almacenes
@@ -275,16 +276,7 @@ const DESTINOS_EXTERNOS = ["Empresa", "Organismo oficial", "Colegio", "Otro", "O
 
 const safeArray = (x) => (Array.isArray(x) ? x : []);
 
-const fmtFechaES = (value) => {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(d);
-};
+const fmtFechaES = (value) => formatFechaCanaria(value);
 
 const dateInputValue = (value) => {
   if (!value) return "";
@@ -1380,7 +1372,7 @@ function MovimientoModal({
     // La fecha/hora personalizada y las observaciones se eligen en el paso 3,
     // pero las líneas del lote (salida por zonas, pedido…) se construyeron en el
     // paso 2. Aplicamos aquí esos campos globales a TODAS las líneas.
-    const fechaMov = form.usar_fecha_personalizada && form.fecha_movimiento ? form.fecha_movimiento : null;
+    const fechaMov = form.usar_fecha_personalizada && form.fecha_movimiento ? datetimeLocalToUtcIso(form.fecha_movimiento) : null;
     const obs = (form.observaciones || "").trim();
     const finalPayloads = allPayloads.map((p) => ({
       ...p,
@@ -2680,8 +2672,8 @@ function MovimientoDetalleModal({ movimiento, onClose }) {
 
   const m = movimiento;
   const tipo = m.tipo_movimiento || "—";
-  const fmt = (d) => (d ? new Date(d).toLocaleString("es-ES") : "—");
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("es-ES") : "—");
+  const fmt = (d) => formatFechaHoraCanaria(d);
+  const fmtDate = (d) => formatFechaCanaria(d);
 
   const Row = ({ label, value, mono = false }) => (
     <div

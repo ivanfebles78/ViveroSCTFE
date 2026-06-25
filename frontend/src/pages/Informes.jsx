@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
+import { formatFechaCanaria, formatFechaHoraCanaria } from "../utils/fecha";
 import {
   getDistribucionReporte,
   getMovimientosExternosReporte,
@@ -176,24 +177,11 @@ function tdStyle() {
 }
 
 function fmtFecha(value) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-ES", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(d);
+  return formatFechaHoraCanaria(value);
 }
 
 function fmtFechaSolo(value) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(d);
+  return formatFechaCanaria(value);
 }
 
 function fmtNum(value) {
