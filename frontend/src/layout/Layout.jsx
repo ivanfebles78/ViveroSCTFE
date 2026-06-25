@@ -75,6 +75,8 @@ function computeBadgeCounts(role, pedidos, seenMap, username) {
     counts["/pedidos"] = pedidos.filter((p) => {
       if (tipoOf(p) !== "reposicion") return false;
       if (!SERVICEABLE_STATES.has(estadoOf(p))) return false;
+      // Ya visto: al entrar en /pedidos se marca como leído y deja de contar.
+      if (seenMap[String(p.id)] === estadoOf(p)) return false;
       const cant = Number(
         (p.items || []).reduce((acc, it) => acc + Number(it.cantidad || 0), 0)
       );
@@ -100,7 +102,7 @@ function computeBadgeCounts(role, pedidos, seenMap, username) {
     let count = 0;
     for (const p of pedidos) {
       const e = estadoOf(p);
-      // (a) servir salidas
+      // (a) servir salidas — solo cuenta si aún no se ha "visto" en /pedidos.
       if (tipoOf(p) === "salida" && SERVICEABLE_STATES.has(e)) {
         const cant = Number(
           (p.items || []).reduce((acc, it) => acc + Number(it.cantidad || 0), 0)
@@ -109,7 +111,7 @@ function computeBadgeCounts(role, pedidos, seenMap, username) {
           (p.items || []).reduce((acc, it) => acc + Number(it.cantidad_servida || 0), 0)
         );
         if (servida < cant) {
-          count += 1;
+          if (seenMap[String(p.id)] !== e) count += 1;
           continue;
         }
       }
@@ -971,23 +973,52 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
     (selectedZone ? `Zona ${String(selectedZone).toUpperCase()}` : "Selecciona una zona");
 
   // Resuelve el identificador a consultar contra el backend. La config de zonas
-  // del servidor puede tener ids corruptos (p. ej. "zona-3" para la celda 3b),
-  // así que mapeamos la zona contra la config canónica (zonasConfig) por nombre
-  // o apiId normalizado y usamos su apiId real. Así "Zona 3b" consulta "3b".
+  // del servidor puede tener ids/apiIds corruptos (p. ej. "zona-3" para la celda
+  // 3b), así que mapeamos la zona contra la config canónica (zonasConfig) y
+  // usamos su apiId real. Así "Zona 3 B" consulta "3b".
+  //
+  // Estrategia, de más fiable a menos:
+  //  1) Por GEOMETRÍA: los puntos del polígono dibujado sobre la celda son
+  //     idénticos a los de la config canónica (la celda está en su sitio),
+  //     así que casan aunque el id/nombre estén corruptos.
+  //  2) Por nombre canónico.
+  //  3) Por id / apiId (tolerante al prefijo "zona", como hace el backend).
+  //  4) Fallback: quitamos el prefijo "zona-" del apiId o del id.
   const resolveZoneApiId = (zone) => {
+    // Normalización base (sin tildes, sin separadores).
     const norm = (s) =>
       String(s || "")
         .toLowerCase()
         .normalize("NFD")
         .replace(/[̀-ͯ]/g, "")
         .replace(/[^a-z0-9]/g, "");
-    const porNombre = zonasDefault.find((c) => norm(c.nombre) === norm(zone?.nombre));
+    // Igual que _normalize_zona_id del backend: quita el prefijo "zona".
+    const normZona = (s) => {
+      let r = norm(s);
+      if (r.startsWith("zonazona")) r = r.slice(8);
+      if (r.startsWith("zona")) r = r.slice(4);
+      return r;
+    };
+    const normPuntos = (s) => String(s || "").replace(/\s+/g, " ").trim();
+
+    // 1) Por geometría.
+    if (zone?.puntos) {
+      const porPuntos = zonasDefault.find((c) => normPuntos(c.puntos) === normPuntos(zone.puntos));
+      if (porPuntos?.apiId) return porPuntos.apiId;
+    }
+    // 2) Por nombre canónico.
+    const porNombre = zonasDefault.find((c) => normZona(c.nombre) === normZona(zone?.nombre));
     if (porNombre?.apiId) return porNombre.apiId;
+    // 3) Por id / apiId canónico.
     const porId = zonasDefault.find(
-      (c) => norm(c.id) === norm(zone?.id) || (zone?.apiId && norm(c.apiId) === norm(zone?.apiId))
+      (c) =>
+        normZona(c.id) === normZona(zone?.id) ||
+        (zone?.apiId && normZona(c.apiId) === normZona(zone?.apiId)) ||
+        normZona(c.apiId) === normZona(zone?.id)
     );
     if (porId?.apiId) return porId.apiId;
-    return zone?.apiId || String(zone?.id || "").replace(/^zona[-_]?/i, "");
+    // 4) Fallback: quita el prefijo "zona-" del apiId o del id.
+    return String(zone?.apiId || zone?.id || "").replace(/^zona[-_]?/i, "");
   };
 
   const loadZone = async (zone) => {

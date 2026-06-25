@@ -847,6 +847,8 @@ function MovimientoModal({
   const [distribucion, setDistribucion] = useState({});
   // Zonas que el usuario ha añadido al reparto de una salida (vía desplegable).
   const [zonasSalida, setZonasSalida] = useState([]);
+  // Zona elegida por cada línea de pedido (clave: line._key -> zona).
+  const [pedidoLineZona, setPedidoLineZona] = useState({});
   const [batchPayloads, setBatchPayloads] = useState([]);
   const [productoSearch, setProductoSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -861,6 +863,8 @@ function MovimientoModal({
       setShowPedidoModal(false);
       setShowPrestamoModal(false);
       setDistribucion({});
+      setZonasSalida([]);
+      setPedidoLineZona({});
       setBatchPayloads([]);
       setProductoSearch("");
       setFiltroCategoria("");
@@ -1297,6 +1301,72 @@ function MovimientoModal({
 
   const removeBatchItem = (idx) => setBatchPayloads((prev) => prev.filter((_, i) => i !== idx));
 
+  // Zonas seleccionables para una línea de pedido. En salidas, las que tienen
+  // stock de ese producto+tamaño; en reposiciones (entrada), las permitidas por
+  // categoría (zona de destino).
+  const zonasParaLineaPedido = (linea) => {
+    const esRepo = (selectedPedido?.tipo || "salida") === "reposicion";
+    if (esRepo) {
+      const prod = safeArray(productos).find((p) => String(p.id) === String(linea.producto_id));
+      return getZonasPermitidasParaCategoria(prod, ZONAS).map((z) => ({ zona: z, disponible: null }));
+    }
+    const pid = String(linea.producto_id);
+    const out = [];
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      if (parts[0] !== pid) continue;
+      const tam = parts.slice(2).join("__");
+      if (linea.tamano && tam !== linea.tamano) continue;
+      out.push({ zona: zonaIdByLower.get(parts[1]) || parts[1], disponible: Number(qty) });
+    }
+    return out;
+  };
+
+  const lineasPendientesPedido = pedidoLineas.filter((l) => !l._disabled).length;
+
+  // Añade una línea del pedido al lote con su zona elegida. Todas las líneas
+  // comparten la dirección del pedido (no editable).
+  const addPedidoLinea = (linea) => {
+    const esRepo = (selectedPedido?.tipo || "salida") === "reposicion";
+    const zona = pedidoLineZona[linea._key];
+    const cantidad = Number(linea.cantidad) || 0;
+    if (!zona) { setErrors(["Elige la zona de esta línea."]); return; }
+    if (cantidad <= 0) { setErrors(["La línea no tiene cantidad válida."]); return; }
+    if (!esRepo) {
+      const disp = Number(stockByProductZoneSize.get(`${linea.producto_id}__${String(zona).toLowerCase()}__${linea.tamano}`) || 0);
+      if (cantidad > disp) { setErrors([`En ${getZonaLabel(zona)} solo hay ${disp} de ${linea.producto_nombre || "este producto"} (${linea.tamano}).`]); return; }
+    }
+    const destinoTipo = esRepo ? "Vivero" : (DESTINOS_EXTERNOS.includes(form.destino_tipo) ? form.destino_tipo : "Empresa");
+    const nota = `Movimiento asociado al pedido #${selectedPedido?.id || ""}`;
+    const payload = {
+      pedido_id: selectedPedido?.id ? Number(selectedPedido.id) : null,
+      pedido_item_id: linea.id ? Number(linea.id) : null,
+      producto_id: Number(linea.producto_id),
+      origen_tipo: esRepo ? "Empresa Externa" : "Vivero",
+      destino_tipo: destinoTipo,
+      tamano_origen: esRepo ? null : (linea.tamano || null),
+      tamano_destino: esRepo ? (linea.tamano || null) : null,
+      zona_origen: esRepo ? null : zona,
+      zona_destino: esRepo ? zona : null,
+      distrito_destino: esRepo ? null : (selectedPedido?.distrito_destino || null),
+      barrio_destino: esRepo ? null : (selectedPedido?.barrio_destino || null),
+      direccion_destino: esRepo ? null : (selectedPedido?.direccion_destino || null),
+      cp_destino: null,
+      observaciones: form.observaciones || nota,
+      nota: form.observaciones || nota,
+      es_prestamo: false,
+      es_devolucion: false,
+      prestamo_referencia_id: null,
+      fecha_disponibilidad: null,
+      fecha_movimiento: form.usar_fecha_personalizada && form.fecha_movimiento ? form.fecha_movimiento : null,
+      cantidad,
+    };
+    setBatchPayloads((prev) => [...prev, payload]);
+    setPedidoLineZona((prev) => { const n = { ...prev }; delete n[linea._key]; return n; });
+    setErrors([]);
+  };
+
   const submit = async () => {
     const currentIsFilled = formTieneLineaActual();
     if (!currentIsFilled && batchPayloads.length === 0) { setErrors(["No hay líneas que guardar. Rellena el formulario o añade al lote."]); return; }
@@ -1520,18 +1590,40 @@ function MovimientoModal({
                 {/* Líneas de pedido si hay pedido */}
                 {selectedPedido && (
                   <div style={{ padding: 14, borderRadius: 14, background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)" }}>
-                    <div style={{ fontWeight: 900, color: "#1e3a8a", marginBottom: 10, fontSize: 13 }}>Líneas del pedido #{selectedPedido.id}</div>
-                    <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontWeight: 900, color: "#1e3a8a", marginBottom: 4, fontSize: 13 }}>Líneas del pedido #{selectedPedido.id}</div>
+                    <div style={{ color: "#475569", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>
+                      Elige la zona de origen de cada línea y añádela. La dirección de destino es la del pedido (igual para todas).
+                    </div>
+                    <div style={{ display: "grid", gap: 8 }}>
                       {pedidoLineas.map((linea) => {
-                        const active = selectedPedidoLineKey === linea._key;
                         const disabled = !!linea._disabled;
+                        const zonasLinea = disabled ? [] : zonasParaLineaPedido(linea);
+                        const zonaSel = pedidoLineZona[linea._key] || "";
+                        const esUltima = lineasPendientesPedido <= 1;
                         return (
-                          <div key={linea._key} style={{ padding: "9px 12px", borderRadius: 10, border: disabled ? "1px solid rgba(148,163,184,0.18)" : active ? "1px solid rgba(6,182,212,0.35)" : "1px solid rgba(15,23,42,0.08)", background: disabled ? "rgba(148,163,184,0.06)" : active ? "rgba(6,182,212,0.08)" : "#fff", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", opacity: disabled ? 0.6 : 1 }}>
-                            <div>
-                              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
-                              <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · Ya movida: ${linea._cantidad_movida}` : ""}</div>
+                          <div key={linea._key} style={{ padding: "10px 12px", borderRadius: 10, border: disabled ? "1px solid rgba(148,163,184,0.18)" : "1px solid rgba(15,23,42,0.08)", background: disabled ? "rgba(148,163,184,0.06)" : "#fff", opacity: disabled ? 0.6 : 1 }}>
+                            <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                              <div>
+                                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
+                                <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? " · ✓ ya añadida" : ""}</div>
+                              </div>
                             </div>
-                            <button type="button" onClick={() => usarLineaPedido(linea)} disabled={disabled} style={{ padding: "6px 10px", borderRadius: 8, border: disabled ? "1px solid rgba(148,163,184,0.18)" : "1px solid rgba(16,185,129,0.25)", background: disabled ? "rgba(148,163,184,0.14)" : "rgba(16,185,129,0.10)", color: disabled ? "#64748b" : "#065f46", fontWeight: 900, cursor: disabled ? "not-allowed" : "pointer", fontSize: 12 }}>{disabled ? "Ya usada" : "Usar"}</button>
+                            {!disabled && (
+                              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
+                                <div style={{ flex: "1 1 200px" }}>
+                                  <SLabel>{(selectedPedido?.tipo || "salida") === "reposicion" ? "Zona destino" : "Zona origen"}</SLabel>
+                                  <select value={zonaSel} onChange={(e) => setPedidoLineZona((prev) => ({ ...prev, [linea._key]: e.target.value }))} style={iStyle()} disabled={zonasLinea.length === 0}>
+                                    <option value="">{zonasLinea.length === 0 ? "Sin stock en ninguna zona" : "Selecciona zona"}</option>
+                                    {zonasLinea.map(({ zona, disponible }) => (
+                                      <option key={zona} value={zona}>{getZonaLabel(zona)}{disponible != null ? ` (${disponible} uds)` : ""}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button type="button" onClick={() => addPedidoLinea(linea)} disabled={!zonaSel} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: zonaSel ? "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: zonaSel ? "pointer" : "not-allowed", fontSize: 12, whiteSpace: "nowrap" }}>
+                                  {esUltima ? "Añadir al lote y finalizar" : "Añadir al lote y seleccionar otra"}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1674,26 +1766,35 @@ function MovimientoModal({
                 {esSalida && isExternalDestination(form.destino_tipo) && (
                   <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
                     <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 10 }}>🗺️ Dirección de destino · {form.destino_tipo}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div>
-                        <SLabel>Distrito</SLabel>
-                        <select value={form.distrito_destino} onChange={(e) => setForm((p) => ({ ...p, distrito_destino: e.target.value, barrio_destino: "" }))} style={iStyle()}>
-                          <option value="">Seleccionar distrito</option>
-                          {Object.keys(DISTRITO_BARRIOS).map((d) => <option key={d} value={d}>{d}</option>)}
-                        </select>
+                    {selectedPedido ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 14 }}>
+                          {[form.distrito_destino, form.barrio_destino, form.direccion_destino].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>Dirección del pedido #{selectedPedido.id} (igual para todas las líneas, no editable).</div>
                       </div>
-                      <div>
-                        <SLabel>Zona</SLabel>
-                        <select value={form.barrio_destino} onChange={(e) => setForm((p) => ({ ...p, barrio_destino: e.target.value }))} style={iStyle()} disabled={!form.distrito_destino}>
-                          <option value="">{form.distrito_destino ? "Seleccionar zona" : "Primero elige el distrito"}</option>
-                          {barriosDisponibles.map((b) => <option key={b} value={b}>{b}</option>)}
-                        </select>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <SLabel>Distrito</SLabel>
+                          <select value={form.distrito_destino} onChange={(e) => setForm((p) => ({ ...p, distrito_destino: e.target.value, barrio_destino: "" }))} style={iStyle()}>
+                            <option value="">Seleccionar distrito</option>
+                            {Object.keys(DISTRITO_BARRIOS).map((d) => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <SLabel>Zona</SLabel>
+                          <select value={form.barrio_destino} onChange={(e) => setForm((p) => ({ ...p, barrio_destino: e.target.value }))} style={iStyle()} disabled={!form.distrito_destino}>
+                            <option value="">{form.distrito_destino ? "Seleccionar zona" : "Primero elige el distrito"}</option>
+                            {barriosDisponibles.map((b) => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </div>
+                        <div style={{ gridColumn: "span 2" }}>
+                          <SLabel>Dirección</SLabel>
+                          <input value={form.direccion_destino} onChange={(e) => setForm((p) => ({ ...p, direccion_destino: e.target.value }))} style={iStyle()} placeholder="Calle, número..." />
+                        </div>
                       </div>
-                      <div style={{ gridColumn: "span 2" }}>
-                        <SLabel>Dirección</SLabel>
-                        <input value={form.direccion_destino} onChange={(e) => setForm((p) => ({ ...p, direccion_destino: e.target.value }))} style={iStyle()} placeholder="Calle, número..." />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
