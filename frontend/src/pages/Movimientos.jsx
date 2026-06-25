@@ -1470,48 +1470,52 @@ function MovimientoModal({
             {/* STEP 2 — Producto */}
             {step === 2 && (
               <div style={{ display: "grid", gap: 16 }}>
-                {/* Filtros */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 10 }}>
-                  <div>
-                    <SLabel>Categoría</SLabel>
-                    <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={iStyle()}>
-                      <option value="">Todas</option>
-                      {categoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <SLabel>Subcategoría</SLabel>
-                    <select value={filtroSubcategoria} onChange={(e) => setFiltroSubcategoria(e.target.value)} style={iStyle()} disabled={!filtroCategoria || subcategoriasDisponibles.length === 0}>
-                      <option value="">Todas</option>
-                      {subcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <SLabel>Buscar producto</SLabel>
-                    <input value={productoSearch} onChange={(e) => setProductoSearch(e.target.value)} style={iStyle()} placeholder="Escribe nombre científico o común..." />
-                  </div>
-                </div>
+                {/* Filtros y lista de productos: solo en movimientos SIN pedido.
+                    Con un pedido, el producto sale de las líneas del pedido. */}
+                {!selectedPedido && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 10 }}>
+                      <div>
+                        <SLabel>Categoría</SLabel>
+                        <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={iStyle()}>
+                          <option value="">Todas</option>
+                          {categoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <SLabel>Subcategoría</SLabel>
+                        <select value={filtroSubcategoria} onChange={(e) => setFiltroSubcategoria(e.target.value)} style={iStyle()} disabled={!filtroCategoria || subcategoriasDisponibles.length === 0}>
+                          <option value="">Todas</option>
+                          {subcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <SLabel>Buscar producto</SLabel>
+                        <input value={productoSearch} onChange={(e) => setProductoSearch(e.target.value)} style={iStyle()} placeholder="Escribe nombre científico o común..." />
+                      </div>
+                    </div>
 
-                {/* Lista de productos */}
-                <div>
-                  <SLabel>Producto ({filteredProductos.length} disponibles{form.origen_tipo === "Vivero" ? " con stock" : ""})</SLabel>
-                  <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 12, background: "#fafafa" }}>
-                    {filteredProductos.length === 0 ? (
-                      <div style={{ padding: 16, color: "#64748b", fontWeight: 700, fontSize: 13 }}>No hay productos{form.origen_tipo === "Vivero" ? " con stock" : ""} que coincidan.</div>
-                    ) : filteredProductos.map((p) => {
-                      const active = String(p.id) === String(form.producto_id);
-                      return (
-                        <div key={p.id} onClick={() => { setForm((prev) => ({ ...prev, producto_id: String(p.id), zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: "" })); setDistribucion({}); }} style={{ padding: "10px 14px", borderBottom: "1px solid rgba(15,23,42,0.06)", cursor: "pointer", background: active ? `${accent}12` : "transparent", borderLeft: active ? `3px solid ${accent}` : "3px solid transparent", fontWeight: active ? 900 : 700, color: active ? "#0f172a" : "#334155", fontSize: 13, transition: "all 0.12s", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                          <div>
-                            <div>{getProductDisplayName(p)}</div>
-                            {p.categoria && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{p.categoria}{p.subcategoria ? ` · ${p.subcategoria}` : ""}</div>}
-                          </div>
-                          <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="button" stopPropagation={true} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                    <div>
+                      <SLabel>Producto ({filteredProductos.length} disponibles{form.origen_tipo === "Vivero" ? " con stock" : ""})</SLabel>
+                      <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 12, background: "#fafafa" }}>
+                        {filteredProductos.length === 0 ? (
+                          <div style={{ padding: 16, color: "#64748b", fontWeight: 700, fontSize: 13 }}>No hay productos{form.origen_tipo === "Vivero" ? " con stock" : ""} que coincidan.</div>
+                        ) : filteredProductos.map((p) => {
+                          const active = String(p.id) === String(form.producto_id);
+                          return (
+                            <div key={p.id} onClick={() => { setForm((prev) => ({ ...prev, producto_id: String(p.id), zona_origen: "", tamano_origen: "", zona_destino: "", tamano_destino: "" })); setDistribucion({}); }} style={{ padding: "10px 14px", borderBottom: "1px solid rgba(15,23,42,0.06)", cursor: "pointer", background: active ? `${accent}12` : "transparent", borderLeft: active ? `3px solid ${accent}` : "3px solid transparent", fontWeight: active ? 900 : 700, color: active ? "#0f172a" : "#334155", fontSize: 13, transition: "all 0.12s", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                              <div>
+                                <div>{getProductDisplayName(p)}</div>
+                                {p.categoria && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{p.categoria}{p.subcategoria ? ` · ${p.subcategoria}` : ""}</div>}
+                              </div>
+                              <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="button" stopPropagation={true} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* Líneas de pedido si hay pedido */}
                 {selectedPedido && (
@@ -1819,6 +1823,11 @@ function MovimientoModal({
               {step < 3 && (
                 <button onClick={() => {
                   if (step === 1 && !step1Valid) { setErrors([entradaOtrosSinEspecificar ? "Especifica la procedencia del material." : "Completa los campos requeridos antes de continuar."]); return; }
+                  // Si ya hay líneas en el lote (p. ej. de un pedido) y nada a
+                  // medio rellenar, se puede continuar sin más validaciones.
+                  if (step === 2 && batchPayloads.length > 0 && !formTieneLineaActual()) { setErrors([]); setStep((s) => s + 1); return; }
+                  // Con pedido pero sin líneas añadidas todavía: avisa.
+                  if (step === 2 && selectedPedido && batchPayloads.length === 0 && !formTieneLineaActual()) { setErrors(["Añade al menos una línea del pedido al lote."]); return; }
                   if (step === 2 && !form.producto_id) { setErrors(["Selecciona un producto antes de continuar."]); return; }
                   if (step === 2 && salidaPorZonas && !(totalSalida > 0)) { setErrors(["Indica cuántas unidades sacar de al menos una zona."]); return; }
                   if (step === 2 && salidaPorZonas && hayExcesoSalida) { setErrors(["Hay zonas donde pides más de lo disponible. Corrige las cantidades en rojo."]); return; }
