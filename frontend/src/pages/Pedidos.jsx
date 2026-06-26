@@ -2041,7 +2041,13 @@ function ImprimirPedidosModal({ open, pedidos, mapProdName, onClose }) {
                     </div>
                     <div style={{ fontWeight: 900 }}>{p.estado || "—"}</div>
                     <div style={{ color: "#b91c1c", fontWeight: 900 }}>
-                      {p.fecha_caducidad ? fmtFechaES(p.fecha_caducidad) : "—"}
+                      {/* La caducidad no aplica a pedidos ya cerrados (servidos,
+                          denegados, cancelados o caducados). */}
+                      {(() => {
+                        const e = String(p.estado || "").toUpperCase();
+                        const cerrado = ["SERVIDO", "DENEGADO", "CANCELADO", "CADUCADO"].includes(e);
+                        return !cerrado && p.fecha_caducidad ? fmtFechaES(p.fecha_caducidad) : "—";
+                      })()}
                     </div>
                   </label>
                 );

@@ -912,24 +912,23 @@ function MovimientoModal({
 
   const pedidoLineas = useMemo(() => {
     return safeArray(selectedPedido?.items).map((it, idx) => {
-      const byItemKey = it?.id ? `item__${it.id}` : null;
-      const fallbackKey = `pedido__${selectedPedido?.id || ""}__prod__${it?.producto_id || ""}__tam__${it?.tamano || ""}`;
-      // Si la línea tiene id propio, nos fiamos SOLO de los movimientos con ese
-      // pedido_item_id. El fallback por producto+tamaño solo aplica a líneas
-      // antiguas sin id; usarlo siempre deshabilitaba líneas hermanas o líneas
-      // no servidas en cuanto existía cualquier movimiento del mismo producto.
-      const cantidadMovidaBackend = byItemKey
-        ? Number(movimientosPreviosPorPedido.get(byItemKey) || 0)
-        : Number(movimientosPreviosPorPedido.get(fallbackKey) || 0);
+      // Fuente de verdad: lo servido lo dice el backend (cantidad_servida), no
+      // un recuento de movimientos. Una línea se puede mover si está APROBADA,
+      // queda pendiente (servida < cantidad) y no está ya en el lote.
+      const cant = Number(it?.cantidad || 0);
+      const servidaBackend = Number(it?.cantidad_servida || 0);
       const cantidadEnLoteLocal = it?.id ? Number(cantidadesEnLote.get(Number(it.id)) || 0) : 0;
-      const cantidadMovida = cantidadMovidaBackend + cantidadEnLoteLocal;
       const estadoItemRaw = String(it?.estado_item || "APROBADO").toUpperCase();
       const itemRechazado = estadoItemRaw === "DENEGADO";
       const itemPendiente = estadoItemRaw === "RESERVA";
       const itemNoServible = itemRechazado || itemPendiente;
-      return { ...it, _key: `${selectedPedido?.id || "pedido"}-${it?.producto_id || "prod"}-${it?.tamano || "tam"}-${idx}`, _cantidad_movida: cantidadMovida, _cantidad_en_lote: cantidadEnLoteLocal, _disabled: cantidadMovidaBackend > 0 || cantidadEnLoteLocal > 0 || itemNoServible, _razon_bloqueo: cantidadEnLoteLocal > 0 ? "ya_en_lote" : cantidadMovidaBackend > 0 ? "ya_servida" : itemRechazado ? "item_denegado" : itemPendiente ? "item_pendiente" : null };
+      const yaServidaCompleto = cant > 0 && servidaBackend >= cant;
+      const yaEnLote = cantidadEnLoteLocal > 0;
+      const disabled = itemNoServible || yaServidaCompleto || yaEnLote;
+      const razon = itemRechazado ? "item_denegado" : itemPendiente ? "item_pendiente" : yaEnLote ? "ya_en_lote" : yaServidaCompleto ? "ya_servida" : null;
+      return { ...it, _key: `${selectedPedido?.id || "pedido"}-${it?.producto_id || "prod"}-${it?.tamano || "tam"}-${idx}`, _cantidad_movida: servidaBackend, _cantidad_en_lote: cantidadEnLoteLocal, _disabled: disabled, _razon_bloqueo: razon };
     });
-  }, [selectedPedido, movimientosPreviosPorPedido, cantidadesEnLote]);
+  }, [selectedPedido, cantidadesEnLote]);
 
   const selectedProducto = productos.find((p) => String(p.id) === String(form.producto_id));
   const formatoConfig = useMemo(() => getProductFormatoConfig(selectedProducto), [selectedProducto]);
