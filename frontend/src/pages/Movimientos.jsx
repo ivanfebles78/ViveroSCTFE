@@ -1060,8 +1060,10 @@ function MovimientoModal({
   const esDevolucion = useMemo(() => form.tipo_elegido === "devolucion", [form.tipo_elegido]);
   // Para las SALIDAS, el paso 2 muestra todas las zonas (con su tamaño) que
   // tienen stock del producto y se indica cuánto sacar de cada una.
-  // ¿Estamos eligiendo unidades por zona+tamaño (salida desde el vivero)?
-  const salidaPorZonas = form.tipo_elegido === "salida" && form.origen_tipo === "Vivero";
+  // ¿Elegimos el ORIGEN por zona+tamaño en el paso 2? Aplica a salidas y a
+  // traslados internos (en ambos el material sale de zonas del vivero y no se
+  // puede conocer el tamaño sin elegir la zona).
+  const salidaPorZonas = (form.tipo_elegido === "salida" || form.tipo_elegido === "traslado_interno") && form.origen_tipo === "Vivero";
 
   // Clave compuesta zona+tamaño para el reparto de una salida.
   const salidaKey = (zona, tamano) => `${zona}__${tamano}`;
@@ -1638,7 +1640,7 @@ function MovimientoModal({
                     unidades por tamaño de cada zona. */}
                 {selectedProducto && salidaPorZonas && (
                   <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 10 }}>📍 ¿De qué zonas sale y cuánto?</div>
+                    <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 10 }}>📍 {esTrasladoTipo ? "¿De qué zonas se traslada y cuánto?" : "¿De qué zonas sale y cuánto?"}</div>
                     {zonasConStock.length === 0 ? (
                       <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 13 }}>Este producto no tiene stock en ninguna zona.</div>
                     ) : (
@@ -1740,8 +1742,9 @@ function MovimientoModal({
             {/* STEP 3 — Zonas + Confirmar */}
             {step === 3 && (
               <div style={{ display: "grid", gap: 16 }}>
-                {/* Origen zona (solo traslado interno; en salidas se define en el paso 2) */}
-                {esTrasladoTipo && (
+                {/* Origen zona: el origen se define ahora por zonas en el paso 2
+                    (salidas y traslados), así que aquí no se repite. */}
+                {esTrasladoTipo && !salidaPorZonas && (
                   <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(59,130,246,0.15)", background: "rgba(59,130,246,0.03)" }}>
                     <div style={{ fontWeight: 900, fontSize: 13, color: "#1e3a8a", marginBottom: 10 }}>📍 Zona origen</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
