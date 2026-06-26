@@ -841,6 +841,9 @@ function MovimientoModal({
   const [zonasSalida, setZonasSalida] = useState([]);
   // Zona elegida por cada línea de pedido (clave: line._key -> zona).
   const [pedidoLineZona, setPedidoLineZona] = useState({});
+  // Ref al bloque de zonas (salida/traslado) para auto-desplazar la vista a él
+  // en cuanto se elige un producto.
+  const salidaZonasRef = useRef(null);
   const [batchPayloads, setBatchPayloads] = useState([]);
   const [productoSearch, setProductoSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -1131,6 +1134,17 @@ function MovimientoModal({
   const zonasConStock = useMemo(() => Array.from(salidaStockByZona.keys()), [salidaStockByZona]);
 
   useEffect(() => { setDistribucion({}); setZonasSalida([]); }, [form.producto_id, form.origen_tipo]);
+
+  // Al elegir un producto en una salida/traslado, lleva la vista al bloque de
+  // zonas (que aparece debajo de la lista de productos) para que el usuario no
+  // tenga que bajar a buscarlo.
+  useEffect(() => {
+    if (!salidaPorZonas || !form.producto_id || selectedPedido) return;
+    const id = requestAnimationFrame(() => {
+      salidaZonasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [salidaPorZonas, form.producto_id, selectedPedido]);
 
   // Si solo hay una zona con stock, la añadimos automáticamente.
   useEffect(() => {
@@ -1642,7 +1656,7 @@ function MovimientoModal({
                 {/* Salida: se añaden zonas con un desplegable y se indican las
                     unidades por tamaño de cada zona. */}
                 {selectedProducto && salidaPorZonas && (
-                  <div style={{ padding: 16, borderRadius: 14, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.03)" }}>
+                  <div ref={salidaZonasRef} style={{ padding: 16, borderRadius: 14, border: "2px solid rgba(239,68,68,0.30)", background: "rgba(239,68,68,0.05)", scrollMarginTop: 8 }}>
                     <div style={{ fontWeight: 900, fontSize: 13, color: "#991b1b", marginBottom: 10 }}>📍 {esTrasladoTipo ? "¿De qué zonas se traslada y cuánto?" : "¿De qué zonas sale y cuánto?"}</div>
                     {zonasConStock.length === 0 ? (
                       <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 13 }}>Este producto no tiene stock en ninguna zona.</div>
