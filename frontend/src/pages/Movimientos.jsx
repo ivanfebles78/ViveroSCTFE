@@ -914,7 +914,13 @@ function MovimientoModal({
     return safeArray(selectedPedido?.items).map((it, idx) => {
       const byItemKey = it?.id ? `item__${it.id}` : null;
       const fallbackKey = `pedido__${selectedPedido?.id || ""}__prod__${it?.producto_id || ""}__tam__${it?.tamano || ""}`;
-      const cantidadMovidaBackend = (byItemKey ? Number(movimientosPreviosPorPedido.get(byItemKey) || 0) : 0) || Number(movimientosPreviosPorPedido.get(fallbackKey) || 0);
+      // Si la línea tiene id propio, nos fiamos SOLO de los movimientos con ese
+      // pedido_item_id. El fallback por producto+tamaño solo aplica a líneas
+      // antiguas sin id; usarlo siempre deshabilitaba líneas hermanas o líneas
+      // no servidas en cuanto existía cualquier movimiento del mismo producto.
+      const cantidadMovidaBackend = byItemKey
+        ? Number(movimientosPreviosPorPedido.get(byItemKey) || 0)
+        : Number(movimientosPreviosPorPedido.get(fallbackKey) || 0);
       const cantidadEnLoteLocal = it?.id ? Number(cantidadesEnLote.get(Number(it.id)) || 0) : 0;
       const cantidadMovida = cantidadMovidaBackend + cantidadEnLoteLocal;
       const estadoItemRaw = String(it?.estado_item || "APROBADO").toUpperCase();
@@ -1639,7 +1645,7 @@ function MovimientoModal({
                             <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
                               <div>
                                 <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
-                                <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? " · ✓ ya añadida" : ""}</div>
+                                <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · ${linea._razon_bloqueo === "ya_en_lote" ? "✓ añadida al lote" : linea._razon_bloqueo === "ya_servida" ? "ya movida" : linea._razon_bloqueo === "item_denegado" ? "línea denegada" : linea._razon_bloqueo === "item_pendiente" ? "pendiente de aprobar" : "no disponible"}` : ""}</div>
                               </div>
                             </div>
                             {!disabled && (
@@ -1662,6 +1668,11 @@ function MovimientoModal({
                         );
                       })}
                     </div>
+                    {lineasPendientesPedido === 0 && batchPayloads.length === 0 && (
+                      <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e", fontWeight: 800, fontSize: 12 }}>
+                        Este pedido no tiene líneas pendientes de mover (ya movidas, denegadas o pendientes de aprobar). Pulsa «Atrás» para quitarlo o elegir otro pedido.
+                      </div>
+                    )}
                   </div>
                 )}
 
