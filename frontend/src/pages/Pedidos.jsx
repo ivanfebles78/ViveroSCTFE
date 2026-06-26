@@ -2690,7 +2690,11 @@ export default function Pedidos() {
                         }}
                       >
                         {(() => {
-                          const fc = getPedidoFechaCaducidad(p);
+                          // La caducidad no aplica a pedidos cerrados (servido,
+                          // denegado, cancelado o caducado).
+                          const e = String(p.estado || "").toUpperCase();
+                          const cerrado = ["SERVIDO", "DENEGADO", "CANCELADO", "CADUCADO"].includes(e);
+                          const fc = cerrado ? null : getPedidoFechaCaducidad(p);
                           return fc ? fmtFechaES(fc) : <span style={{ color: "#94a3b8", fontWeight: 700 }}>—</span>;
                         })()}
                       </td>
