@@ -930,7 +930,16 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
               />
 
               <div style={{ overflowX: "auto", border: "1px solid rgba(15,23,42,0.08)", borderRadius: 12 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", wordBreak: "break-word" }}>
+                  <colgroup>
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "9%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "19%" }} />
+                  </colgroup>
                   <thead>
                     <tr style={{ background: "#f8fafc" }}>
                       <th style={{ padding: 10, textAlign: "left", fontWeight: 900, fontSize: 12, color: "#334155" }}>Científico</th>
@@ -1001,9 +1010,11 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                                     style={{ width: 18, height: 18 }}
                                   />
                                 </td>
-                                <td style={{ padding: 6, textAlign: "center", whiteSpace: "nowrap" }}>
-                                  <button onClick={saveEdit} disabled={saving} style={{ marginRight: 6, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(16,185,129,0.3)", background: "rgba(16,185,129,0.10)", color: "#065f46", fontWeight: 900, cursor: "pointer" }}>Guardar</button>
-                                  <button onClick={cancelEdit} disabled={saving} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(15,23,42,0.10)", background: "white", fontWeight: 900, cursor: "pointer" }}>Cancelar</button>
+                                <td style={{ padding: 6, textAlign: "center" }}>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+                                    <button onClick={saveEdit} disabled={saving} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(16,185,129,0.3)", background: "rgba(16,185,129,0.10)", color: "#065f46", fontWeight: 900, cursor: "pointer" }}>Guardar</button>
+                                    <button onClick={cancelEdit} disabled={saving} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(15,23,42,0.10)", background: "white", fontWeight: 900, cursor: "pointer" }}>Cancelar</button>
+                                  </div>
                                 </td>
                               </>
                             ) : (
@@ -1018,9 +1029,11 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                                     {p.es_interno ? "Sí" : "No"}
                                   </span>
                                 </td>
-                                <td style={{ padding: 10, textAlign: "center", whiteSpace: "nowrap" }}>
-                                  <button onClick={() => startEdit(p)} disabled={saving} style={{ marginRight: 6, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.08)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer" }}>Editar</button>
-                                  <button onClick={() => removeProduct(p)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)", color: "#991b1b", fontWeight: 900, cursor: "pointer" }}>Eliminar</button>
+                                <td style={{ padding: 10, textAlign: "center" }}>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+                                    <button onClick={() => startEdit(p)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.08)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer" }}>Editar</button>
+                                    <button onClick={() => removeProduct(p)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)", color: "#991b1b", fontWeight: 900, cursor: "pointer" }}>Eliminar</button>
+                                  </div>
                                 </td>
                               </>
                             )}
