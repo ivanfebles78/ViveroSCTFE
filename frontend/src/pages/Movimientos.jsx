@@ -790,7 +790,7 @@ function StepIndicator({ step, tipoMovimiento }) {
   );
 }
 
-function TipoCard({ tipo, label, desc, icon, selected, onClick }) {
+function TipoCard({ tipo, label, desc, icon, selected, onClick, disabled = false, disabledHint }) {
   const colors = {
     entrada: { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.35)", accent: "#10b981", text: "#065f46" },
     salida: { bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.30)", accent: "#ef4444", text: "#991b1b" },
@@ -799,10 +799,10 @@ function TipoCard({ tipo, label, desc, icon, selected, onClick }) {
   };
   const c = colors[tipo] || colors.traslado_interno;
   return (
-    <button type="button" onClick={onClick} style={{ padding: "14px 12px", borderRadius: 14, border: selected ? `2px solid ${c.accent}` : "2px solid transparent", background: selected ? c.bg : "rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", transition: "all 0.18s ease", boxShadow: selected ? `0 0 0 3px ${c.accent}22` : "none", outline: "none" }}>
+    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} title={disabled ? disabledHint : undefined} style={{ padding: "14px 12px", borderRadius: 14, border: selected ? `2px solid ${c.accent}` : "2px solid transparent", background: selected ? c.bg : "rgba(255,255,255,0.04)", cursor: disabled ? "not-allowed" : "pointer", textAlign: "left", transition: "all 0.18s ease", boxShadow: selected ? `0 0 0 3px ${c.accent}22` : "none", outline: "none", opacity: disabled ? 0.45 : 1 }}>
       <div style={{ fontSize: 24, marginBottom: 6 }}>{icon}</div>
       <div style={{ fontWeight: 900, fontSize: 14, color: selected ? c.text : "#334155" }}>{label}</div>
-      <div style={{ marginTop: 3, fontSize: 11, fontWeight: 700, color: "#64748b", lineHeight: 1.4 }}>{desc}</div>
+      <div style={{ marginTop: 3, fontSize: 11, fontWeight: 700, color: "#64748b", lineHeight: 1.4 }}>{disabled && disabledHint ? disabledHint : desc}</div>
     </button>
   );
 }
@@ -1427,7 +1427,7 @@ function MovimientoModal({
   const step1Valid = !!form.tipo_elegido &&
     (esSalida ? !!form.destino_tipo : true) &&
     (esEntrada ? !!form.origen_tipo && !entradaOtrosSinEspecificar : true) &&
-    (esDevolucionTipo ? !!form.origen_tipo : true);
+    (esDevolucionTipo ? !!form.prestamo_referencia_id : true);
 
   // ¿Alguna fila de la salida supera el stock disponible de su zona/tamaño?
   const hayExcesoSalida = salidaPorZonas &&
@@ -1499,7 +1499,7 @@ function MovimientoModal({
                   <TipoCard tipo="entrada" label="Entrada al vivero" desc="Material que llega al vivero desde un proveedor externo u otra entidad." icon="📦" selected={form.tipo_elegido === "entrada"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "entrada", destino_tipo: "Vivero", origen_tipo: "", zona_origen: "", tamano_origen: "" }))} />
                   <TipoCard tipo="salida" label="Salida del vivero" desc="Material que sale del vivero hacia un destino externo." icon="📤" selected={form.tipo_elegido === "salida"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "salida", origen_tipo: "Vivero", destino_tipo: "", zona_destino: "", tamano_destino: "" }))} />
                   <TipoCard tipo="traslado_interno" label="Traslado interno" desc="Movimiento entre zonas del vivero, con posible cambio de tamaño." icon="🔄" selected={form.tipo_elegido === "traslado_interno"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "traslado_interno", origen_tipo: "Vivero", destino_tipo: "Vivero" }))} />
-                  <TipoCard tipo="devolucion" label="Devolución" desc="Planta prestada que regresa al vivero desde una entidad externa." icon="↩️" selected={form.tipo_elegido === "devolucion"} onClick={() => setForm((p) => ({ ...p, tipo_elegido: "devolucion", destino_tipo: "Vivero", zona_destino: "", tamano_destino: "" }))} />
+                  <TipoCard tipo="devolucion" label="Devolución" desc="Planta prestada que regresa al vivero desde una entidad externa." icon="↩️" selected={form.tipo_elegido === "devolucion"} disabled={prestamosActivos.length === 0} disabledHint="No hay préstamos activos que devolver." onClick={() => setForm((p) => ({ ...p, tipo_elegido: "devolucion", destino_tipo: "Vivero", zona_destino: "", tamano_destino: "" }))} />
                 </div>
 
                 {/* Sub-campos según tipo */}
@@ -1547,13 +1547,25 @@ function MovimientoModal({
 
                 {esDevolucionTipo && (
                   <div style={{ marginTop: 18, padding: 16, borderRadius: 14, border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.04)" }}>
-                    <div style={{ fontWeight: 900, fontSize: 14, color: "#92400e", marginBottom: 10 }}>↩️ ¿Quién devuelve?</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                      {DEVOLUCION_ORIGENES.map((o) => (
-                        <button key={o} type="button" onClick={() => setForm((p) => ({ ...p, origen_tipo: o }))} style={{ padding: "6px 12px", borderRadius: 8, border: form.origen_tipo === o ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.12)", background: form.origen_tipo === o ? "rgba(245,158,11,0.14)" : "#fff", color: form.origen_tipo === o ? "#92400e" : "#334155", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>{o}</button>
-                      ))}
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#92400e", marginBottom: 4 }}>↩️ Elige el préstamo a devolver</div>
+                    <div style={{ color: "#475569", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>El producto, quién lo devuelve y la cantidad pendiente salen del propio préstamo.</div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {prestamosActivos.map((m) => {
+                        const prod = productos.find((p) => String(p.id) === String(m.producto_id));
+                        const sel = String(form.prestamo_referencia_id || "") === String(m.id);
+                        const quien = [m.destino_tipo, m.distrito_destino, m.barrio_destino, m.direccion_destino].filter(Boolean).join(" · ");
+                        const tam = m.tamano_origen || m.tamano_destino;
+                        return (
+                          <button key={m.id} type="button" onClick={() => handleSeleccionPrestamo(m)} style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: sel ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.10)", background: sel ? "rgba(245,158,11,0.12)" : "#fff", cursor: "pointer" }}>
+                            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{getProductDisplayName(prod) || `Producto #${m.producto_id}`} · {m._pendiente} uds pendientes</div>
+                            <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Préstamo #{m.id}{tam ? ` · ${tam}` : ""}{quien ? ` · ${quien}` : ""}</div>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <button type="button" onClick={() => setShowPrestamoModal(true)} style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid rgba(245,158,11,0.30)", background: "rgba(245,158,11,0.08)", color: "#92400e", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>📋 Seleccionar préstamo activo</button>
+                    {form.prestamo_referencia_id ? (
+                      <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: "#065f46" }}>✓ Préstamo seleccionado. La cantidad a devolver y el resto de datos se rellenan solos (podrás ajustar la cantidad en el paso 2).</div>
+                    ) : null}
                   </div>
                 )}
               </div>
