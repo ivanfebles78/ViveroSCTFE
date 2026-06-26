@@ -865,6 +865,9 @@ function MovimientoModal({
   }, [open]);
 
   useEffect(() => {
+    // En un traslado interno el destino es siempre "Vivero" (no es un destino
+    // externo), así que no lo recalculamos a partir del origen.
+    if (form.tipo_elegido === "traslado_interno") return;
     const allowed = getDestinoOptions(form.origen_tipo);
     if (form.origen_tipo && !allowed.includes(form.destino_tipo)) {
       // Si solo hay una opción de destino (entradas/devoluciones → "Vivero"),
@@ -873,7 +876,7 @@ function MovimientoModal({
       const fallback = allowed.length === 1 ? allowed[0] : "";
       setForm((prev) => ({ ...prev, destino_tipo: fallback, zona_destino: "", tamano_destino: "", distrito_destino: "", barrio_destino: "", direccion_destino: "", cp_destino: "", prestamo: false }));
     }
-  }, [form.origen_tipo, form.destino_tipo]);
+  }, [form.origen_tipo, form.destino_tipo, form.tipo_elegido]);
 
   const stockByProductZoneSize = useMemo(() => buildStockByProductZoneSize(movimientos), [movimientos]);
   const barriosDisponibles = useMemo(() => form.distrito_destino ? DISTRITO_BARRIOS[form.distrito_destino] || [] : [], [form.distrito_destino]);
