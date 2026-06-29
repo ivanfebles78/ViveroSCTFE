@@ -1952,15 +1952,17 @@ function MovimientoModal({
                   </div>
                 )}
 
-                {/* Errors */}
-                {errors.length > 0 && (
-                  <div style={{ padding: 12, borderRadius: 12, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.18)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>
-                    {errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
-                  </div>
-                )}
               </div>
             )}
           </div>
+
+          {/* Errores: franja fija sobre el pie, siempre visible (no hay que
+              hacer scroll para verlos). */}
+          {errors.length > 0 && (
+            <div style={{ padding: "10px 22px", borderTop: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.10)", color: "#991b1b", fontWeight: 800, fontSize: 13, maxHeight: 130, overflowY: "auto" }}>
+              {errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
+            </div>
+          )}
 
           {/* Footer */}
           <div style={{ padding: "14px 22px", borderTop: "1px solid rgba(15,23,42,0.08)", background: "#f8fafc", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
