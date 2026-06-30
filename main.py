@@ -617,6 +617,49 @@ def _item_estado(item: PedidoItem) -> str:
     return str(raw).strip().upper() or "RESERVA"
 
 
+# =============================
+# RESERVA DE STOCK (derivada)
+# =============================
+# El stock "reservado" se calcula a partir de los pedidos de SALIDA vivos, sin
+# columnas nuevas: cada línea no denegada y aún no servida del todo mantiene
+# reservada su cantidad pendiente. Así el ciclo es automático:
+#   - crear pedido      → línea RESERVA      → reservado
+#   - denegar línea     → estado DENEGADO    → liberado
+#   - aprobar           → estado APROBADO    → sigue reservado
+#   - servir (recoger)  → cantidad_servida ↑ → reservado ↓ (y el stock real baja
+#                          con el movimiento, así "disponible" queda consistente)
+#   - caducar pedido    → estado CADUCADO    → liberado
+# disponible = stock_real − reservado.
+def _reservas_por_producto_tamano(db: Session, exclude_pedido_id: Optional[int] = None) -> dict:
+    """Devuelve {(producto_id, tamaño_normalizado): cantidad_reservada}."""
+    hoy = datetime.utcnow().date()
+    pedidos = (
+        db.query(Pedido)
+        .filter(func.lower(Pedido.tipo) == "salida")
+        .filter(func.upper(Pedido.estado).in_(["RESERVA", "APROBADO", "APROBADO_PARCIAL"]))
+        .filter(or_(Pedido.fecha_caducidad.is_(None), Pedido.fecha_caducidad >= hoy))
+        .all()
+    )
+    out: dict = {}
+    for p in pedidos:
+        if exclude_pedido_id is not None and int(getattr(p, "id", 0) or 0) == int(exclude_pedido_id):
+            continue
+        for it in (getattr(p, "items", None) or []):
+            if _item_estado(it) == "DENEGADO":
+                continue
+            pend = float(getattr(it, "cantidad", 0) or 0) - float(getattr(it, "cantidad_servida", 0) or 0)
+            if pend <= 0:
+                continue
+            key = (int(getattr(it, "producto_id", 0) or 0), _norm_tam(getattr(it, "tamano", None)))
+            out[key] = out.get(key, 0.0) + pend
+    return out
+
+
+def _reservado_producto_tamano(db: Session, producto_id: int, tamano: str, exclude_pedido_id: Optional[int] = None) -> float:
+    m = _reservas_por_producto_tamano(db, exclude_pedido_id=exclude_pedido_id)
+    return m.get((int(producto_id), _norm_tam(tamano)), 0.0)
+
+
 def recompute_pedido_estado(pedido: Pedido) -> str:
     """
     Derive the pedido's aggregate state from its items' `estado_item` values.
@@ -1046,6 +1089,9 @@ def get_productos(
 
     product_ids = [p.id for p in productos]
 
+    # Reservas vigentes (stock comprometido por pedidos de salida vivos).
+    reservas_map = _reservas_por_producto_tamano(db)
+
     # ---------- 2. Todos los inventarios en una sola query ----------
     inventarios_all = (
         db.query(InventarioLote)
@@ -1152,6 +1198,15 @@ def get_productos(
             if fecha_cad <= warning_limit:
                 alertas_caducidad.append(lote_info)
 
+        # Reservado y disponible (= real − reservado) por tamaño y total.
+        reservado_total = 0.0
+        disponible_by_size: dict[str, float] = {}
+        for tam, qty in stock_by_size.items():
+            res = float(reservas_map.get((p.id, _norm_tam(tam)), 0.0))
+            reservado_total += min(res, qty)
+            disponible_by_size[tam] = max(qty - res, 0)
+        disponible_total = max(stock_total - reservado_total, 0)
+
         item = {
             "id": p.id,
             "nombre_cientifico": p.nombre_cientifico,
@@ -1161,6 +1216,9 @@ def get_productos(
             "subcategoria": p.subcategoria,
             "stock": stock_total,
             "stock_by_size": stock_by_size,
+            "reservado": reservado_total,
+            "disponible": disponible_total,
+            "disponible_by_size": disponible_by_size,
             "alertas_caducidad": alertas_caducidad,
             "lotes": lotes,
         }
@@ -1571,6 +1629,15 @@ def create_pedido(
         if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
             raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
 
+    # Transiciona pedidos vencidos para que su stock deje de contar como
+    # reservado, y calcula las reservas vigentes una sola vez.
+    if tipo_pedido == "salida":
+        _transicionar_pedidos_caducados(db)
+        reservas_map = _reservas_por_producto_tamano(db)
+    else:
+        reservas_map = {}
+    solicitado_local: dict = {}
+
     for item in payload.items:
         if item.cantidad <= 0:
             raise HTTPException(status_code=400, detail="Todas las cantidades deben ser mayores que 0")
@@ -1584,15 +1651,22 @@ def create_pedido(
 
         if tipo_pedido == "salida":
             stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
+            key = (int(item.producto_id), _norm_tam(item.tamano))
+            reservado = float(reservas_map.get(key, 0.0))
+            ya_pedido = float(solicitado_local.get(key, 0.0))
+            disponible = stock_total - reservado - ya_pedido
 
-            if item.cantidad > stock_total:
+            if item.cantidad > disponible:
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         f"Stock insuficiente para {producto.nombre_cientifico} "
-                        f"en tamaño {item.tamano}. Disponible={stock_total}, solicitado={item.cantidad}"
+                        f"en tamaño {item.tamano}. Disponible={disponible:g} "
+                        f"(stock {stock_total:g} − {reservado:g} reservado por otros pedidos), "
+                        f"solicitado={item.cantidad:g}"
                     ),
                 )
+            solicitado_local[key] = ya_pedido + float(item.cantidad)
 
     # Caducidad de pedido: TODOS los pedidos caducan a los 15 días (máximo)
     # desde su creación. Si nadie los gestiona/recoge en ese plazo, se liberan.
@@ -1657,6 +1731,15 @@ def update_pedido(
         if not payload.distrito_destino or not payload.barrio_destino or not payload.direccion_destino:
             raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
 
+    # Reservas vigentes EXCLUYENDO este pedido (sus propias líneas no cuentan
+    # contra sí mismo al re-editarlo).
+    if tipo_pedido == "salida":
+        _transicionar_pedidos_caducados(db)
+        reservas_map = _reservas_por_producto_tamano(db, exclude_pedido_id=pedido_id)
+    else:
+        reservas_map = {}
+    solicitado_local: dict = {}
+
     for item in payload.items:
         if item.cantidad <= 0:
             raise HTTPException(status_code=400, detail="Todas las cantidades deben ser mayores que 0")
@@ -1670,15 +1753,22 @@ def update_pedido(
 
         if tipo_pedido == "salida":
             stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
+            key = (int(item.producto_id), _norm_tam(item.tamano))
+            reservado = float(reservas_map.get(key, 0.0))
+            ya_pedido = float(solicitado_local.get(key, 0.0))
+            disponible = stock_total - reservado - ya_pedido
 
-            if item.cantidad > stock_total:
+            if item.cantidad > disponible:
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         f"Stock insuficiente para {producto.nombre_cientifico} "
-                        f"en tamaño {item.tamano}. Disponible={stock_total}, solicitado={item.cantidad}"
+                        f"en tamaño {item.tamano}. Disponible={disponible:g} "
+                        f"(stock {stock_total:g} − {reservado:g} reservado por otros pedidos), "
+                        f"solicitado={item.cantidad:g}"
                     ),
                 )
+            solicitado_local[key] = ya_pedido + float(item.cantidad)
 
     pedido.nota = payload.nota
     if tipo_pedido == "salida":

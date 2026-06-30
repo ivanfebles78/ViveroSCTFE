@@ -1297,7 +1297,7 @@ function PedidoModal({
                       <div>
                         <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 17 }}>{line.nombre}</div>
                         <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 800 }}>
-                          Tamaño: {line.tamano} · Stock real: {formatCantidad(line.disponible)} · Restante: {formatCantidad(remainingAfterThisLine)}
+                          Tamaño: {line.tamano} · Disponible: {formatCantidad(line.disponible)} · Restante: {formatCantidad(remainingAfterThisLine)}
                         </div>
                       </div>
 
@@ -2254,10 +2254,20 @@ export default function Pedidos() {
     }
   };
 
-  const stockByProductSize = useMemo(
-    () => buildStockByProductSize(movimientos),
-    [productos, movimientos]
-  );
+  // Para crear pedidos usamos el stock DISPONIBLE que da el backend
+  // (= stock real − reservado por otros pedidos vivos), no el derivado de
+  // movimientos. Así la interfaz coincide con la validación del servidor y no
+  // deja pedir lo que ya está comprometido en otro pedido.
+  const stockByProductSize = useMemo(() => {
+    const m = new Map();
+    for (const p of (Array.isArray(productos) ? productos : [])) {
+      const disp = p?.disponible_by_size || p?.stock_by_size || {};
+      for (const [tam, qty] of Object.entries(disp)) {
+        m.set(lineKey(p.id, tam), Math.max(0, Number(qty || 0)));
+      }
+    }
+    return m;
+  }, [productos]);
 
   const productosConStock = useMemo(() => {
     return productos
