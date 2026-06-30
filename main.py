@@ -2838,8 +2838,10 @@ def reporte_movimientos_externos(
     distrito: str | None = None,
     barrio: str | None = None,
     direccion: str | None = None,
+    categoria: str | None = None,
+    subcategoria: str | None = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     q = (
         db.query(Movimiento, Producto)
@@ -2879,6 +2881,12 @@ def reporte_movimientos_externos(
     if direccion:
         q = q.filter(Movimiento.direccion_destino.ilike(f"%{direccion.strip()}%"))
 
+    if categoria:
+        q = q.filter(func.lower(Producto.categoria) == categoria.strip().lower())
+
+    if subcategoria:
+        q = q.filter(func.lower(Producto.subcategoria) == subcategoria.strip().lower())
+
     rows = q.order_by(Movimiento.fecha_movimiento.desc(), Movimiento.id.desc()).all()
 
     return [
@@ -2887,6 +2895,8 @@ def reporte_movimientos_externos(
             "fecha_movimiento": mov.fecha_movimiento,
             "producto_id": mov.producto_id,
             "producto_nombre": _producto_display(prod, mov.producto_id),
+            "producto_categoria": getattr(prod, "categoria", None),
+            "producto_subcategoria": getattr(prod, "subcategoria", None),
             "cantidad": mov.cantidad,
             "origen_tipo": mov.origen_tipo,
             "destino_tipo": mov.destino_tipo,

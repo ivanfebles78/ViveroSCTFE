@@ -1365,6 +1365,33 @@ export default function Informes() {
   const [direccion, setDireccion] = useState("");
   const [externosData, setExternosData] = useState([]);
   const [externosSearched, setExternosSearched] = useState(false);
+  const [externosCategoria, setExternosCategoria] = useState("");
+  const [externosSubcategoria, setExternosSubcategoria] = useState("");
+
+  // Categorías/subcategorías para los filtros del informe de movimientos externos.
+  const externosCategorias = useMemo(() => {
+    const set = new Set();
+    for (const p of (Array.isArray(productos) ? productos : [])) {
+      const c = String(p?.categoria || "").trim();
+      if (c) set.add(c);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos]);
+  const externosSubcategorias = useMemo(() => {
+    if (!externosCategoria) return [];
+    const set = new Set();
+    for (const p of (Array.isArray(productos) ? productos : [])) {
+      if (String(p?.categoria || "").trim() !== externosCategoria) continue;
+      const s = String(p?.subcategoria || "").trim();
+      if (s) set.add(s);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos, externosCategoria]);
+  // Total de elementos (suma de cantidades) del informe externos.
+  const externosTotal = useMemo(
+    () => (Array.isArray(externosData) ? externosData : []).reduce((s, r) => s + Number(r?.cantidad || 0), 0),
+    [externosData]
+  );
 
   const [prestamoProductoFilter, setPrestamoProductoFilter] = useState("");
   const [prestamoSolicitanteFilter, setPrestamoSolicitanteFilter] = useState("");
@@ -1950,6 +1977,8 @@ export default function Informes() {
         distrito: distrito || undefined,
         barrio: barrio || undefined,
         direccion: direccion || undefined,
+        categoria: externosCategoria || undefined,
+        subcategoria: externosSubcategoria || undefined,
       });
       setExternosData(Array.isArray(data) ? data : []);
       setExternosSearched(true);
@@ -1972,8 +2001,40 @@ export default function Informes() {
     setDistrito("");
     setBarrio("");
     setDireccion("");
+    setExternosCategoria("");
+    setExternosSubcategoria("");
     setExternosData([]);
     setExternosSearched(false);
+  };
+
+  // Exporta el informe de movimientos externos a CSV (lo abre Excel).
+  const exportarExternosExcel = () => {
+    const rows = Array.isArray(externosData) ? externosData : [];
+    const headers = ["Fecha", "Producto", "Categoría", "Subcategoría", "Cantidad", "Origen", "Destino", "Ubicación destino", "Registrado por"];
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lineas = rows.map((r) => [
+      fmtFecha(r.fecha_movimiento),
+      r.producto_nombre || "",
+      r.producto_categoria || "",
+      r.producto_subcategoria || "",
+      r.cantidad ?? "",
+      [r.origen_tipo, r.zona_origen, r.tamano_origen].filter(Boolean).join(" · "),
+      [r.destino_tipo, r.zona_destino, r.tamano_destino].filter(Boolean).join(" · "),
+      [r.distrito_destino, r.barrio_destino, r.direccion_destino].filter(Boolean).join(" · "),
+      r.created_by || "",
+    ].map(esc).join(";"));
+    const total = rows.reduce((s, r) => s + Number(r?.cantidad || 0), 0);
+    const csv = [headers.join(";"), ...lineas, "", `Total elementos;;;;${total}`].join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "movimientos_externos.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (!canAccess) {
@@ -3173,6 +3234,31 @@ Productos con fecha de caducidad
                 />
               </div>
 
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Categoría</div>
+                <select
+                  value={externosCategoria}
+                  onChange={(e) => { setExternosCategoria(e.target.value); setExternosSubcategoria(""); }}
+                  style={softInputStyle()}
+                >
+                  <option value="">Todas</option>
+                  {externosCategorias.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Subcategoría</div>
+                <select
+                  value={externosSubcategoria}
+                  onChange={(e) => setExternosSubcategoria(e.target.value)}
+                  style={softInputStyle()}
+                  disabled={!externosCategoria || externosSubcategorias.length === 0}
+                >
+                  <option value="">{externosCategoria ? "Todas" : "Elige categoría"}</option>
+                  {externosSubcategorias.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button onClick={onBuscarExternos} disabled={loading} style={primaryBtnStyle(loading)}>
                   {loading ? "Generando..." : "Buscar"}
@@ -3189,8 +3275,16 @@ Productos con fecha de caducidad
               <EmptyState text="Define los filtros y genera el informe de movimientos externos." />
             ) : (
               <div style={{ ...cardStyle(), marginTop: 20, padding: 18 }}>
-                <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>
-                  Movimientos externos
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 10 }}>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
+                    Movimientos externos
+                    <span style={{ marginLeft: 12, fontSize: 14, fontWeight: 800, color: "#0f6e56" }}>
+                      Total elementos: {fmtNum(externosTotal)} · {externosData.length} {externosData.length === 1 ? "movimiento" : "movimientos"}
+                    </span>
+                  </div>
+                  <button onClick={exportarExternosExcel} style={secondaryBtnStyle()}>
+                    ⬇ Exportar a Excel
+                  </button>
                 </div>
 
                 <div style={{ overflowX: "auto" }}>
@@ -3199,6 +3293,8 @@ Productos con fecha de caducidad
                       <tr>
                         <th style={thStyle()}>Fecha</th>
                         <th style={thStyle()}>Producto</th>
+                        <th style={thStyle()}>Categoría</th>
+                        <th style={thStyle()}>Subcategoría</th>
                         <th style={thStyle()}>Cantidad</th>
                         <th style={thStyle()}>Origen</th>
                         <th style={thStyle()}>Destino</th>
@@ -3211,6 +3307,8 @@ Productos con fecha de caducidad
                         <tr key={idx}>
                           <td style={tdStyle()}>{fmtFecha(row.fecha_movimiento)}</td>
                           <td style={tdStyle()}>{row.producto_nombre}</td>
+                          <td style={tdStyle()}>{row.producto_categoria || "—"}</td>
+                          <td style={tdStyle()}>{row.producto_subcategoria || "—"}</td>
                           <td style={tdStyle()}>{fmtNum(row.cantidad)}</td>
                           <td style={tdStyle()}>
                             {row.origen_tipo || "—"} {row.zona_origen ? `· ${row.zona_origen}` : ""} {row.tamano_origen ? `· ${row.tamano_origen}` : ""}
