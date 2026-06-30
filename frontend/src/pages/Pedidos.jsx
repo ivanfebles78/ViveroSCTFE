@@ -156,22 +156,35 @@ const estadoNormalizado = (estado) => String(estado || "").trim().toUpperCase();
 // 1) Si el pedido tiene fecha_caducidad a nivel pedido (ej. empresa_externa = 15 días), usa esa.
 // 2) Si no, calcula la más próxima entre los movimientos_servicio de sus items.
 const getPedidoFechaCaducidad = (pedido) => {
+  let fecha = null;
   if (pedido?.fecha_caducidad) {
     const d = new Date(pedido.fecha_caducidad);
-    if (!Number.isNaN(d.getTime())) return d;
+    if (!Number.isNaN(d.getTime())) fecha = d;
   }
-  const items = Array.isArray(pedido?.items) ? pedido.items : [];
-  let min = null;
-  for (const it of items) {
-    const movs = Array.isArray(it?.movimientos_servicio) ? it.movimientos_servicio : [];
-    for (const m of movs) {
-      if (!m?.fecha_caducidad) continue;
-      const d = new Date(m.fecha_caducidad);
-      if (Number.isNaN(d.getTime())) continue;
-      if (!min || d < min) min = d;
+  if (!fecha) {
+    const items = Array.isArray(pedido?.items) ? pedido.items : [];
+    let min = null;
+    for (const it of items) {
+      const movs = Array.isArray(it?.movimientos_servicio) ? it.movimientos_servicio : [];
+      for (const m of movs) {
+        if (!m?.fecha_caducidad) continue;
+        const d = new Date(m.fecha_caducidad);
+        if (Number.isNaN(d.getTime())) continue;
+        if (!min || d < min) min = d;
+      }
+    }
+    fecha = min;
+  }
+  // La caducidad de un pedido es, como máximo, 15 días desde su creación
+  // (cubre también pedidos antiguos cuya fecha venía de la planta).
+  if (pedido?.created_at) {
+    const creado = new Date(pedido.created_at);
+    if (!Number.isNaN(creado.getTime())) {
+      const tope = new Date(creado.getTime() + 15 * 24 * 60 * 60 * 1000);
+      if (!fecha || fecha > tope) fecha = tope;
     }
   }
-  return min;
+  return fecha;
 };
 
 function lineKey(productoId, tamano) {

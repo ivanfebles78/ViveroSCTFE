@@ -338,6 +338,15 @@ def require_roles(roles: list[str]):
 def _norm_str(value: Optional[str]) -> str:
     return (value or "").strip().lower()
 
+
+def _norm_tam(value: Optional[str]) -> str:
+    """Normaliza el tamaño/formato para comparar (sin mayúsculas/espacios).
+    'M30' histórico se trata como 'M35'."""
+    raw = (value or "").strip().lower()
+    if raw == "m30":
+        return "m35"
+    return raw
+
 def safeArray(x):
     return x if isinstance(x, list) else []
     
@@ -510,22 +519,23 @@ def _stock_en_zona_tamano(
     tamano: Optional[str],
     include_no_disponibles: bool = False,
 ) -> int:
+    # Comparamos zona y tamaño NORMALIZADOS en Python (no con `==` exacto en
+    # SQL): la grafía guardada puede variar ("11" vs "zona-11", "M20" vs "m20"),
+    # y un `==` exacto devolvía 0 aunque hubiera stock.
     q = db.query(InventarioLote).filter(InventarioLote.producto_id == producto_id)
-
-    if zona is None:
-        q = q.filter(InventarioLote.zona.is_(None))
-    else:
-        q = q.filter(InventarioLote.zona == zona)
-
-    if tamano is None:
-        q = q.filter(InventarioLote.tamano.is_(None))
-    else:
-        q = q.filter(InventarioLote.tamano == tamano)
-
     if not include_no_disponibles:
         q = q.filter(_disponible_filter())
     rows = q.all()
-    return sum(float(r.cantidad_disponible or 0) for r in rows)
+    zn = _normalize_zona_id(zona or "")
+    tn = _norm_tam(tamano or "")
+    total = 0.0
+    for r in rows:
+        if _normalize_zona_id(getattr(r, "zona", None) or "") != zn:
+            continue
+        if _norm_tam(getattr(r, "tamano", None) or "") != tn:
+            continue
+        total += float(r.cantidad_disponible or 0)
+    return total
 
 
 def _stock_por_tamano_producto(db: Session, producto_id: int) -> dict:
@@ -899,6 +909,10 @@ def _pedido_to_dict(
     role = (viewer_role or "").strip().lower()
     if role == "proveedor":
         items = [it for it in items if _item_estado(it) in ("APROBADO", "SERVIDO")]
+    # La empresa externa / UTE (y el proveedor) no deben ver el motivo de
+    # denegación; solo los roles internos. Lo ocultamos en la serialización,
+    # lo que afecta tanto a la interfaz como al PDF generado.
+    ocultar_motivo = role in ("empresa_externa", "proveedor")
 
     return {
         "id": getattr(pedido, "id", None),
@@ -915,7 +929,7 @@ def _pedido_to_dict(
         "aprobado_at": getattr(pedido, "aprobado_at", None),
         "denegado_por": getattr(pedido, "denegado_por", None),
         "denegado_at": getattr(pedido, "denegado_at", None),
-        "motivo_denegacion": getattr(pedido, "motivo_denegacion", None),
+        "motivo_denegacion": None if ocultar_motivo else getattr(pedido, "motivo_denegacion", None),
         "served_at": getattr(pedido, "served_at", None),
         "served_by": getattr(pedido, "served_by", None),
         "items": [
@@ -1226,7 +1240,7 @@ def _producto_dict(p: Producto) -> dict:
 def crear_producto(
     payload: ProductoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     nombre_c = (payload.nombre_cientifico or "").strip()
     if not nombre_c:
@@ -1259,7 +1273,7 @@ def actualizar_producto(
     producto_id: int,
     payload: ProductoUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     producto = db.query(Producto).filter(Producto.id == producto_id).first()
     if not producto:
@@ -1306,7 +1320,7 @@ def actualizar_producto(
 def eliminar_producto(
     producto_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     producto = db.query(Producto).filter(Producto.id == producto_id).first()
     if not producto:
@@ -1352,7 +1366,7 @@ def _parse_bool(value) -> bool:
 async def importar_productos(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     try:
         import pandas as pd  # lazy import
@@ -1580,15 +1594,9 @@ def create_pedido(
                     ),
                 )
 
-    # Caducidad de pedido:
-    # Todos los pedidos de SALIDA caducan a los 15 días desde su creación,
-    # independientemente del rol del usuario que los creó. El material está
-    # destinado a salir del vivero; si nadie lo recoge en ese plazo, se libera
-    # el stock reservado automáticamente.
-    # Los pedidos de REPOSICIÓN no caducan (son internos al vivero).
-    fecha_cad_pedido = None
-    if tipo_pedido == "salida":
-        fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=15)
+    # Caducidad de pedido: TODOS los pedidos caducan a los 15 días (máximo)
+    # desde su creación. Si nadie los gestiona/recoge en ese plazo, se liberan.
+    fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=15)
 
     pedido = Pedido(
         solicitante_username=current_user.username,
@@ -2317,18 +2325,25 @@ def crear_movimiento(
     elif origen == "vivero":
         restante = payload.cantidad
 
+        # Buscamos los lotes a consumir comparando zona/tamaño NORMALIZADOS
+        # (mismo criterio que _stock_en_zona_tamano), no con `==` exacto.
         inventarios_q = (
             db.query(InventarioLote)
             .filter(
                 InventarioLote.producto_id == payload.producto_id,
-                InventarioLote.zona == payload.zona_origen,
-                InventarioLote.tamano == payload.tamano_origen,
                 InventarioLote.cantidad_disponible > 0,
             )
         )
         if not es_traslado_interno:
             inventarios_q = inventarios_q.filter(_disponible_filter())
-        inventarios = inventarios_q.order_by(InventarioLote.id.asc()).all()
+        candidatos = inventarios_q.order_by(InventarioLote.id.asc()).all()
+        _zn = _normalize_zona_id(payload.zona_origen or "")
+        _tn = _norm_tam(payload.tamano_origen or "")
+        inventarios = [
+            inv for inv in candidatos
+            if _normalize_zona_id(getattr(inv, "zona", None) or "") == _zn
+            and _norm_tam(getattr(inv, "tamano", None) or "") == _tn
+        ]
 
         if payload.uuid_lote:
             inventarios = [inv for inv in inventarios if (inv.uuid_lote or "").strip() == payload.uuid_lote.strip()]

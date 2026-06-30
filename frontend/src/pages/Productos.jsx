@@ -1317,7 +1317,7 @@ export default function Productos() {
   const esEmpresaExterna = rol === "empresa_externa";
   const puedePedirMas = rol && rol !== "empresa_externa";
   const puedeMarcarInterno = rol === "admin" || rol === "manager";
-  const puedeGestionar = rol === "admin" || rol === "manager";
+  const puedeGestionar = rol === "admin" || rol === "manager" || rol === "tecnico";
 
   // Memoizado para mantener la referencia estable y no romper el React.memo
   // de las filas de ProductoRow.
