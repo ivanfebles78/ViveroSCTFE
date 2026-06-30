@@ -3259,12 +3259,14 @@ Productos con fecha de caducidad
                 </select>
               </div>
 
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button onClick={onNuevaBusquedaExternos} style={secondaryBtnStyle()}>
-                  Nueva búsqueda
-                </button>
+              <div style={{ display: "flex", alignItems: "flex-end" }}>
                 <button onClick={onBuscarExternos} disabled={loading} style={primaryBtnStyle(loading)}>
                   {loading ? "Generando..." : "Buscar"}
+                </button>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-end" }}>
+                <button onClick={onNuevaBusquedaExternos} style={secondaryBtnStyle()}>
+                  Nueva búsqueda
                 </button>
               </div>
             </div>
