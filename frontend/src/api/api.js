@@ -246,13 +246,46 @@ export const getMovimientosExternosReporte = async (params = {}) => {
 // COPIA DE SEGURIDAD (SOLO ADMIN)
 // =========================
 
-// Descarga toda la BD como fichero JSON (el navegador deja elegir la carpeta).
+// Descarga toda la BD como fichero JSON. Si el navegador soporta la File
+// System Access API, muestra un diálogo "Guardar como" para elegir carpeta y
+// nombre; si no, cae a la descarga clásica. Devuelve el nombre guardado, o null
+// si el usuario cancela el diálogo.
 export const descargarBackup = async () => {
+  const pad = (n) => String(n).padStart(2, "0");
+  const d = new Date();
+  const sugerido = `viverapp_backup_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
+
+  // 1) Pedimos el destino ANTES de descargar (para conservar el gesto del clic).
+  let handle = null;
+  if (typeof window !== "undefined" && window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({
+        suggestedName: sugerido,
+        types: [{ description: "Copia de seguridad ViverApp", accept: { "application/json": [".json"] } }],
+      });
+    } catch (err) {
+      if (err && err.name === "AbortError") return null; // usuario canceló
+      handle = null; // otro error → descarga clásica
+    }
+  }
+
+  // 2) Descargamos los datos.
   const res = await api.get("/admin/backup", { responseType: "blob" });
+  const blob = res.data;
+
+  // 3a) Guardar en la ubicación elegida.
+  if (handle) {
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return handle.name || sugerido;
+  }
+
+  // 3b) Fallback: descarga clásica (carpeta por defecto del navegador).
   const cd = res.headers?.["content-disposition"] || "";
   const m = /filename="?([^"]+)"?/.exec(cd);
-  const filename = m ? m[1] : "viverapp_backup.json";
-  const url = URL.createObjectURL(res.data);
+  const filename = m ? m[1] : sugerido;
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;

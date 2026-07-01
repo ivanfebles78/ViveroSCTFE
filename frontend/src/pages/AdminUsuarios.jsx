@@ -273,7 +273,7 @@ export default function AdminUsuarios() {
     setError("");
     try {
       const filename = await descargarBackup();
-      flash(`Copia de seguridad descargada (${filename}).`);
+      if (filename) flash(`Copia de seguridad guardada (${filename}).`);
     } catch (err) {
       setError(extractError(err, "No se pudo generar la copia de seguridad."));
     } finally {
