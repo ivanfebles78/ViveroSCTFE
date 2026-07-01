@@ -2,6 +2,8 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 import unicodedata
 import uuid
+import json
+from decimal import Decimal
 
 from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File, Request
 import io
@@ -15,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from sqlalchemy import func, or_, and_
+from sqlalchemy import func, or_, and_, text, inspect as sa_inspect
 from db import SessionLocal
 
 from db import engine
@@ -3647,3 +3649,150 @@ def put_zonas_config(
 
     rows = db.query(ZonaPolygon).order_by(ZonaPolygon.sort_order.asc(), ZonaPolygon.id.asc()).all()
     return [_serialize_zona(z) for z in rows]
+
+
+# =============================
+# COPIA DE SEGURIDAD / RESTAURACIÓN (solo admin)
+# =============================
+# Orden de dependencias (padres → hijos). Para borrar se recorre al revés.
+_BACKUP_MODELS = [
+    Usuario,
+    Producto,
+    CaducidadConfig,
+    ZonaPolygon,
+    Lote,
+    InventarioLote,
+    Pedido,
+    PedidoItem,
+    Movimiento,
+    MovimientoLoteDetalle,
+    AccountToken,
+]
+
+
+def _jsonable(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _coerce_col(col, value):
+    """Convierte el valor del JSON al tipo de la columna al restaurar."""
+    if value is None:
+        return None
+    tname = col.type.__class__.__name__.lower()
+    try:
+        if "datetime" in tname or tname == "timestamp":
+            return datetime.fromisoformat(value) if isinstance(value, str) else value
+        if tname == "date":
+            return date.fromisoformat(value) if isinstance(value, str) else value
+        if "numeric" in tname or "float" in tname or "decimal" in tname:
+            return float(value)
+        if "integer" in tname or "biginteger" in tname or tname == "int":
+            return int(value)
+        if "boolean" in tname:
+            if isinstance(value, bool):
+                return value
+            return str(value).strip().lower() in ("1", "true", "t", "yes", "si", "sí")
+    except (ValueError, TypeError):
+        return value
+    return value
+
+
+@app.get("/admin/backup")
+def admin_backup(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Descarga TODA la base de datos como un único fichero JSON."""
+    data = {
+        "_meta": {
+            "version": 1,
+            "generated_at": datetime.utcnow().isoformat(),
+            "generated_by": getattr(current_user, "username", None),
+            "app": "ViverApp",
+        },
+        "tables": {},
+    }
+    for model in _BACKUP_MODELS:
+        cols = [c.key for c in sa_inspect(model).mapper.column_attrs]
+        rows = db.query(model).all()
+        data["tables"][model.__tablename__] = [
+            {c: _jsonable(getattr(r, c)) for c in cols} for r in rows
+        ]
+
+    payload = json.dumps(data, ensure_ascii=False, default=str, indent=2)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"viverapp_backup_{ts}.json"
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/admin/restore")
+async def admin_restore(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Restaura la base de datos completa desde un fichero de copia de seguridad.
+    ATENCIÓN: reemplaza TODOS los datos actuales por los del fichero."""
+    raw = await file.read()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="El fichero no es una copia de seguridad válida (JSON).")
+
+    tables = data.get("tables")
+    if not isinstance(tables, dict):
+        raise HTTPException(status_code=400, detail="El fichero no tiene el formato de copia de seguridad esperado.")
+
+    try:
+        # 1) Borrar todo (hijos → padres).
+        for model in reversed(_BACKUP_MODELS):
+            db.query(model).delete()
+        db.flush()
+
+        # 2) Insertar (padres → hijos).
+        resumen = {}
+        for model in _BACKUP_MODELS:
+            filas = tables.get(model.__tablename__, []) or []
+            cols_map = {c.key: c for c in sa_inspect(model).mapper.columns}
+            for fila in filas:
+                kwargs = {}
+                for k, v in fila.items():
+                    col = cols_map.get(k)
+                    if col is None:
+                        continue
+                    kwargs[k] = _coerce_col(col, v)
+                db.add(model(**kwargs))
+            db.flush()
+            resumen[model.__tablename__] = len(filas)
+
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"No se pudo restaurar la copia: {e}")
+
+    # 3) Reajustar las secuencias (Postgres), best-effort y en su propia
+    #    transacción para que un fallo aquí no eche atrás la restauración.
+    for model in _BACKUP_MODELS:
+        tbl = model.__tablename__
+        try:
+            db.execute(text(
+                f"SELECT setval(pg_get_serial_sequence('{tbl}', 'id'), "
+                f"COALESCE((SELECT MAX(id) FROM {tbl}), 1))"
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    return {"ok": True, "restaurado": resumen}

@@ -243,6 +243,33 @@ export const getMovimientosExternosReporte = async (params = {}) => {
 };
 
 // =========================
+// COPIA DE SEGURIDAD (SOLO ADMIN)
+// =========================
+
+// Descarga toda la BD como fichero JSON (el navegador deja elegir la carpeta).
+export const descargarBackup = async () => {
+  const res = await api.get("/admin/backup", { responseType: "blob" });
+  const cd = res.headers?.["content-disposition"] || "";
+  const m = /filename="?([^"]+)"?/.exec(cd);
+  const filename = m ? m[1] : "viverapp_backup.json";
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return filename;
+};
+
+// Restaura la BD desde un fichero de copia de seguridad.
+export const restaurarBackup = async (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post("/admin/restore", form);
+  return data;
+};
+
+// =========================
 // ZONAS (MAPA VIVERO)
 // =========================
 

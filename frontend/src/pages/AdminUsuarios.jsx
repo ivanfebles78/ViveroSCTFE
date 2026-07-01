@@ -7,6 +7,8 @@ import {
   adminResendInvitation,
   adminResetPassword,
   adminUnlockUser,
+  descargarBackup,
+  restaurarBackup,
 } from "../api/api";
 import Modal from "../components/common/Modal";
 
@@ -241,6 +243,8 @@ export default function AdminUsuarios() {
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
 
   const reload = async () => {
     setLoading(true);
@@ -262,6 +266,41 @@ export default function AdminUsuarios() {
   const flash = (msg) => {
     setInfo(msg);
     setTimeout(() => setInfo(""), 4000);
+  };
+
+  const handleBackup = async () => {
+    setBackupBusy(true);
+    setError("");
+    try {
+      const filename = await descargarBackup();
+      flash(`Copia de seguridad descargada (${filename}).`);
+    } catch (err) {
+      setError(extractError(err, "No se pudo generar la copia de seguridad."));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleRestore = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // permite volver a elegir el mismo fichero
+    if (!file) return;
+    const ok = window.confirm(
+      "ATENCIÓN: la restauración REEMPLAZA TODOS los datos actuales (productos, " +
+        "movimientos, pedidos, usuarios, etc.) por los del fichero.\n\nEsta acción no se " +
+        "puede deshacer. ¿Continuar?"
+    );
+    if (!ok) return;
+    setRestoreBusy(true);
+    setError("");
+    try {
+      await restaurarBackup(file);
+      window.alert("Restauración completada. La página se recargará.");
+      window.location.reload();
+    } catch (err) {
+      setError(extractError(err, "No se pudo restaurar la copia de seguridad."));
+      setRestoreBusy(false);
+    }
   };
 
   const handleResend = async (user) => {
@@ -389,6 +428,59 @@ export default function AdminUsuarios() {
           {error}
         </div>
       )}
+
+      {/* Copia de seguridad / restauración — solo admin (esta página lo es) */}
+      <div
+        style={{
+          marginTop: 18,
+          padding: "16px 18px",
+          borderRadius: 14,
+          border: "1px solid rgba(15,23,42,0.10)",
+          background: "#f8fafc",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>🗄️ Copia de seguridad</div>
+          <div style={{ color: "#64748b", fontWeight: 600, fontSize: 13, marginTop: 2 }}>
+            Guarda toda la base de datos en un fichero (elige la carpeta al descargar) o restaura desde uno.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            style={{ ...btnPrimary, opacity: backupBusy ? 0.6 : 1 }}
+            onClick={handleBackup}
+            disabled={backupBusy || restoreBusy}
+          >
+            {backupBusy ? "Generando..." : "⬇ Copia de seguridad"}
+          </button>
+          <label
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              border: "1px solid rgba(239,68,68,0.35)",
+              background: restoreBusy ? "rgba(239,68,68,0.06)" : "#fff",
+              color: "#991b1b",
+              fontWeight: 900,
+              cursor: restoreBusy ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {restoreBusy ? "Restaurando..." : "⬆ Restaurar"}
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={handleRestore}
+              disabled={restoreBusy || backupBusy}
+              style={{ display: "none" }}
+            />
+          </label>
+        </div>
+      </div>
 
       <div
         style={{
