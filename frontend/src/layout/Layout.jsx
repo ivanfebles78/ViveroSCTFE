@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
@@ -1356,37 +1356,47 @@ export default function Layout() {
   const rolActual = (me?.rol || me?.role || "").trim().toLowerCase();
   const esEmpresaExternaRol = rolActual === "empresa_externa";
 
-  useEffect(() => {
-    if (!me) return; // espera a saber el rol
-    const loadInterno = async () => {
-      try {
-        const data = await getProductos();
-        setProductos(Array.isArray(data) ? data : []);
-      } catch {
-        setProductos([]);
-      }
-    };
-    const loadPedidosUsuario = async () => {
+  // Recarga los datos que alimentan los badges del menú (pedidos y, para roles
+  // internos, productos). Reutilizable: al cambiar de ruta, al enfocar la
+  // ventana, por intervalo y tras cualquier acción (evento "vivero:data-changed").
+  const refreshBadgeData = useCallback(async () => {
+    if (!me) return;
+    if (esEmpresaExternaRol) {
+      setProductos([]);
       try {
         const data = await getPedidos();
         setPedidosUsuario(Array.isArray(data) ? data : []);
-      } catch {
-        setPedidosUsuario([]);
-      }
-    };
-
-    if (esEmpresaExternaRol) {
-      // Empresa externa: solo pedidos (no stock/caducidad de productos internos).
-      setProductos([]);
-      loadPedidosUsuario();
-    } else {
-      // Resto de roles: cargamos AMBAS cosas — productos para las alertas
-      // de caducidad, pedidos para los badges del menú lateral (aprobaciones
-      // pendientes, pedidos a servir, decisiones nuevas sobre pedidos propios).
-      loadInterno();
-      loadPedidosUsuario();
+      } catch { /* noop */ }
+      return;
     }
-  }, [location.pathname, me, esEmpresaExternaRol]);
+    try {
+      const data = await getProductos();
+      setProductos(Array.isArray(data) ? data : []);
+    } catch { /* noop */ }
+    try {
+      const data = await getPedidos();
+      setPedidosUsuario(Array.isArray(data) ? data : []);
+    } catch { /* noop */ }
+  }, [me, esEmpresaExternaRol]);
+
+  useEffect(() => {
+    refreshBadgeData();
+  }, [location.pathname, refreshBadgeData]);
+
+  // Refresca los badges sin cambiar de pantalla: tras cualquier acción que
+  // modifique datos, al volver a enfocar la ventana y periódicamente.
+  useEffect(() => {
+    if (!me) return;
+    const onChanged = () => { refreshBadgeData(); };
+    window.addEventListener("vivero:data-changed", onChanged);
+    window.addEventListener("focus", onChanged);
+    const intervalId = setInterval(refreshBadgeData, 30000);
+    return () => {
+      window.removeEventListener("vivero:data-changed", onChanged);
+      window.removeEventListener("focus", onChanged);
+      clearInterval(intervalId);
+    };
+  }, [me, refreshBadgeData]);
 
   useEffect(() => {
     saveReadNotificationsToStorage(readNotificationIds);

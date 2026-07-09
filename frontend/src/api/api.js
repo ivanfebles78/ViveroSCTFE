@@ -33,7 +33,17 @@ api.interceptors.request.use((config) => {
 // con sesión activa, limpiamos la sesión y mandamos al login con un aviso, en
 // vez de fallar silenciosamente en segundo plano.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Tras cualquier acción que MODIFIQUE datos (POST/PUT/PATCH/DELETE) avisamos
+    // a la app para que refresque los badges del menú sin cambiar de pantalla.
+    try {
+      const method = String(response?.config?.method || "get").toLowerCase();
+      if (method !== "get" && typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vivero:data-changed"));
+      }
+    } catch { /* noop */ }
+    return response;
+  },
   (error) => {
     const status = error?.response?.status;
     const url = String(error?.config?.url || "");
