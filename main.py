@@ -1884,14 +1884,14 @@ def aprobar_pedido(
             detail="Solo se pueden aprobar items mientras el pedido tenga líneas en RESERVA.",
         )
 
-    # Reposición pedidos: only "manager" role can approve.  Salida pedidos
-    # remain admin-or-manager via the require_roles dependency above.
+    # Reposición pedidos: los aprueban manager o admin (el admin puede hacer de
+    # todo). Salida pedidos: admin o manager vía require_roles de arriba.
     pedido_tipo = (pedido.tipo or "salida").strip().lower()
     user_role = (current_user.rol or "").strip().lower()
-    if pedido_tipo == "reposicion" and user_role != "manager":
+    if pedido_tipo == "reposicion" and user_role not in ("manager", "admin"):
         raise HTTPException(
             status_code=403,
-            detail="Solo un usuario con rol 'manager' puede aprobar pedidos de reposición.",
+            detail="Solo un manager o un administrador puede aprobar pedidos de reposición.",
         )
 
     targets = _select_items_for_action(pedido, payload.item_ids)
@@ -2021,13 +2021,13 @@ def decidir_pedido(
             detail="Este pedido ya no admite decisiones (no hay items en RESERVA).",
         )
 
-    # Reposición: only "manager" role can decide (matches /aprobar).
+    # Reposición: la deciden manager o admin (coincide con /aprobar).
     pedido_tipo = (pedido.tipo or "salida").strip().lower()
     user_role  = (current_user.rol or "").strip().lower()
-    if pedido_tipo == "reposicion" and user_role != "manager":
+    if pedido_tipo == "reposicion" and user_role not in ("manager", "admin"):
         raise HTTPException(
             status_code=403,
-            detail="Solo un usuario con rol 'manager' puede decidir pedidos de reposición.",
+            detail="Solo un manager o un administrador puede decidir pedidos de reposición.",
         )
 
     items_by_id = {it.id: it for it in (pedido.items or [])}
