@@ -2427,11 +2427,17 @@ export default function Pedidos() {
       .slice()
       .filter((p) => {
         if (!esEmpresaExterna) return true;
-        // Defensa en frontend: oculta reposición y pedidos que no son suyos
+        // Defensa en frontend: oculta reposición y pedidos que no son suyos.
+        // Comparamos el username CRUDO (no el formateado para mostrar) y sin
+        // distinguir mayúsculas: el backend guarda "medina" pero formatUsername
+        // devolvería "Medina", lo que dejaba la lista vacía a la empresa externa.
         const tipo = String(p?.tipo || "salida").toLowerCase();
         if (tipo === "reposicion") return false;
-        const solicitante = solicitanteFromPedido(p);
-        return me?.username && solicitante === me.username;
+        const solicitanteRaw = String(
+          p?.solicitante_username || p?.solicitante || p?.created_by || p?.usuario || p?.username || ""
+        ).trim().toLowerCase();
+        const miUsuario = String(me?.username || "").trim().toLowerCase();
+        return !!miUsuario && solicitanteRaw === miUsuario;
       })
       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
       .filter((p) => {
