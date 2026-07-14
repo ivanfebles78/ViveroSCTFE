@@ -2300,12 +2300,20 @@ def crear_movimiento(
     es_traslado_interno = origen == "vivero" and destino == "vivero"
 
     if origen == "vivero":
+        # La fecha de disponibilidad (M35) NO debe impedir sacar/mover stock que
+        # ya existe físicamente en la zona: solo condiciona el "disponible" que
+        # se muestra para reservas y nuevos pedidos. Al registrar cualquier
+        # movimiento con origen vivero (salida, traslado o servir un pedido)
+        # contamos TODO el stock físico de esa zona/tamaño
+        # (include_no_disponibles=True), igual que muestra el frontend. Antes se
+        # excluía el stock con fecha de disponibilidad futura y eso impedía
+        # servir un pedido de M35 aunque hubiera stock de sobra.
         disponible = _stock_en_zona_tamano(
             db,
             payload.producto_id,
             payload.zona_origen,
             payload.tamano_origen,
-            include_no_disponibles=es_traslado_interno,
+            include_no_disponibles=True,
         )
         if payload.cantidad > disponible:
             raise HTTPException(
@@ -2419,6 +2427,11 @@ def crear_movimiento(
 
         # Buscamos los lotes a consumir comparando zona/tamaño NORMALIZADOS
         # (mismo criterio que _stock_en_zona_tamano), no con `==` exacto.
+        # Consumimos el stock físico existente de la zona/tamaño con o sin fecha
+        # de disponibilidad futura (misma razón que en la validación de arriba):
+        # el stock M35 con fecha futura sigue siendo stock real que se puede
+        # sacar/servir. Antes se filtraba _disponible_filter() en las salidas y
+        # eso dejaba `restante > 0` → "Stock insuficiente" aunque hubiera stock.
         inventarios_q = (
             db.query(InventarioLote)
             .filter(
@@ -2426,8 +2439,6 @@ def crear_movimiento(
                 InventarioLote.cantidad_disponible > 0,
             )
         )
-        if not es_traslado_interno:
-            inventarios_q = inventarios_q.filter(_disponible_filter())
         candidatos = inventarios_q.order_by(InventarioLote.id.asc()).all()
         _zn = _normalize_zona_id(payload.zona_origen or "")
         _tn = _norm_tam(payload.tamano_origen or "")

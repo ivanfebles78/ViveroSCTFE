@@ -675,26 +675,39 @@ function PedidoModal({
     setFiltroSubcategoria("");
   }, [filtroCategoria]);
 
-  // Categorías y subcategorías disponibles para los desplegables de filtro.
+  // Solo los productos que TIENEN stock disponible (en alguno de sus formatos).
+  // Los desplegables de categoría/subcategoría se derivan EXCLUSIVAMENTE de
+  // estos, para no ofrecer categorías/subcategorías sin existencias.
+  const productosConStock = useMemo(() => {
+    return safeArray(productos).filter((p) => {
+      const formatoOptions = getFormatoOptions(getProductFormatoConfig(p));
+      return formatoOptions.some(
+        (t) => (stockByProductSize.get(lineKey(p.id, t)) || 0) > 0
+      );
+    });
+  }, [productos, stockByProductSize]);
+
+  // Categorías y subcategorías disponibles para los desplegables de filtro,
+  // solo entre productos con stock.
   const categoriasDisponibles = useMemo(() => {
     const set = new Set();
-    for (const p of safeArray(productos)) {
+    for (const p of productosConStock) {
       const c = String(p?.categoria || "").trim();
       if (c) set.add(c);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
-  }, [productos]);
+  }, [productosConStock]);
 
   const subcategoriasDisponibles = useMemo(() => {
     if (!filtroCategoria) return [];
     const set = new Set();
-    for (const p of safeArray(productos)) {
+    for (const p of productosConStock) {
       if (String(p?.categoria || "").trim() !== filtroCategoria) continue;
       const s = String(p?.subcategoria || "").trim();
       if (s) set.add(s);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
-  }, [productos, filtroCategoria]);
+  }, [productosConStock, filtroCategoria]);
 
   useEffect(() => {
     setBarrioDestino("");

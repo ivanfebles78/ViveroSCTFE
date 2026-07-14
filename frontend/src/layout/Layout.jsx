@@ -273,7 +273,7 @@ function isPathAllowedForRole(pathname, role) {
   }
 
   if (role === "empresa_externa") {
-    return ["/productos", "/pedidos"].includes(pathname);
+    return ["/productos", "/pedidos", "/informes"].includes(pathname);
   }
 
   // Proveedor: solo /pedidos.
