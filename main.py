@@ -2534,9 +2534,16 @@ def crear_movimiento(
                 detail="La cantidad servida supera la cantidad pedida en la línea seleccionada",
             )
 
-        todas_servidas = all(
+        # Un pedido queda SERVIDO cuando TODAS sus líneas aprobadas están
+        # servidas por completo. Las líneas DENEGADO nunca se sirven, así que
+        # se excluyen: de lo contrario un pedido APROBADO_PARCIAL (que siempre
+        # tiene alguna línea denegada) jamás pasaría a SERVIDO.
+        lineas_servibles = [
+            it for it in pedido.items if _item_estado(it) != "DENEGADO"
+        ]
+        todas_servidas = bool(lineas_servibles) and all(
             float(it.cantidad_servida or 0) >= float(it.cantidad or 0)
-            for it in pedido.items
+            for it in lineas_servibles
         )
 
         if todas_servidas:
@@ -2585,6 +2592,7 @@ def listar_movimientos(
                 "tamano_origen": mov.tamano_origen,
                 "tamano_destino": mov.tamano_destino,
                 "fecha_movimiento": mov.fecha_movimiento,
+                "fecha_disponibilidad": getattr(mov, "fecha_disponibilidad", None),
                 "fecha_caducidad": getattr(mov, "fecha_caducidad", None),
                 "dias_caducidad_aplicados": getattr(mov, "dias_caducidad_aplicados", None),
                 "distrito_destino": mov.distrito_destino,
@@ -2933,7 +2941,7 @@ def reporte_movimientos_externos(
     categoria: str | None = None,
     subcategoria: str | None = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa"])),
 ):
     q = (
         db.query(Movimiento, Producto)

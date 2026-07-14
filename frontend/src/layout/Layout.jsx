@@ -195,7 +195,7 @@ function getVisibleNavItems(role) {
 
   if (role === "empresa_externa") {
     return NAV_ITEMS.filter((i) =>
-      ["/productos", "/pedidos"].includes(i.to)
+      ["/productos", "/pedidos", "/informes"].includes(i.to)
     );
   }
 

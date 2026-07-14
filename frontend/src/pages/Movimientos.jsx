@@ -2828,7 +2828,9 @@ function MovimientoDetalleModal({ movimiento, onClose }) {
 
           <Row label="Fecha caducidad" value={fmtDate(m.fecha_caducidad)} />
           <Row label="Días caducidad aplicados" value={m.dias_caducidad_aplicados ?? "—"} />
-          <Row label="Fecha disponibilidad" value={fmtDate(m.fecha_disponibilidad)} />
+          {m.fecha_disponibilidad && (
+            <Row label="Fecha disponibilidad" value={fmtDate(m.fecha_disponibilidad)} />
+          )}
 
           <Row label="Observaciones" value={m.observaciones || m.nota || "—"} />
         </div>

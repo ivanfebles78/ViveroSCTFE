@@ -645,6 +645,8 @@ function PedidoModal({
   saving,
 }) {
   const [search, setSearch] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [qtyInput, setQtyInput] = useState({});
   const [cart, setCart] = useState({});
@@ -656,6 +658,8 @@ function PedidoModal({
   useEffect(() => {
     if (!open) {
       setSearch("");
+      setFiltroCategoria("");
+      setFiltroSubcategoria("");
       setSelectedProductId("");
       setQtyInput({});
       setCart({});
@@ -665,6 +669,32 @@ function PedidoModal({
       setDireccionDestino("");
     }
   }, [open]);
+
+  // Al cambiar de categoría se limpia la subcategoría (dependen entre sí).
+  useEffect(() => {
+    setFiltroSubcategoria("");
+  }, [filtroCategoria]);
+
+  // Categorías y subcategorías disponibles para los desplegables de filtro.
+  const categoriasDisponibles = useMemo(() => {
+    const set = new Set();
+    for (const p of safeArray(productos)) {
+      const c = String(p?.categoria || "").trim();
+      if (c) set.add(c);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos]);
+
+  const subcategoriasDisponibles = useMemo(() => {
+    if (!filtroCategoria) return [];
+    const set = new Set();
+    for (const p of safeArray(productos)) {
+      if (String(p?.categoria || "").trim() !== filtroCategoria) continue;
+      const s = String(p?.subcategoria || "").trim();
+      if (s) set.add(s);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos, filtroCategoria]);
 
   useEffect(() => {
     setBarrioDestino("");
@@ -688,6 +718,11 @@ function PedidoModal({
           (t) => (stockByProductSize.get(lineKey(p.id, t)) || 0) > 0
         );
         if (!tieneStock) return false;
+
+        // Filtros por desplegable de categoría / subcategoría.
+        if (filtroCategoria && String(p?.categoria || "").trim() !== filtroCategoria) return false;
+        if (filtroSubcategoria && String(p?.subcategoria || "").trim() !== filtroSubcategoria) return false;
+
         if (!texto) return true;
 
         const nombreCientifico = String(p?.nombre_cientifico || p?.producto_nombre_cientifico || "").toLowerCase();
@@ -703,7 +738,7 @@ function PedidoModal({
       .sort((a, b) =>
         String(getScientificProductDisplayName(a)).localeCompare(String(getScientificProductDisplayName(b)))
       );
-  }, [productos, stockByProductSize, search]);
+  }, [productos, stockByProductSize, search, filtroCategoria, filtroSubcategoria]);
 
   const selectedProduct = useMemo(
     () => productosDisponibles.find((p) => String(p.id) === String(selectedProductId)) || null,
@@ -925,6 +960,30 @@ function PedidoModal({
               onChange={(e) => setSearch(e.target.value)}
               style={softInputStyle()}
             />
+          </div>
+
+          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <select
+              value={filtroCategoria}
+              onChange={(e) => setFiltroCategoria(e.target.value)}
+              style={softInputStyle()}
+            >
+              <option value="">Todas las categorías</option>
+              {categoriasDisponibles.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <select
+              value={filtroSubcategoria}
+              onChange={(e) => setFiltroSubcategoria(e.target.value)}
+              style={{ ...softInputStyle(), opacity: filtroCategoria ? 1 : 0.55 }}
+              disabled={!filtroCategoria || subcategoriasDisponibles.length === 0}
+            >
+              <option value="">Todas las subcategorías</option>
+              {subcategoriasDisponibles.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
 
           <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -2297,6 +2356,10 @@ export default function Pedidos() {
     try {
       const created = await createPedido(payload);
       setModalOpen(false);
+      // El pedido recién creado entra en RESERVA. Si había un filtro de estado
+      // activo (p.ej. "Aprobado"), el nuevo pedido no se vería. Reseteamos a
+      // "Todos" para que siempre aparezca tras crearlo.
+      setEstadoFiltro("TODOS");
       await refrescar();
       // If the backend surfaced any email-delivery warnings (e.g. a
       // manager without email registered), show them as a soft notice

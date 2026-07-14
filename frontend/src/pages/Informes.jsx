@@ -1330,9 +1330,19 @@ export default function Informes() {
   const { me } = useOutletContext();
 
   const role = me?.rol || me?.role;
-  const canAccess = role === "admin" || role === "manager";
+  // La empresa externa solo puede ver el informe de movimientos externos.
+  const isEmpresaExterna = role === "empresa_externa";
+  const canAccess = role === "admin" || role === "manager" || isEmpresaExterna;
 
-  const [activeReport, setActiveReport] = useState("trazabilidad");
+  // Pestañas visibles según el rol: la empresa externa solo "Movimientos externos".
+  const visibleReports = useMemo(
+    () => (isEmpresaExterna ? REPORTS.filter((r) => r.key === "externos") : REPORTS),
+    [isEmpresaExterna]
+  );
+
+  const [activeReport, setActiveReport] = useState(
+    isEmpresaExterna ? "externos" : "trazabilidad"
+  );
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -2100,7 +2110,7 @@ export default function Informes() {
           }}
         >
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {REPORTS.map((r) => {
+            {visibleReports.map((r) => {
               const active = activeReport === r.key;
               return (
                 <button
