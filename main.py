@@ -1159,6 +1159,10 @@ def get_productos(
         # listado general.
         stock_total = 0
         stock_by_size: dict[str, int] = {}
+        # Stock que AÚN NO está disponible por tener fecha de disponibilidad
+        # futura (entradas M35 en maduración). Se cuenta como stock del vivero
+        # (stock_by_size) pero NO como disponible para pedir/reservar.
+        no_disp_by_size: dict[str, float] = {}
         for inv in invs:
             cantidad = float(inv.cantidad_disponible or 0)
             if cantidad <= 0:
@@ -1167,6 +1171,9 @@ def get_productos(
             tam = (inv.tamano or "").strip()
             if tam:
                 stock_by_size[tam] = stock_by_size.get(tam, 0) + cantidad
+                fdisp = getattr(inv, "fecha_disponibilidad", None)
+                if fdisp is not None and fdisp > today:
+                    no_disp_by_size[tam] = no_disp_by_size.get(tam, 0.0) + cantidad
 
         # Lotes vivos para mostrar caducidades: cantidad > 0 (sin filtrar por disponibilidad)
         lotes = []
@@ -1200,14 +1207,19 @@ def get_productos(
             if fecha_cad <= warning_limit:
                 alertas_caducidad.append(lote_info)
 
-        # Reservado y disponible (= real − reservado) por tamaño y total.
+        # Disponible por tamaño = stock real − reservado − stock con fecha de
+        # disponibilidad futura. El stock aún no disponible (fecha futura) no se
+        # puede pedir ni reservar hasta que llegue su fecha.
         reservado_total = 0.0
+        no_disponible_total = 0.0
         disponible_by_size: dict[str, float] = {}
         for tam, qty in stock_by_size.items():
             res = float(reservas_map.get((p.id, _norm_tam(tam)), 0.0))
+            futuro = float(no_disp_by_size.get(tam, 0.0))
             reservado_total += min(res, qty)
-            disponible_by_size[tam] = max(qty - res, 0)
-        disponible_total = max(stock_total - reservado_total, 0)
+            no_disponible_total += futuro
+            disponible_by_size[tam] = max(qty - res - futuro, 0)
+        disponible_total = max(stock_total - reservado_total - no_disponible_total, 0)
 
         item = {
             "id": p.id,
@@ -1219,6 +1231,8 @@ def get_productos(
             "stock": stock_total,
             "stock_by_size": stock_by_size,
             "reservado": reservado_total,
+            "no_disponible": no_disponible_total,
+            "no_disponible_by_size": no_disp_by_size,
             "disponible": disponible_total,
             "disponible_by_size": disponible_by_size,
             "alertas_caducidad": alertas_caducidad,
