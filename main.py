@@ -619,6 +619,44 @@ def _item_estado(item: PedidoItem) -> str:
     return str(raw).strip().upper() or "RESERVA"
 
 
+def _pedido_totalmente_servido(pedido: Pedido) -> bool:
+    """True si TODAS las líneas servibles (no denegadas) del pedido están
+    servidas por completo y al menos una se ha servido. Las líneas RESERVA
+    (pendientes de decidir) tienen cantidad_servida 0, así que impiden el True
+    hasta que se decidan. Es el mismo criterio que usa crear_movimiento."""
+    servibles = [it for it in (pedido.items or []) if _item_estado(it) != "DENEGADO"]
+    if not servibles:
+        return False
+    algo_servido = any(float(getattr(it, "cantidad_servida", 0) or 0) > 0 for it in servibles)
+    todas = all(
+        float(getattr(it, "cantidad_servida", 0) or 0) >= float(getattr(it, "cantidad", 0) or 0)
+        for it in servibles
+    )
+    return algo_servido and todas
+
+
+def _transicionar_pedidos_servidos(db: Session) -> int:
+    """Marca como SERVIDO los pedidos APROBADO/APROBADO_PARCIAL cuyas líneas
+    aprobadas ya están todas servidas. Repara pedidos que quedaron 'colgados'
+    en APROBADO_PARCIAL (p.ej. servidos antes de existir esta transición) y que
+    de otro modo no mostrarían líneas pendientes pero tampoco estado SERVIDO."""
+    candidatos = (
+        db.query(Pedido)
+        .filter(func.upper(Pedido.estado).in_(["APROBADO", "APROBADO_PARCIAL"]))
+        .all()
+    )
+    afectados = 0
+    for p in candidatos:
+        if _pedido_totalmente_servido(p):
+            p.estado = "SERVIDO"
+            if hasattr(p, "served_at") and not getattr(p, "served_at", None):
+                p.served_at = datetime.utcnow()
+            afectados += 1
+    if afectados:
+        db.commit()
+    return afectados
+
+
 # =============================
 # RESERVA DE STOCK (derivada)
 # =============================
@@ -1571,8 +1609,10 @@ def get_pedidos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero", "proveedor"])),
 ):
-    # Transiciona pedidos vencidos antes de listar
+    # Transiciona pedidos vencidos y repara los que ya están totalmente
+    # servidos pero quedaron colgados en APROBADO_PARCIAL, antes de listar.
     _transicionar_pedidos_caducados(db)
+    _transicionar_pedidos_servidos(db)
 
     rol = (current_user.rol or "").strip().lower()
     q = db.query(Pedido)
@@ -2560,18 +2600,10 @@ def crear_movimiento(
             )
 
         # Un pedido queda SERVIDO cuando TODAS sus líneas aprobadas están
-        # servidas por completo. Las líneas DENEGADO nunca se sirven, así que
-        # se excluyen: de lo contrario un pedido APROBADO_PARCIAL (que siempre
-        # tiene alguna línea denegada) jamás pasaría a SERVIDO.
-        lineas_servibles = [
-            it for it in pedido.items if _item_estado(it) != "DENEGADO"
-        ]
-        todas_servidas = bool(lineas_servibles) and all(
-            float(it.cantidad_servida or 0) >= float(it.cantidad or 0)
-            for it in lineas_servibles
-        )
-
-        if todas_servidas:
+        # servidas por completo (las DENEGADO se excluyen; ver
+        # _pedido_totalmente_servido). Mismo criterio que el barrido que repara
+        # pedidos colgados en get_pedidos.
+        if _pedido_totalmente_servido(pedido):
             pedido.estado = "SERVIDO"
             pedido.served_at = datetime.utcnow()
             pedido.served_by = user.username
