@@ -9,6 +9,8 @@ import {
   adminUnlockUser,
   descargarBackup,
   restaurarBackup,
+  adminEmailConfig,
+  adminEmailTest,
 } from "../api/api";
 import Modal from "../components/common/Modal";
 
@@ -245,6 +247,9 @@ export default function AdminUsuarios() {
   const [page, setPage] = useState(1);
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
+  const [emailCfg, setEmailCfg] = useState(null);
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [testTo, setTestTo] = useState("");
 
   const reload = async () => {
     setLoading(true);
@@ -278,6 +283,34 @@ export default function AdminUsuarios() {
       setError(extractError(err, "No se pudo generar la copia de seguridad."));
     } finally {
       setBackupBusy(false);
+    }
+  };
+
+  const handleEmailConfig = async () => {
+    setEmailBusy(true);
+    setError("");
+    try {
+      const cfg = await adminEmailConfig();
+      setEmailCfg(cfg);
+    } catch (err) {
+      setError(extractError(err, "No se pudo leer la configuración de correo."));
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const handleEmailTest = async () => {
+    const dest = (testTo || "").trim();
+    if (!dest) { setError("Indica un email de destino para la prueba."); return; }
+    setEmailBusy(true);
+    setError("");
+    try {
+      const res = await adminEmailTest(dest);
+      flash(`Correo de prueba enviado a ${res.to} (driver: ${res.driver}). Revisa la bandeja (y spam).`);
+    } catch (err) {
+      setError(extractError(err, "No se pudo enviar el correo de prueba."));
+    } finally {
+      setEmailBusy(false);
     }
   };
 
@@ -480,6 +513,65 @@ export default function AdminUsuarios() {
             />
           </label>
         </div>
+      </div>
+
+      {/* Diagnóstico de correo — verificar por qué no llegan los emails */}
+      <div
+        style={{
+          marginTop: 18,
+          padding: "16px 18px",
+          borderRadius: 14,
+          border: "1px solid rgba(15,23,42,0.10)",
+          background: "#f8fafc",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>✉️ Diagnóstico de correo</div>
+            <div style={{ color: "#64748b", fontWeight: 600, fontSize: 13, marginTop: 2 }}>
+              Comprueba qué proveedor de correo está activo y envía un email de prueba.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <button style={{ ...btnSecondary, opacity: emailBusy ? 0.6 : 1 }} onClick={handleEmailConfig} disabled={emailBusy}>
+              {emailBusy ? "..." : "Ver configuración"}
+            </button>
+            <input
+              type="email"
+              placeholder="email de prueba"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.15)", minWidth: 200 }}
+            />
+            <button style={{ ...btnPrimary, opacity: emailBusy ? 0.6 : 1 }} onClick={handleEmailTest} disabled={emailBusy}>
+              Enviar prueba
+            </button>
+          </div>
+        </div>
+
+        {emailCfg && (
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "#fff", border: "1px solid rgba(15,23,42,0.08)", fontSize: 13 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontWeight: 900 }}>Driver:</span>
+              <span style={{ fontWeight: 900, padding: "2px 8px", borderRadius: 999, background: emailCfg.driver === "console" || emailCfg.driver === "disabled" ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.14)", color: emailCfg.driver === "console" || emailCfg.driver === "disabled" ? "#991b1b" : "#065f46" }}>
+                {emailCfg.driver}
+              </span>
+              <span style={{ color: "#64748b" }}>· From: <strong>{emailCfg.email_from}</strong></span>
+            </div>
+            {emailCfg.aviso && (
+              <div style={{ marginTop: 8, color: "#92400e", fontWeight: 700, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "8px 10px" }}>
+                ⚠ {emailCfg.aviso}
+              </div>
+            )}
+            <div style={{ marginTop: 8, color: "#334155", lineHeight: 1.6 }}>
+              <div>Resend API key: <strong>{emailCfg.resend_api_key_set ? "✓ configurada" : "—"}</strong></div>
+              <div>Brevo API key: <strong>{emailCfg.brevo_api_key_set ? "✓ configurada" : "—"}</strong></div>
+              <div>SMTP host: <strong>{emailCfg.smtp_host || "—"}</strong> · puerto {emailCfg.smtp_port} · TLS {emailCfg.smtp_use_tls} · SSL {emailCfg.smtp_use_ssl}</div>
+              <div>SMTP usuario: <strong>{emailCfg.smtp_username_set ? "✓" : "—"}</strong> · SMTP contraseña: <strong>{emailCfg.smtp_password_set ? "✓" : "—"}</strong></div>
+              <div>Frontend URL (enlaces): <strong>{emailCfg.frontend_url}</strong></div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div

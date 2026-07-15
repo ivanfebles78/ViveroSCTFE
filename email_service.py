@@ -485,6 +485,68 @@ def send_reset_password_email(*, to: str, username: str, token: str) -> None:
     _dispatch(to=to, subject=subject, html=html, text=text)
 
 
+def config_status() -> dict:
+    """Estado de la configuración de correo SIN exponer secretos. Sirve para que
+    un admin verifique desde la app qué driver está activo y si las variables
+    necesarias están presentes (solo booleanos para las claves/contraseñas)."""
+    def _has(name: str) -> bool:
+        return bool(_env(name))
+
+    driver = _driver()
+    status = {
+        "driver": driver,
+        "email_from": _email_from(),
+        "frontend_url": _frontend_url(),
+        "resend_api_key_set": _has("RESEND_API_KEY"),
+        "brevo_api_key_set": _has("BREVO_API_KEY"),
+        "smtp_host": _env("SMTP_HOST") or None,
+        "smtp_port": _env("SMTP_PORT", "587"),
+        "smtp_username_set": _has("SMTP_USERNAME"),
+        "smtp_password_set": _has("SMTP_PASSWORD"),
+        "smtp_use_tls": _env("SMTP_USE_TLS", "true"),
+        "smtp_use_ssl": _env("SMTP_USE_SSL", "false"),
+    }
+    # Aviso legible si el driver no enviará realmente correos.
+    if driver == "console":
+        status["aviso"] = "EMAIL_DRIVER=console (por defecto): los correos NO se envían, solo se imprimen en el log. Configura resend/brevo/smtp en Railway."
+    elif driver == "disabled":
+        status["aviso"] = "EMAIL_DRIVER=disabled: el envío de correos está desactivado."
+    elif driver == "resend" and not status["resend_api_key_set"]:
+        status["aviso"] = "Driver resend pero falta RESEND_API_KEY."
+    elif driver == "brevo" and not status["brevo_api_key_set"]:
+        status["aviso"] = "Driver brevo pero falta BREVO_API_KEY."
+    elif driver == "smtp" and not (status["smtp_host"] and status["smtp_username_set"] and status["smtp_password_set"]):
+        status["aviso"] = "Driver smtp pero faltan SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD."
+    else:
+        status["aviso"] = None
+    return status
+
+
+def send_test_email(*, to: str) -> None:
+    """Envía un correo de prueba para verificar la configuración."""
+    url = _frontend_url()
+    _dispatch(
+        to=to,
+        subject="Prueba de correo · ViverApp",
+        html=_wrap_html(
+            title="Prueba de correo",
+            body_html=(
+                "Este es un correo de prueba de <strong>ViverApp</strong>.<br>"
+                "Si lo recibes, el envío de correos (incluido el de restablecer "
+                "contraseña) está configurado correctamente."
+            ),
+            button_label="Abrir ViverApp",
+            button_url=url,
+            footer="Puedes ignorar este mensaje.",
+        ),
+        text=(
+            "Correo de prueba de ViverApp.\n"
+            "Si lo recibes, el envío de correos está configurado correctamente.\n"
+            f"{url}"
+        ),
+    )
+
+
 def send_unlock_email(*, to: str, username: str, token: str) -> None:
     url = f"{_frontend_url()}/desbloquear/{token}"
     subject = "Desbloqueo de cuenta"

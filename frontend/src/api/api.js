@@ -374,6 +374,17 @@ export const adminUnlockUser = async (userId) => {
   return data;
 };
 
+// Diagnóstico de correo (solo admin).
+export const adminEmailConfig = async () => {
+  const { data } = await api.get("/admin/email-config");
+  return data;
+};
+
+export const adminEmailTest = async (to) => {
+  const { data } = await api.post(`/admin/email-test?to=${encodeURIComponent(to)}`);
+  return data;
+};
+
 // =========================
 // ACCOUNT TOKENS (public, no auth)
 // =========================

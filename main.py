@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, Response
 
 from pdf_pedido import generar_pdf_pedido
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from sqlalchemy import func, or_, and_, text, inspect as sa_inspect
@@ -694,6 +694,7 @@ def _transicionar_pedidos_servidos(db: Session) -> int:
     de otro modo no mostrarían líneas pendientes pero tampoco estado SERVIDO."""
     candidatos = (
         db.query(Pedido)
+        .options(selectinload(Pedido.items))
         .filter(func.upper(Pedido.estado).in_(["APROBADO", "APROBADO_PARCIAL"]))
         .all()
     )
@@ -1675,7 +1676,12 @@ def get_pedidos(
     _transicionar_pedidos_servidos(db)
 
     rol = (current_user.rol or "").strip().lower()
-    q = db.query(Pedido)
+    # Eager-loading para evitar N+1: los items, su producto y sus movimientos se
+    # cargan en pocas consultas en vez de una por cada item al serializar.
+    q = db.query(Pedido).options(
+        selectinload(Pedido.items).selectinload(PedidoItem.producto),
+        selectinload(Pedido.items).selectinload(PedidoItem.movimientos),
+    )
 
     # Empresa externa: ve dos tipos de pedidos.
     #   1) Sus propios pedidos (cualquier estado), independientemente del tipo.
@@ -3647,6 +3653,28 @@ def _validate_password_or_400(pwd: str) -> str:
 class ForgotPasswordIn(BaseModel):
     username: str
     email: str
+
+
+@app.get("/admin/email-config")
+def admin_email_config(current_user: Usuario = Depends(require_roles(["admin"]))):
+    """Estado de la configuración de correo (sin secretos), para diagnóstico."""
+    return email_service.config_status()
+
+
+@app.post("/admin/email-test")
+def admin_email_test(
+    to: str,
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Envía un correo de prueba al destino indicado y reporta si funcionó."""
+    dest = (to or "").strip()
+    if not dest:
+        raise HTTPException(status_code=400, detail="Indica un email de destino.")
+    try:
+        email_service.send_test_email(to=dest)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Fallo al enviar el correo de prueba: {e}")
+    return {"ok": True, "driver": email_service.config_status().get("driver"), "to": dest}
 
 
 @app.post("/auth/forgot-password")
