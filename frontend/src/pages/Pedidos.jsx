@@ -1608,6 +1608,10 @@ function PedidoDetalleCellOld({
     estadoNormalizado(pedido?.estado) === "APROBADO_PARCIAL" ||
     itemStates.size > 1;
 
+  // ¿El pedido reparte en varios destinos? Para mostrar el destino por línea.
+  const _dstDeItem = (it) => [it.distrito_destino, it.barrio_destino, it.direccion_destino].filter(Boolean).join(" · ");
+  const variosDestinos = new Set(items.map(_dstDeItem).filter(Boolean)).size > 1;
+
   if (editingId !== pedido.id) {
     // Show at most 3 items by default — including for APROBADO_PARCIAL.
     // The "+ ver N más" button expands the rest in-place.  For partial
@@ -1700,6 +1704,11 @@ function PedidoDetalleCellOld({
                       {formatCantidad(it.cantidad ?? 0) || "0"}
                     </div>
                   </div>
+                  {variosDestinos && _dstDeItem(it) ? (
+                    <div style={{ marginTop: 2, fontSize: 11, fontWeight: 800, color: "#1e3a8a" }}>
+                      📍 {_dstDeItem(it)}
+                    </div>
+                  ) : null}
 
                   {/* Row 2: small inline badge under the item — only in
                       partial-approval mode.  Does not consume horizontal

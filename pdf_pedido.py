@@ -46,6 +46,21 @@ COLOR_RESERVA_FG  = colors.HexColor("#92400E")   # amber-800
 COLOR_DENEGADO_BG = colors.HexColor("#FEE2E2")   # red-100
 COLOR_DENEGADO_FG = colors.HexColor("#991B1B")   # red-800
 
+# Colores intensos y distintos por destino (coherentes con la UI), para
+# diferenciar bien cada destino cuando el pedido reparte en varios.
+DESTINO_PALETTE = [
+    colors.HexColor("#1E3A8A"),
+    colors.HexColor("#065F46"),
+    colors.HexColor("#9A3412"),
+    colors.HexColor("#6B21A8"),
+    colors.HexColor("#155E75"),
+    colors.HexColor("#9F1239"),
+    colors.HexColor("#3F6212"),
+    colors.HexColor("#854D0E"),
+    colors.HexColor("#5B21B6"),
+    colors.HexColor("#0F766E"),
+]
+
 
 def _item_estado_label(estado_item: Optional[str]) -> tuple[str, "colors.Color", "colors.Color"]:
     """Map a per-item state to (label, background, foreground) for the PDF
@@ -174,80 +189,43 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
     story.append(HRFlowable(width="100%", thickness=1, color=COLOR_BORDE))
     story.append(Spacer(1, 10))
 
-    # ===== Bloque: información general =====
-    info_general = [
-        ["Estado", str(getattr(pedido, "estado", "") or "—")],
-        ["Tipo", str(getattr(pedido, "tipo", "") or "—").capitalize()],
-        ["Solicitante", str(getattr(pedido, "solicitante_username", "") or getattr(pedido, "created_by", "") or "—")],
-        ["Aprobado por", str(getattr(pedido, "aprobado_por", "") or "—")],
-        ["Servido por", str(getattr(pedido, "served_by", "") or "—")],
+    # ===== Bloque: información + cronología (compacto, 2 columnas) =====
+    def _c(v):
+        return str(v if (v is not None and str(v) != "") else "—")
+
+    info_crono = [
+        ["Estado", _c(getattr(pedido, "estado", "")), "Creado", _fmt_fecha(getattr(pedido, "created_at", None))],
+        ["Tipo", _c(getattr(pedido, "tipo", "")).capitalize(), "Aprobado", _fmt_fecha(getattr(pedido, "aprobado_at", None))],
+        ["Solicitante", _c(getattr(pedido, "solicitante_username", "") or getattr(pedido, "created_by", "")), "Servido", _fmt_fecha(getattr(pedido, "served_at", None))],
+        ["Aprobado por", _c(getattr(pedido, "aprobado_por", "")), "Denegado", _fmt_fecha(getattr(pedido, "denegado_at", None))],
+        ["Servido por", _c(getattr(pedido, "served_by", "")), "Caducidad", _fmt_fecha(getattr(pedido, "fecha_caducidad", None))],
     ]
-    t_info = Table(info_general, colWidths=[45 * mm, 130 * mm])
+    t_info = Table(info_crono, colWidths=[30 * mm, 55 * mm, 28 * mm, 62 * mm])
     t_info.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), COLOR_GRIS_FONDO),
+        ("BACKGROUND", (2, 0), (2, -1), COLOR_GRIS_FONDO),
         ("TEXTCOLOR", (0, 0), (0, -1), COLOR_GRIS),
+        ("TEXTCOLOR", (2, 0), (2, -1), COLOR_GRIS),
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
         ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+        ("FONTNAME", (3, 0), (3, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
     ]))
     story.append(t_info)
     story.append(Spacer(1, 12))
 
-    # ===== Bloque: cronología =====
-    story.append(Paragraph("Cronología", style_h2))
-    cronologia = [
-        ["Creado", _fmt_fecha(getattr(pedido, "created_at", None))],
-        ["Aprobado", _fmt_fecha(getattr(pedido, "aprobado_at", None))],
-        ["Denegado", _fmt_fecha(getattr(pedido, "denegado_at", None))],
-        ["Servido", _fmt_fecha(getattr(pedido, "served_at", None))],
-        ["Caducidad", _fmt_fecha(getattr(pedido, "fecha_caducidad", None))],
-    ]
-    t_crono = Table(cronologia, colWidths=[45 * mm, 130 * mm])
-    t_crono.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), COLOR_GRIS_FONDO),
-        ("TEXTCOLOR", (0, 0), (0, -1), COLOR_GRIS),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
-    ]))
-    story.append(t_crono)
-    story.append(Spacer(1, 12))
-
-    # ===== Bloque: destino =====
-    story.append(Paragraph("Destino de entrega", style_h2))
+    # ===== Bloque: items AGRUPADOS por destino =====
+    story.append(Paragraph("Detalle del pedido por destino", style_h2))
     tipo = (getattr(pedido, "tipo", "") or "salida").strip().lower()
-    if tipo == "reposicion":
-        destino_texto = DIRECCION_VIVERO
-    else:
-        partes = [
-            getattr(pedido, "distrito_destino", "") or "",
-            getattr(pedido, "barrio_destino", "") or "",
-            getattr(pedido, "direccion_destino", "") or "",
-        ]
-        destino_texto = " · ".join(p for p in partes if p) or "—"
-    story.append(Paragraph(destino_texto, style_body))
-    story.append(Spacer(1, 12))
-
-    # ===== Bloque: items =====
-    story.append(Paragraph("Detalle del pedido", style_h2))
     items = getattr(pedido, "items", []) or []
-    # When generating the PDF for a proveedor (supplier), hide any lines
-    # that were denied or are still pending — they're not the supplier's
-    # business to see.  After this filter, every remaining item is
-    # APROBADO or SERVIDO and the per-item Estado column collapses
-    # automatically (single state → no column).
+    # Para el PDF de un proveedor ocultamos las líneas denegadas o pendientes.
     role = (viewer_role or "").strip().lower()
     if role == "proveedor":
         items = [
@@ -255,100 +233,124 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
             if (str(getattr(it, "estado_item", None) or "APROBADO").strip().upper()
                 in ("APROBADO", "SERVIDO"))
         ]
+
+    def _destino_de_item(it) -> str:
+        if tipo == "reposicion":
+            return DIRECCION_VIVERO
+        partes = [
+            getattr(it, "distrito_destino", None) or getattr(pedido, "distrito_destino", None) or "",
+            getattr(it, "barrio_destino", None) or getattr(pedido, "barrio_destino", None) or "",
+            getattr(it, "direccion_destino", None) or getattr(pedido, "direccion_destino", None) or "",
+        ]
+        return " · ".join(p for p in partes if p) or "—"
+
     if not items:
         story.append(Paragraph("Sin líneas en el pedido.", style_body))
     else:
-        # Pre-compute per-item state for the table + summary.
-        item_states = []
+        # ¿Aprobación parcial? (mezcla de estados) → columna Estado + resumen.
+        all_labels = set()
         n_aprobado = n_reserva = n_denegado = 0
-        for item in items:
-            label, bg, fg = _item_estado_label(getattr(item, "estado_item", None))
-            item_states.append((label, bg, fg))
+        for it in items:
+            label, _, _ = _item_estado_label(getattr(it, "estado_item", None))
+            all_labels.add(label)
             if label == "Aprobado":
                 n_aprobado += 1
             elif label == "Denegado":
                 n_denegado += 1
             else:
                 n_reserva += 1
-
-        # The Estado column + summary line are only meaningful when there
-        # is a MIX of per-item states (i.e. partial approval).  If every
-        # item shares the same state, the column would be just one repeated
-        # label and the summary would be redundant — hide both.
-        is_partial = len({label for label, _, _ in item_states}) > 1
+        is_partial = len(all_labels) > 1
 
         if is_partial:
             resumen_parts = []
             if n_aprobado: resumen_parts.append(f"<b><font color='#065F46'>{n_aprobado} aprobado{'s' if n_aprobado != 1 else ''}</font></b>")
             if n_reserva:  resumen_parts.append(f"<b><font color='#92400E'>{n_reserva} pendiente{'s' if n_reserva != 1 else ''}</font></b>")
             if n_denegado: resumen_parts.append(f"<b><font color='#991B1B'>{n_denegado} denegado{'s' if n_denegado != 1 else ''}</font></b>")
-            resumen = " · ".join(resumen_parts)
             story.append(Paragraph(
-                f"Este pedido tiene aprobación parcial: {resumen}.",
+                "Este pedido tiene aprobación parcial: " + " · ".join(resumen_parts) + ".",
                 style_body,
             ))
-            story.append(Spacer(1, 4))
+            story.append(Spacer(1, 6))
 
-        # Headers + body — Estado column is only added in partial-approval mode.
-        if is_partial:
-            data = [["#", "Producto", "Tamaño / Formato", "Cantidad", "Servida", "Estado"]]
-        else:
-            data = [["#", "Producto", "Tamaño / Formato", "Cantidad", "Servida"]]
+        # Agrupar por destino (orden de aparición).
+        orden_destinos = []
+        grupos = {}
+        for it in items:
+            dst = _destino_de_item(it)
+            if dst not in grupos:
+                grupos[dst] = []
+                orden_destinos.append(dst)
+            grupos[dst].append(it)
 
-        per_row_styles = []  # only populated in partial mode
-        for idx, item in enumerate(items, start=1):
-            prod = getattr(item, "producto", None)
-            nombre = getattr(prod, "nombre_cientifico", None) or getattr(prod, "nombre_natural", None) or f"#{getattr(item, 'producto_id', '?')}"
-            categoria = getattr(prod, "categoria", None)
-            tamano = getattr(item, "tamano", None) or "—"
-            unidad = _unidad_para_categoria(categoria, tamano)
-            cantidad = f"{_fmt_cantidad(item.cantidad)} {unidad}"
-            servida = f"{_fmt_cantidad(item.cantidad_servida)} {unidad}"
+        for gi, dst in enumerate(orden_destinos):
+            grupo_items = grupos[dst]
+            color = DESTINO_PALETTE[gi % len(DESTINO_PALETTE)]
 
-            label, bg, fg = item_states[idx - 1]
+            # Barra de cabecera del destino (color intenso).
+            barra = Table([[f"Destino: {dst}"]], colWidths=[175 * mm])
+            barra.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), color),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]))
+            story.append(barra)
+
             if is_partial:
-                data.append([str(idx), nombre, str(tamano), cantidad, servida, label])
-                per_row_styles.append((idx, bg, fg, label == "Denegado"))
+                data = [["#", "Producto", "Tamaño", "Cantidad", "Servida", "Estado"]]
+                col_widths = [10 * mm, 56 * mm, 30 * mm, 26 * mm, 26 * mm, 27 * mm]
             else:
-                data.append([str(idx), nombre, str(tamano), cantidad, servida])
+                data = [["#", "Producto", "Tamaño", "Cantidad", "Servida"]]
+                col_widths = [10 * mm, 70 * mm, 35 * mm, 30 * mm, 30 * mm]
 
-        # Column layouts (175 mm total in both cases).
-        if is_partial:
-            col_widths = [10 * mm, 56 * mm, 30 * mm, 26 * mm, 26 * mm, 27 * mm]
-        else:
-            col_widths = [10 * mm, 70 * mm, 35 * mm, 30 * mm, 30 * mm]
+            per_row_styles = []
+            for idx, item in enumerate(grupo_items, start=1):
+                prod = getattr(item, "producto", None)
+                nombre = getattr(prod, "nombre_cientifico", None) or getattr(prod, "nombre_natural", None) or f"#{getattr(item, 'producto_id', '?')}"
+                categoria = getattr(prod, "categoria", None)
+                tam = getattr(item, "tamano", None) or "—"
+                unidad = _unidad_para_categoria(categoria, tam)
+                cantidad = f"{_fmt_cantidad(item.cantidad)} {unidad}"
+                servida = f"{_fmt_cantidad(item.cantidad_servida)} {unidad}"
+                label, bg, fg = _item_estado_label(getattr(item, "estado_item", None))
+                if is_partial:
+                    data.append([str(idx), nombre, str(tam), cantidad, servida, label])
+                    per_row_styles.append((idx, bg, fg, label == "Denegado"))
+                else:
+                    data.append([str(idx), nombre, str(tam), cantidad, servida])
 
-        t_items = Table(data, colWidths=col_widths)
-        base_style = [
-            ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARIO),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9.5),
-            ("FONTSIZE", (0, 1), (-1, -1), 9),
-            ("ALIGN", (0, 0), (0, -1), "CENTER"),
-            ("ALIGN", (3, 0), (4, -1), "RIGHT"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, COLOR_GRIS_FONDO]),
-            ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
-        ]
-        if is_partial:
-            # Estado column: centered, bold, with per-row state colours.
-            # DENEGADO rows additionally grey-out the rest of the row so
-            # it reads as "no aplica" at a glance.
-            base_style.append(("ALIGN", (5, 0), (5, -1), "CENTER"))
-            base_style.append(("FONTNAME", (5, 1), (5, -1), "Helvetica-Bold"))
-            for row_idx, bg, fg, is_denegado in per_row_styles:
-                base_style.append(("BACKGROUND", (5, row_idx), (5, row_idx), bg))
-                base_style.append(("TEXTCOLOR", (5, row_idx), (5, row_idx), fg))
-                if is_denegado:
-                    base_style.append(("TEXTCOLOR", (0, row_idx), (4, row_idx), COLOR_GRIS))
-        t_items.setStyle(TableStyle(base_style))
-        story.append(t_items)
-    story.append(Spacer(1, 12))
+            t_items = Table(data, colWidths=col_widths)
+            base_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), COLOR_SECUNDARIO),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
+                ("FONTSIZE", (0, 1), (-1, -1), 9),
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (3, 0), (4, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, COLOR_GRIS_FONDO]),
+                ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
+            ]
+            if is_partial:
+                base_style.append(("ALIGN", (5, 0), (5, -1), "CENTER"))
+                base_style.append(("FONTNAME", (5, 1), (5, -1), "Helvetica-Bold"))
+                for row_idx, bg, fg, is_denegado in per_row_styles:
+                    base_style.append(("BACKGROUND", (5, row_idx), (5, row_idx), bg))
+                    base_style.append(("TEXTCOLOR", (5, row_idx), (5, row_idx), fg))
+                    if is_denegado:
+                        base_style.append(("TEXTCOLOR", (0, row_idx), (4, row_idx), COLOR_GRIS))
+            t_items.setStyle(TableStyle(base_style))
+            story.append(t_items)
+            story.append(Spacer(1, 8))
 
     # ===== Bloque: nota =====
     nota = getattr(pedido, "nota", None)

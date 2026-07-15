@@ -453,22 +453,20 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                   const colapsado = !!colapsados[grupo.destino];
                   return (
                   <React.Fragment key={grupo.destino}>
-                    {variosDestinos ? (
-                      <tr>
-                        <td
-                          colSpan={canApprove ? 7 : 6}
-                          onClick={() => toggleColapsado(grupo.destino)}
-                          style={{ background: col.bg, color: col.fg, padding: "10px 12px", fontWeight: 900, fontSize: 13, cursor: "pointer", borderTop: "3px solid rgba(0,0,0,0.12)" }}
-                        >
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 11 }}>{colapsado ? "▶" : "▼"}</span>
-                            📍 {grupo.destino}
-                            <span style={{ opacity: 0.85, fontWeight: 700 }}>({grupo.items.length})</span>
-                          </span>
-                        </td>
-                      </tr>
-                    ) : null}
-                    {(!variosDestinos || !colapsado) && grupo.items.map((it, idx) => {
+                    <tr>
+                      <td
+                        colSpan={canApprove ? 7 : 6}
+                        onClick={() => toggleColapsado(grupo.destino)}
+                        style={{ background: col.bg, color: col.fg, padding: "10px 12px", fontWeight: 900, fontSize: 13, cursor: "pointer", borderTop: "3px solid rgba(0,0,0,0.12)" }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 11 }}>{colapsado ? "▶" : "▼"}</span>
+                          📍 {grupo.destino}
+                          <span style={{ opacity: 0.85, fontWeight: 700 }}>({grupo.items.length})</span>
+                        </span>
+                      </td>
+                    </tr>
+                    {!colapsado && grupo.items.map((it, idx) => {
                     const cantidad = Number(it.cantidad || 0);
                     const servida = Number(it.cantidad_servida || 0);
                     const pendiente = Math.max(cantidad - servida, 0);
