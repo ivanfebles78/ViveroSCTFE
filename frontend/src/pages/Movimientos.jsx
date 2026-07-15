@@ -11,6 +11,7 @@ import {
   getProductFormatoConfig,
   getFormatoOptions,
   getUnidadMovimiento,
+  tamanoDisponiblePlanta,
 } from "../utils/formato";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 import {
@@ -1104,6 +1105,10 @@ function MovimientoModal({
   const salidaStockRows = useMemo(() => {
     if (!salidaPorZonas || !form.producto_id) return [];
     const pid = String(form.producto_id);
+    const prod = safeArray(productos).find((p) => String(p.id) === pid);
+    // Solo en SALIDAS aplicamos la regla de tamaño disponible (no en traslados
+    // internos, donde hay que poder mover/reubicar cualquier tamaño).
+    const esSal = form.tipo_elegido === "salida";
     const rows = [];
     for (const [key, qty] of stockByProductZoneSize.entries()) {
       if (Number(qty) <= 0) continue;
@@ -1111,8 +1116,10 @@ function MovimientoModal({
       if (parts.length < 3) continue;
       const [keyPid, zonaLower, ...rest] = parts;
       if (keyPid !== pid) continue;
+      const tam = rest.join("__");
+      if (esSal && !tamanoDisponiblePlanta(prod, tam)) continue;
       const zona = zonaIdByLower.get(zonaLower) || zonaLower;
-      rows.push({ zona, tamano: rest.join("__"), disponible: Number(qty) });
+      rows.push({ zona, tamano: tam, disponible: Number(qty) });
     }
     rows.sort(
       (a, b) =>
@@ -1120,7 +1127,7 @@ function MovimientoModal({
         String(a.tamano).localeCompare(String(b.tamano))
     );
     return rows;
-  }, [salidaPorZonas, form.producto_id, stockByProductZoneSize, zonaIdByLower]);
+  }, [salidaPorZonas, form.producto_id, form.tipo_elegido, productos, stockByProductZoneSize, zonaIdByLower]);
 
   // Disponible por clave zona__tamaño, para validar sin re-derivar de claves
   // en minúsculas.
@@ -1723,10 +1730,17 @@ function MovimientoModal({
                                         <input
                                           type="number"
                                           min={0}
-                                          max={disponible != null ? disponible : undefined}
+                                          max={Math.min(Number(disponible != null ? disponible : Infinity), necesaria)}
                                           placeholder="0"
                                           value={pedidoLineAlloc[linea._key]?.[zona] ?? ""}
-                                          onChange={(e) => setAllocQty(linea._key, zona, e.target.value)}
+                                          onChange={(e) => {
+                                            // Tope: ni más de lo que hay en la zona, ni más de lo
+                                            // que falta por servir de la línea (lo aprobado).
+                                            const cap = Math.min(Number(disponible != null ? disponible : Infinity), necesaria);
+                                            let raw = e.target.value.replace(/[^\d.]/g, "");
+                                            if (raw !== "" && Number(raw) > cap) raw = String(cap);
+                                            setAllocQty(linea._key, zona, raw);
+                                          }}
                                           style={{ ...iStyle(), width: 90, textAlign: "right" }}
                                         />
                                       </div>

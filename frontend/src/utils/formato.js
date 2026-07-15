@@ -7,6 +7,25 @@
 
 export const PLANTA_TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
+// Reglas de disponibilidad por tamaño de maceta para PLANTAS (coherentes con el
+// backend _tamano_disponible_planta): semillero nunca cuenta como disponible;
+// arbustos solo M20/M35; árboles y palmeras solo M35; resto de plantas
+// M12/M20/M35. No aplica a productos que no sean plantas.
+const _normTxt = (s) =>
+  String(s || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
+
+export function tamanoDisponiblePlanta(producto, tamano) {
+  const cat = _normTxt(producto?.categoria);
+  if (cat !== "planta" && cat !== "plantas") return true;
+  let t = _normTxt(tamano);
+  if (t === "m30") t = "m35";
+  if (t === "" || t === "semillero") return false;
+  const sub = _normTxt(producto?.subcategoria);
+  if (sub === "arbusto") return t === "m20" || t === "m35";
+  if (sub === "arbol" || sub === "palmera") return t === "m35";
+  return t === "m12" || t === "m20" || t === "m35";
+}
+
 export const FORMATOS_FITOSANITARIO = [
   "Polvo Seco",
   "Polvo Dispersable",

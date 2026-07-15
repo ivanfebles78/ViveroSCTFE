@@ -374,6 +374,33 @@ def _norm_tam(value: Optional[str]) -> str:
         return "m35"
     return raw
 
+
+def _norm_txt(value: Optional[str]) -> str:
+    """Minúsculas y sin acentos, para comparar categorías/subcategorías."""
+    s = unicodedata.normalize("NFD", str(value or ""))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return s.strip().lower()
+
+
+def _tamano_disponible_planta(categoria, subcategoria, tamano) -> bool:
+    """Reglas de disponibilidad por tamaño de maceta para PLANTAS:
+      - Semillero: nunca cuenta (aún no disponible).
+      - Arbusto: solo M20 o M35.
+      - Árbol y Palmera: solo M35.
+      - Resto de plantas: M12, M20 o M35 (nunca semillero).
+    No aplica a productos que no sean plantas (devuelve True)."""
+    if _norm_txt(categoria) not in ("planta", "plantas"):
+        return True
+    t = _norm_tam(tamano)  # minúsculas, m30→m35
+    if t in ("", "semillero"):
+        return False
+    sub = _norm_txt(subcategoria)
+    if sub == "arbusto":
+        return t in ("m20", "m35")
+    if sub in ("arbol", "palmera"):
+        return t == "m35"
+    return t in ("m12", "m20", "m35")
+
 def safeArray(x):
     return x if isinstance(x, list) else []
     
@@ -1276,18 +1303,21 @@ def get_productos(
                 alertas_caducidad.append(lote_info)
 
         # Disponible por tamaño = stock real − reservado − stock con fecha de
-        # disponibilidad futura. El stock aún no disponible (fecha futura) no se
-        # puede pedir ni reservar hasta que llegue su fecha.
+        # disponibilidad futura. Además se excluyen los tamaños que por reglas de
+        # la planta NO cuentan como disponibles (semillero siempre; arbustos <M20;
+        # árboles/palmeras <M35). Esos tamaños no se pueden pedir ni servir.
         reservado_total = 0.0
         no_disponible_total = 0.0
         disponible_by_size: dict[str, float] = {}
         for tam, qty in stock_by_size.items():
+            if not _tamano_disponible_planta(p.categoria, p.subcategoria, tam):
+                continue
             res = float(reservas_map.get((p.id, _norm_tam(tam)), 0.0))
             futuro = float(no_disp_by_size.get(tam, 0.0))
             reservado_total += min(res, qty)
             no_disponible_total += futuro
             disponible_by_size[tam] = max(qty - res - futuro, 0)
-        disponible_total = max(stock_total - reservado_total - no_disponible_total, 0)
+        disponible_total = sum(disponible_by_size.values())
 
         item = {
             "id": p.id,
@@ -1736,6 +1766,14 @@ def create_pedido(
             raise HTTPException(status_code=404, detail=f"Producto no encontrado: {item.producto_id}")
 
         if tipo_pedido == "salida":
+            if not _tamano_disponible_planta(producto.categoria, producto.subcategoria, item.tamano):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{producto.nombre_cientifico}: el tamaño {item.tamano} no está "
+                        f"disponible para pedidos (semillero o tamaño insuficiente para su tipo)."
+                    ),
+                )
             stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
             key = (int(item.producto_id), _norm_tam(item.tamano))
             reservado = float(reservas_map.get(key, 0.0))
@@ -1849,6 +1887,14 @@ def update_pedido(
             raise HTTPException(status_code=404, detail=f"Producto no encontrado: {item.producto_id}")
 
         if tipo_pedido == "salida":
+            if not _tamano_disponible_planta(producto.categoria, producto.subcategoria, item.tamano):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{producto.nombre_cientifico}: el tamaño {item.tamano} no está "
+                        f"disponible para pedidos (semillero o tamaño insuficiente para su tipo)."
+                    ),
+                )
             stock_total = _stock_total_producto_tamano(db, item.producto_id, item.tamano)
             key = (int(item.producto_id), _norm_tam(item.tamano))
             reservado = float(reservas_map.get(key, 0.0))
@@ -2402,6 +2448,25 @@ def crear_movimiento(
             )
 
     es_traslado_interno = origen == "vivero" and destino == "vivero"
+
+    # Regla de disponibilidad por tamaño: no se puede SACAR del vivero (salida a
+    # destino externo) plantas en tamaño no disponible (semillero, o menor al
+    # mínimo de su tipo). Entradas y traslados internos SÍ admiten cualquier
+    # tamaño (registrar semilleros, reubicar, trasplantar…).
+    if origen == "vivero" and not es_traslado_interno:
+        if not _tamano_disponible_planta(
+            getattr(producto, "categoria", None),
+            getattr(producto, "subcategoria", None),
+            payload.tamano_origen,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"El tamaño {payload.tamano_origen} no está disponible para salidas de "
+                    f"{getattr(producto, 'nombre_cientifico', 'este producto')} "
+                    f"(semillero o tamaño insuficiente para su tipo)."
+                ),
+            )
 
     if origen == "vivero":
         # La fecha de disponibilidad (M35) NO debe impedir sacar/mover stock que
