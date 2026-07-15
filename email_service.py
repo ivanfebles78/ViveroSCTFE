@@ -34,6 +34,7 @@ import json
 import os
 import re
 import smtplib
+import socket
 import urllib.error
 import urllib.request
 from email import encoders
@@ -322,7 +323,17 @@ def _send_smtp(*, to: str, subject: str, html: str, text: str,
             # supported for completeness with other providers.
             server = smtplib.SMTP_SSL(host, port, timeout=20)
         else:
-            server = smtplib.SMTP(host, port, timeout=20)
+            # Forzamos IPv4: en algunos entornos (p.ej. Railway) el contenedor
+            # no tiene ruta IPv6 y la conexión falla con errno 101 "Network is
+            # unreachable" al intentar el registro AAAA del servidor SMTP.
+            server = smtplib.SMTP(timeout=20)
+            try:
+                ipv4 = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+            except Exception:  # noqa: BLE001
+                ipv4 = host
+            server.connect(ipv4, port)
+            # El nombre real (no la IP) para SNI y validación de certificado en STARTTLS.
+            server._host = host
         with server:
             server.ehlo()
             if use_tls and not use_ssl:
