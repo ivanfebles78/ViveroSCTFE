@@ -1634,7 +1634,23 @@ function MovimientoModal({
                       Elige la zona de origen de cada línea y añádela. Cada línea se sirve a su destino (se guarda un movimiento por línea).
                     </div>
                     <div style={{ display: "grid", gap: 8 }}>
-                      {pedidoLineas.map((linea) => {
+                      {(() => {
+                        // Agrupamos las líneas por destino (orden de aparición)
+                        // para que el técnico las vea agrupadas por dirección.
+                        const order = [];
+                        const gmap = new Map();
+                        for (const linea of pedidoLineas) {
+                          const dst = [linea.distrito_destino, linea.barrio_destino, linea.direccion_destino].filter(Boolean).join(" · ") || "Sin destino";
+                          if (!gmap.has(dst)) { gmap.set(dst, []); order.push(dst); }
+                          gmap.get(dst).push(linea);
+                        }
+                        const gruposDst = order.map((dst) => ({ destino: dst, lineas: gmap.get(dst) }));
+                        return gruposDst.map((grupo) => (
+                          <div key={grupo.destino} style={{ display: "grid", gap: 8 }}>
+                            <div style={{ padding: "7px 10px", borderRadius: 8, background: "rgba(30,58,138,0.06)", color: "#1e3a8a", fontWeight: 900, fontSize: 12 }}>
+                              📍 {grupo.destino}
+                            </div>
+                            {grupo.lineas.map((linea) => {
                         const disabled = !!linea._disabled;
                         const zonasLinea = disabled ? [] : zonasParaLineaPedido(linea);
                         const zonaSel = pedidoLineZona[linea._key] || "";
@@ -1645,10 +1661,6 @@ function MovimientoModal({
                               <div>
                                 <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
                                 <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · ${linea._razon_bloqueo === "ya_en_lote" ? "✓ añadida al lote" : linea._razon_bloqueo === "ya_servida" ? "ya movida" : linea._razon_bloqueo === "item_denegado" ? "línea denegada" : linea._razon_bloqueo === "item_pendiente" ? "pendiente de aprobar" : "no disponible"}` : ""}</div>
-                                {(() => {
-                                  const dst = [linea.distrito_destino, linea.barrio_destino, linea.direccion_destino].filter(Boolean).join(" · ");
-                                  return dst ? <div style={{ marginTop: 2, color: "#1e3a8a", fontWeight: 800, fontSize: 12 }}>📍 {dst}</div> : null;
-                                })()}
                               </div>
                             </div>
                             {!disabled && (
@@ -1669,7 +1681,10 @@ function MovimientoModal({
                             )}
                           </div>
                         );
-                      })}
+                            })}
+                          </div>
+                        ));
+                      })()}
                     </div>
                     {lineasPendientesPedido === 0 && batchPayloads.length === 0 && (
                       <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e", fontWeight: 800, fontSize: 12 }}>

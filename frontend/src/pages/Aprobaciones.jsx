@@ -295,6 +295,22 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
   );
   const variosDestinos = pedido?.tipo !== "reposicion" && destinosUnicos.length > 1;
 
+  // Agrupa las líneas por destino (en orden de aparición) para mostrarlas
+  // agrupadas visualmente, manteniendo la decisión por línea.
+  const gruposDestino = (() => {
+    const order = [];
+    const map = new Map();
+    for (const it of items) {
+      const dst = destinoDeItem(it) || destino;
+      if (!map.has(dst)) {
+        map.set(dst, []);
+        order.push(dst);
+      }
+      map.get(dst).push(it);
+    }
+    return order.map((dst) => ({ destino: dst, items: map.get(dst) }));
+  })();
+
   return (
     <div
       style={{
@@ -382,7 +398,7 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
             <div style={{ gridColumn: "span 2", padding: 12, borderRadius: 12, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)" }}>
               <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Destino</div>
               <div style={{ marginTop: 4, fontWeight: 900, color: "#0f172a" }}>
-                {variosDestinos ? `${destinosUnicos.length} destinos (ver columna Destino)` : destino}
+                {variosDestinos ? `${destinosUnicos.length} destinos (productos agrupados abajo)` : destino}
               </div>
             </div>
             {pedido.nota ? (
@@ -405,7 +421,6 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
                     <th style={thStyle()}>Producto</th>
-                    {variosDestinos ? <th style={thStyle()}>Destino</th> : null}
                     <th style={thStyle()}>Tamaño</th>
                     <th style={thStyle()}>Cantidad</th>
                     <th style={thStyle()}>Servido</th>
@@ -415,7 +430,19 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((it, idx) => {
+                  {gruposDestino.map((grupo) => (
+                  <React.Fragment key={grupo.destino}>
+                    {variosDestinos ? (
+                      <tr>
+                        <td
+                          colSpan={canApprove ? 7 : 6}
+                          style={{ background: "rgba(30,58,138,0.06)", padding: "9px 12px", fontWeight: 900, color: "#1e3a8a", fontSize: 13, borderTop: "2px solid rgba(30,58,138,0.18)" }}
+                        >
+                          📍 {grupo.destino}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {grupo.items.map((it, idx) => {
                     const cantidad = Number(it.cantidad || 0);
                     const servida = Number(it.cantidad_servida || 0);
                     const pendiente = Math.max(cantidad - servida, 0);
@@ -430,15 +457,10 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                       it.producto_nombre_natural ||
                       `Producto #${it.producto_id}`;
                     return (
-                      <tr key={it.id || idx} style={{ borderTop: "1px solid rgba(15,23,42,0.06)", ...rowMuted }}>
+                      <tr key={it.id || `${grupo.destino}-${idx}`} style={{ borderTop: "1px solid rgba(15,23,42,0.06)", ...rowMuted }}>
                         <td style={{ ...tdStyle(), textDecoration: estIt === "DENEGADO" ? "line-through" : "none" }}>
                           {productoLabel}
                         </td>
-                        {variosDestinos ? (
-                          <td style={{ ...tdStyle(), fontWeight: 700, color: "#1e3a8a" }}>
-                            {destinoDeItem(it) || destino}
-                          </td>
-                        ) : null}
                         <td style={tdStyle()}>{it.tamano || "—"}</td>
                         <td style={{ ...tdStyle(), fontWeight: 900 }}>{formatCantidad(cantidad) || "0"}</td>
                         <td style={{ ...tdStyle(), color: "#065f46", fontWeight: 900 }}>{formatCantidad(servida) || "0"}</td>
@@ -522,7 +544,9 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                         ) : null}
                       </tr>
                     );
-                  })}
+                    })}
+                  </React.Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
