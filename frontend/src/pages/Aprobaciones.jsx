@@ -177,6 +177,21 @@ function filterLabelStyle() {
   };
 }
 
+// Colores intensos y distintos por destino, para diferenciarlos bien.
+const DESTINO_COLORS = [
+  { bg: "#1e3a8a", fg: "#ffffff" }, // azul
+  { bg: "#065f46", fg: "#ffffff" }, // verde
+  { bg: "#9a3412", fg: "#ffffff" }, // naranja oscuro
+  { bg: "#6b21a8", fg: "#ffffff" }, // morado
+  { bg: "#155e75", fg: "#ffffff" }, // cyan oscuro
+  { bg: "#9f1239", fg: "#ffffff" }, // rojo/rosa
+  { bg: "#3f6212", fg: "#ffffff" }, // oliva
+  { bg: "#854d0e", fg: "#ffffff" }, // ámbar oscuro
+  { bg: "#5b21b6", fg: "#ffffff" }, // violeta
+  { bg: "#0f766e", fg: "#ffffff" }, // teal
+];
+const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
+
 function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdated, onMessage }) {
   // Pending decisions: { [item.id]: "aprobar" | "denegar" }.  Lives only
   // in the modal — nothing hits the DB until the manager presses
@@ -184,6 +199,9 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
   const [pendingDecisions, setPendingDecisions] = useState({});
   const [motivo, setMotivo] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Destinos colapsados (por texto de destino) para poder plegar/desplegar.
+  const [colapsados, setColapsados] = useState({});
+  const toggleColapsado = (dst) => setColapsados((p) => ({ ...p, [dst]: !p[dst] }));
 
   // Reset local state whenever a different pedido is opened.
   useEffect(() => {
@@ -430,19 +448,27 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                   </tr>
                 </thead>
                 <tbody>
-                  {gruposDestino.map((grupo) => (
+                  {gruposDestino.map((grupo, gIdx) => {
+                  const col = destinoColorAt(gIdx);
+                  const colapsado = !!colapsados[grupo.destino];
+                  return (
                   <React.Fragment key={grupo.destino}>
                     {variosDestinos ? (
                       <tr>
                         <td
                           colSpan={canApprove ? 7 : 6}
-                          style={{ background: "rgba(30,58,138,0.06)", padding: "9px 12px", fontWeight: 900, color: "#1e3a8a", fontSize: 13, borderTop: "2px solid rgba(30,58,138,0.18)" }}
+                          onClick={() => toggleColapsado(grupo.destino)}
+                          style={{ background: col.bg, color: col.fg, padding: "10px 12px", fontWeight: 900, fontSize: 13, cursor: "pointer", borderTop: "3px solid rgba(0,0,0,0.12)" }}
                         >
-                          📍 {grupo.destino}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 11 }}>{colapsado ? "▶" : "▼"}</span>
+                            📍 {grupo.destino}
+                            <span style={{ opacity: 0.85, fontWeight: 700 }}>({grupo.items.length})</span>
+                          </span>
                         </td>
                       </tr>
                     ) : null}
-                    {grupo.items.map((it, idx) => {
+                    {(!variosDestinos || !colapsado) && grupo.items.map((it, idx) => {
                     const cantidad = Number(it.cantidad || 0);
                     const servida = Number(it.cantidad_servida || 0);
                     const pendiente = Math.max(cantidad - servida, 0);
@@ -546,7 +572,8 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                     );
                     })}
                   </React.Fragment>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>

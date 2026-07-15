@@ -841,6 +841,9 @@ function MovimientoModal({
   const [zonasSalida, setZonasSalida] = useState([]);
   // Zona elegida por cada línea de pedido (clave: line._key -> zona).
   const [pedidoLineZona, setPedidoLineZona] = useState({});
+  // Destinos colapsados (por texto) en la vista de servir el pedido.
+  const [destinosColapsados, setDestinosColapsados] = useState({});
+  const toggleDestinoColapsado = (dst) => setDestinosColapsados((p) => ({ ...p, [dst]: !p[dst] }));
   // Ref al bloque de zonas (salida/traslado) para auto-desplazar la vista a él
   // en cuanto se elige un producto.
   const salidaZonasRef = useRef(null);
@@ -1645,12 +1648,20 @@ function MovimientoModal({
                           gmap.get(dst).push(linea);
                         }
                         const gruposDst = order.map((dst) => ({ destino: dst, lineas: gmap.get(dst) }));
-                        return gruposDst.map((grupo) => (
+                        return gruposDst.map((grupo, gIdx) => {
+                          const col = destinoColorAt(gIdx);
+                          const colapsado = !!destinosColapsados[grupo.destino];
+                          return (
                           <div key={grupo.destino} style={{ display: "grid", gap: 8 }}>
-                            <div style={{ padding: "7px 10px", borderRadius: 8, background: "rgba(30,58,138,0.06)", color: "#1e3a8a", fontWeight: 900, fontSize: 12 }}>
+                            <div
+                              onClick={() => toggleDestinoColapsado(grupo.destino)}
+                              style={{ padding: "9px 12px", borderRadius: 8, background: col.bg, color: col.fg, fontWeight: 900, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                            >
+                              <span style={{ fontSize: 11 }}>{colapsado ? "▶" : "▼"}</span>
                               📍 {grupo.destino}
+                              <span style={{ marginLeft: "auto", opacity: 0.85 }}>({grupo.lineas.length})</span>
                             </div>
-                            {grupo.lineas.map((linea) => {
+                            {!colapsado && grupo.lineas.map((linea) => {
                         const disabled = !!linea._disabled;
                         const zonasLinea = disabled ? [] : zonasParaLineaPedido(linea);
                         const zonaSel = pedidoLineZona[linea._key] || "";
@@ -1683,7 +1694,8 @@ function MovimientoModal({
                         );
                             })}
                           </div>
-                        ));
+                        );
+                        });
                       })()}
                     </div>
                     {lineasPendientesPedido === 0 && batchPayloads.length === 0 && (
@@ -2043,6 +2055,21 @@ function MovimientoModal({
   );
 }
 
+
+// Colores intensos y distintos por destino, para diferenciarlos bien.
+const DESTINO_COLORS = [
+  { bg: "#1e3a8a", fg: "#ffffff" },
+  { bg: "#065f46", fg: "#ffffff" },
+  { bg: "#9a3412", fg: "#ffffff" },
+  { bg: "#6b21a8", fg: "#ffffff" },
+  { bg: "#155e75", fg: "#ffffff" },
+  { bg: "#9f1239", fg: "#ffffff" },
+  { bg: "#3f6212", fg: "#ffffff" },
+  { bg: "#854d0e", fg: "#ffffff" },
+  { bg: "#5b21b6", fg: "#ffffff" },
+  { bg: "#0f766e", fg: "#ffffff" },
+];
+const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
 
 export default function Movimientos() {
   const [movimientos, setMovimientos] = useState([]);

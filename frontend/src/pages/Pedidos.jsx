@@ -385,47 +385,102 @@ async function renderPedidoEnPdf(doc, pedido, mapProdName, isFirst, logoDataUrl)
           .filter(Boolean)
           .join(" · ") || "—";
 
+  // Información compacta en 4 columnas (dos pares campo/valor por fila) para
+  // ahorrar espacio vertical frente a la lista larga anterior.
   autoTable(doc, {
     startY: 55,
     theme: "grid",
-    head: [["Campo", "Valor"]],
     body: [
-      ["Tipo", tipo],
-      ["Estado", estado],
-      ["Fecha del pedido", _fmtFechaPdf(pedido.created_at)],
-      ["Caduca el", _fmtFechaPdf(pedido.fecha_caducidad)],
-      ["Solicitante", solicitante],
-      ["Destino", destino],
-      ["Aprobado por", formatUsername(pedido.aprobado_por) || "—"],
-      ["Aprobado el", _fmtFechaPdf(pedido.aprobado_at)],
-      ["Servido por", formatUsername(pedido.served_by) || "—"],
-      ["Servido el", _fmtFechaPdf(pedido.served_at)],
-      ["Nota", pedido.nota || "—"],
+      ["Tipo", tipo, "Estado", estado],
+      ["Solicitante", solicitante, "Caduca el", _fmtFechaPdf(pedido.fecha_caducidad)],
+      ["Aprobado por", formatUsername(pedido.aprobado_por) || "—", "Aprobado el", _fmtFechaPdf(pedido.aprobado_at)],
+      ["Servido por", formatUsername(pedido.served_by) || "—", "Servido el", _fmtFechaPdf(pedido.served_at)],
     ],
-    styles: { fontSize: 10, cellPadding: 2.5 },
-    headStyles: { fillColor: [14, 165, 233] },
-    columnStyles: { 0: { cellWidth: 45, fontStyle: "bold" } },
+    styles: { fontSize: 9, cellPadding: 2 },
+    columnStyles: {
+      0: { cellWidth: 30, fontStyle: "bold", fillColor: [241, 245, 249] },
+      2: { cellWidth: 30, fontStyle: "bold", fillColor: [241, 245, 249] },
+    },
+    margin: { left: 14, right: 14 },
   });
 
+  // Cronología en una sola línea (creado > aprobado > servido).
+  const crono = [];
+  if (pedido.created_at) crono.push(`Creado: ${_fmtFechaPdf(pedido.created_at)}`);
+  if (pedido.aprobado_at) crono.push(`Aprobado: ${_fmtFechaPdf(pedido.aprobado_at)}`);
+  if (pedido.served_at) crono.push(`Servido: ${_fmtFechaPdf(pedido.served_at)}`);
+  if (crono.length) {
+    const yC = doc.lastAutoTable.finalY + 5;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(30, 58, 138);
+    doc.text(crono.join("     >     "), 14, yC);
+  }
+  if (pedido.nota) {
+    const yN = doc.lastAutoTable.finalY + (crono.length ? 11 : 5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Nota: ${pedido.nota}`, 14, yN);
+  }
+
+  // Productos AGRUPADOS por destino, con un color intenso distinto por destino.
   const items = Array.isArray(pedido.items) ? pedido.items : [];
-  autoTable(doc, {
-    startY: doc.lastAutoTable.finalY + 8,
-    theme: "grid",
-    head: [["Producto", "Tamaño", "Cantidad", "Servido", "Pendiente"]],
-    body: items.map((it) => {
-      const nombre =
-        it.producto_nombre_cientifico ||
-        it.producto_nombre ||
-        it.producto_nombre_natural ||
-        (mapProdName && mapProdName.get(it.producto_id)) ||
-        `Producto #${it.producto_id}`;
-      const cantidad = Number(it.cantidad || 0);
-      const servida = Number(it.cantidad_servida || 0);
-      const pendiente = Math.max(cantidad - servida, 0);
-      return [nombre, it.tamano || "—", String(cantidad), String(servida), String(pendiente)];
-    }),
-    styles: { fontSize: 10, cellPadding: 2.3 },
-    headStyles: { fillColor: [16, 185, 129] },
+  const PDF_DESTINO_COLORS = [
+    [30, 58, 138], [6, 95, 70], [154, 52, 18], [107, 33, 168], [21, 94, 117],
+    [159, 18, 57], [63, 98, 18], [133, 77, 14], [91, 33, 182], [15, 118, 110],
+  ];
+  const gruposPdf = (() => {
+    if (pedido.tipo === "reposicion") return [{ destino: "Vivero", items }];
+    const order = [];
+    const map = new Map();
+    for (const it of items) {
+      const dst = [it.distrito_destino, it.barrio_destino, it.direccion_destino].filter(Boolean).join(" · ") || destino;
+      if (!map.has(dst)) { map.set(dst, []); order.push(dst); }
+      map.get(dst).push(it);
+    }
+    return order.map((dst) => ({ destino: dst, items: map.get(dst) }));
+  })();
+
+  const estadoItemPdf = (it) => {
+    const e = String(it.estado_item || "").toUpperCase();
+    if (e === "APROBADO") return "Aprobado";
+    if (e === "DENEGADO") return "Denegado";
+    if (e === "SERVIDO") return "Servido";
+    return "Pendiente";
+  };
+
+  let yPos = doc.lastAutoTable.finalY + (pedido.nota ? 14 : 10);
+  gruposPdf.forEach((g, gi) => {
+    const col = PDF_DESTINO_COLORS[gi % PDF_DESTINO_COLORS.length];
+    autoTable(doc, {
+      startY: yPos,
+      theme: "plain",
+      body: [[`Destino: ${g.destino}`]],
+      styles: { fontSize: 10, fontStyle: "bold", textColor: [255, 255, 255], fillColor: col, cellPadding: 2.5 },
+      margin: { left: 14, right: 14 },
+    });
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY,
+      theme: "grid",
+      head: [["Producto", "Tamaño", "Cant.", "Servido", "Pend.", "Estado"]],
+      body: g.items.map((it) => {
+        const nombre =
+          it.producto_nombre_cientifico ||
+          it.producto_nombre ||
+          it.producto_nombre_natural ||
+          (mapProdName && mapProdName.get(it.producto_id)) ||
+          `Producto #${it.producto_id}`;
+        const cantidad = Number(it.cantidad || 0);
+        const servida = Number(it.cantidad_servida || 0);
+        const pendiente = Math.max(cantidad - servida, 0);
+        return [nombre, it.tamano || "—", String(cantidad), String(servida), String(pendiente), estadoItemPdf(it)];
+      }),
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: col },
+      margin: { left: 14, right: 14 },
+    });
+    yPos = doc.lastAutoTable.finalY + 5;
   });
 }
 
