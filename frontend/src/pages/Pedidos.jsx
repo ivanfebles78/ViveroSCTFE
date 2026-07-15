@@ -650,18 +650,18 @@ function PedidoModal({
   const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [qtyInput, setQtyInput] = useState({});
-  const [cart, setCart] = useState({});
   const [localError, setLocalError] = useState("");
 
-  // Destinos del pedido. Un pedido normal tiene un único destino; la empresa
-  // externa (UTE) puede añadir hasta 10 y repartir el material entre ellos.
+  // El pedido se construye por GRUPOS: cada grupo es un destino con su propia
+  // cesta de productos. Un pedido normal tiene un único grupo (un destino); la
+  // empresa externa (UTE) puede añadir hasta 10 grupos (producto→destino),
+  // eligiendo productos y asociándolos a cada destino.
   const MAX_DESTINOS = 10;
-  const destinoSeqRef = useRef(1);
-  const makeDestino = () => ({ _id: destinoSeqRef.current++, distrito: "", barrio: "", direccion: "" });
-  const [destinos, setDestinos] = useState(() => [makeDestino()]);
-  // Reparto por línea: { [cartKey]: { [destinoId]: cantidad } }. Solo se usa
-  // cuando hay más de un destino.
-  const [reparto, setReparto] = useState({});
+  const grupoSeqRef = useRef(1);
+  const makeGrupo = () => ({ _id: grupoSeqRef.current++, distrito: "", barrio: "", direccion: "", cart: {} });
+  const [grupos, setGrupos] = useState(() => [makeGrupo()]);
+  // Grupo al que se añaden los productos seleccionados en el panel izquierdo.
+  const [activeGrupoId, setActiveGrupoId] = useState(null);
 
   useEffect(() => {
     if (!open) {
@@ -670,10 +670,10 @@ function PedidoModal({
       setFiltroSubcategoria("");
       setSelectedProductId("");
       setQtyInput({});
-      setCart({});
       setLocalError("");
-      setDestinos([makeDestino()]);
-      setReparto({});
+      const g = makeGrupo();
+      setGrupos([g]);
+      setActiveGrupoId(g._id);
     }
   }, [open]);
 
@@ -718,40 +718,76 @@ function PedidoModal({
 
   const barriosDe = (distrito) => (distrito ? DISTRITO_BARRIOS[distrito] || [] : []);
 
-  // Gestión de destinos (solo la UTE puede tener más de uno).
-  const updateDestino = (id, field, value) => {
-    setDestinos((prev) =>
-      prev.map((d) =>
-        d._id === id
-          ? { ...d, [field]: value, ...(field === "distrito" ? { barrio: "" } : {}) }
-          : d
+  const activeGrupo = grupos.find((g) => g._id === activeGrupoId) || grupos[0];
+
+  // Suma de un producto+tamaño reservado en TODOS los grupos (para no exceder
+  // el stock disponible al repartir el mismo producto entre varios destinos).
+  const totalAsignado = (key) =>
+    grupos.reduce((s, g) => s + Number(g.cart?.[key] || 0), 0);
+
+  // Líneas (producto, tamaño, cantidad) de un grupo.
+  const grupoLines = (g) =>
+    Object.entries(g.cart || {})
+      .map(([key, cantidad]) => {
+        const parsed = parseLineKey(key);
+        const prod = productos.find((p) => p.id === parsed.producto_id);
+        return {
+          key,
+          producto_id: parsed.producto_id,
+          tamano: parsed.tamano,
+          cantidad: Number(cantidad),
+          nombre: getScientificProductDisplayName(prod),
+        };
+      })
+      .filter((x) => x.cantidad > 0);
+
+  const grupoAddressValid = (g) =>
+    !!g.distrito && !!g.barrio && !!String(g.direccion || "").trim();
+
+  // Gestión de grupos/destinos (solo la UTE puede tener más de uno).
+  const updateGrupo = (id, field, value) => {
+    setGrupos((prev) =>
+      prev.map((g) =>
+        g._id === id
+          ? { ...g, [field]: value, ...(field === "distrito" ? { barrio: "" } : {}) }
+          : g
       )
     );
   };
-  const addDestino = () => {
-    setDestinos((prev) => (prev.length >= MAX_DESTINOS ? prev : [...prev, makeDestino()]));
+  const addGrupo = () => {
+    if (grupos.length >= MAX_DESTINOS) return;
+    const g = makeGrupo();
+    setGrupos((prev) => [...prev, g]);
+    setActiveGrupoId(g._id);
   };
-  const removeDestino = (id) => {
-    setDestinos((prev) => (prev.length <= 1 ? prev : prev.filter((d) => d._id !== id)));
-    // Limpia el reparto asignado a ese destino.
-    setReparto((prev) => {
-      const next = {};
-      for (const [k, m] of Object.entries(prev)) {
-        const { [id]: _drop, ...rest } = m || {};
-        next[k] = rest;
-      }
-      return next;
-    });
+  const removeGrupo = (id) => {
+    if (grupos.length <= 1) return;
+    const next = grupos.filter((g) => g._id !== id);
+    setGrupos(next);
+    if (activeGrupoId === id) setActiveGrupoId(next[0]._id);
   };
 
-  const setRepartoQty = (cartKey, destinoId, value) => {
-    setReparto((prev) => ({
-      ...prev,
-      [cartKey]: { ...(prev[cartKey] || {}), [destinoId]: value },
-    }));
+  const addToGrupo = (grupoId, productoId, tamano, qty) => {
+    const key = lineKey(productoId, tamano);
+    setGrupos((prev) =>
+      prev.map((g) =>
+        g._id === grupoId
+          ? { ...g, cart: { ...g.cart, [key]: Number(g.cart?.[key] || 0) + qty } }
+          : g
+      )
+    );
   };
-  const repartoSumOf = (cartKey) =>
-    destinos.reduce((s, d) => s + Number(reparto[cartKey]?.[d._id] || 0), 0);
+  const setGrupoLineQty = (grupoId, key, qty) => {
+    setGrupos((prev) =>
+      prev.map((g) => {
+        if (g._id !== grupoId) return g;
+        const cart = { ...g.cart };
+        if (qty <= 0) delete cart[key];
+        else cart[key] = qty;
+        return { ...g, cart };
+      })
+    );
+  };
 
   const productosDisponibles = useMemo(() => {
     const texto = search.trim().toLowerCase();
@@ -806,168 +842,102 @@ function PedidoModal({
     return formatoOptions.map((tamano) => {
       const key = lineKey(selectedProduct.id, tamano);
       const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
-      const enCesta = Number(cart[key] || 0);
-      const restante = Math.max(0, disponible - enCesta);
-
-      return {
-        tamano,
-        disponible,
-        restante,
-        enCesta,
-      };
+      // Ya asignado a TODOS los destinos del pedido (no solo al grupo activo),
+      // para no permitir repartir más unidades de las que hay.
+      const asignado = totalAsignado(key);
+      const restante = Math.max(0, disponible - asignado);
+      return { tamano, disponible, restante, enCesta: asignado };
     }).filter((x) => x.disponible > 0);
-  }, [selectedProduct, stockByProductSize, cart]);
+  }, [selectedProduct, stockByProductSize, grupos]);
 
-  const cartLines = useMemo(() => {
-    return Object.entries(cart)
-      .map(([key, cantidad]) => {
-        const parsed = parseLineKey(key);
-        const prod = productos.find((p) => p.id === parsed.producto_id);
-        const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
-        return {
-          key,
-          producto_id: parsed.producto_id,
-          tamano: parsed.tamano,
-          cantidad: Number(cantidad),
-          nombre: getScientificProductDisplayName(prod),
-          disponible,
-        };
-      })
-      .filter((x) => x.cantidad > 0);
-  }, [cart, productos, stockByProductSize]);
+  const totalLineas = grupos.reduce((s, g) => s + grupoLines(g).length, 0);
+  const totalItems = grupos.reduce(
+    (s, g) => s + Object.values(g.cart || {}).reduce((a, q) => a + Number(q || 0), 0),
+    0
+  );
+  const hasAnyProduct = totalLineas > 0;
 
-  const totalItems = cartLines.reduce((acc, x) => acc + x.cantidad, 0);
+  // Ningún producto puede superar, sumando todos los destinos, su stock.
+  const stockValid = useMemo(() => {
+    const totals = {};
+    for (const g of grupos) {
+      for (const [key, q] of Object.entries(g.cart || {})) {
+        totals[key] = (totals[key] || 0) + Number(q || 0);
+      }
+    }
+    return Object.entries(totals).every(
+      ([key, q]) => q <= Math.max(0, Number(stockByProductSize.get(key) || 0))
+    );
+  }, [grupos, stockByProductSize]);
 
-  const cartIsValid = useMemo(() => {
-    if (!cartLines.length) return false;
-    return cartLines.every((line) => line.cantidad > 0 && line.cantidad <= line.disponible);
-  }, [cartLines]);
-
-  // Todos los destinos añadidos deben tener distrito, barrio y dirección.
-  const destinosValid = useMemo(
-    () => destinos.every((d) => d.distrito && d.barrio && String(d.direccion || "").trim()),
-    [destinos]
+  // Cada destino debe tener dirección completa y al menos un producto.
+  const allGruposValid = grupos.every(
+    (g) => grupoAddressValid(g) && grupoLines(g).length > 0
   );
 
-  const multiDestino = destinos.length > 1;
-
-  // Con varios destinos, cada línea de la cesta debe estar repartida por
-  // completo (la suma por destino = cantidad total de la línea).
-  const distribucionValid = useMemo(() => {
-    if (!multiDestino) return true;
-    return cartLines.every((line) => Math.abs(repartoSumOf(line.key) - line.cantidad) < 1e-9);
-  }, [multiDestino, cartLines, destinos, reparto]);
-
-  const canSubmit = !saving && cartIsValid && destinosValid && distribucionValid;
+  const canSubmit = !saving && hasAnyProduct && allGruposValid && stockValid;
 
   const addToCart = (productoId, tamano) => {
     setLocalError("");
     const key = lineKey(productoId, tamano);
     const qty = Number(qtyInput[key]);
     const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
-    const yaEnCesta = Number(cart[key] || 0);
-    const restante = disponible - yaEnCesta;
+    const restante = disponible - totalAsignado(key);
 
     if (!qty || qty <= 0) {
       setLocalError("Indica una cantidad válida mayor que 0.");
       return;
     }
-
     if (qty > restante) {
       setLocalError(`No puedes añadir ${qty}. Disponible restante para ${tamano}: ${restante}.`);
       return;
     }
+    if (!activeGrupo) return;
 
-    setCart((prev) => ({
-      ...prev,
-      [key]: (prev[key] || 0) + qty,
-    }));
-
-    setQtyInput((prev) => ({
-      ...prev,
-      [key]: "",
-    }));
-  };
-
-  const updateCartLine = (key, nextQty) => {
-    const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
-    const qty = clampNumber(nextQty, 0, disponible);
-
-    if (qty <= 0) {
-      setCart((prev) => {
-        const clone = { ...prev };
-        delete clone[key];
-        return clone;
-      });
-      return;
-    }
-
-    setCart((prev) => ({
-      ...prev,
-      [key]: qty,
-    }));
-  };
-
-  // Construye las líneas del pedido a enviar. Con un solo destino, cada línea
-  // de la cesta va entera a ese destino. Con varios, se genera una línea por
-  // (producto, destino) con la cantidad repartida (cantidad > 0).
-  const buildItems = () => {
-    if (!multiDestino) {
-      const d = destinos[0];
-      return cartLines.map((x) => ({
-        producto_id: x.producto_id,
-        tamano: x.tamano,
-        cantidad: x.cantidad,
-        distrito_destino: d.distrito,
-        barrio_destino: d.barrio,
-        direccion_destino: String(d.direccion || "").trim(),
-      }));
-    }
-    const items = [];
-    for (const line of cartLines) {
-      for (const d of destinos) {
-        const q = Number(reparto[line.key]?.[d._id] || 0);
-        if (q > 0) {
-          items.push({
-            producto_id: line.producto_id,
-            tamano: line.tamano,
-            cantidad: q,
-            distrito_destino: d.distrito,
-            barrio_destino: d.barrio,
-            direccion_destino: String(d.direccion || "").trim(),
-          });
-        }
-      }
-    }
-    return items;
+    addToGrupo(activeGrupo._id, productoId, tamano, qty);
+    setQtyInput((prev) => ({ ...prev, [key]: "" }));
   };
 
   const submitPedido = async () => {
     setLocalError("");
 
-    if (!cartLines.length) {
-      setLocalError("Añade al menos un producto a la cesta.");
+    if (!hasAnyProduct) {
+      setLocalError("Añade al menos un producto a algún destino.");
       return;
     }
-
-    if (!destinosValid) {
-      setLocalError("Cada destino debe tener distrito, barrio y dirección.");
+    if (!stockValid) {
+      setLocalError("Hay productos cuya cantidad total supera el stock disponible.");
       return;
     }
-
-    if (!cartIsValid) {
-      setLocalError("Hay líneas con cantidad superior al stock disponible.");
-      return;
+    for (const g of grupos) {
+      if (grupoLines(g).length === 0) {
+        setLocalError("Cada destino debe tener al menos un producto.");
+        return;
+      }
+      if (!grupoAddressValid(g)) {
+        setLocalError("Cada destino debe tener distrito, barrio y dirección.");
+        return;
+      }
     }
 
-    if (!distribucionValid) {
-      setLocalError("Reparte cada producto entre los destinos: la suma debe coincidir con la cantidad total de cada línea.");
-      return;
+    // Una línea por (producto, destino): así al servir se genera un movimiento
+    // por cada una con su dirección.
+    const items = [];
+    for (const g of grupos) {
+      for (const line of grupoLines(g)) {
+        items.push({
+          producto_id: line.producto_id,
+          tamano: line.tamano,
+          cantidad: line.cantidad,
+          distrito_destino: g.distrito,
+          barrio_destino: g.barrio,
+          direccion_destino: String(g.direccion || "").trim(),
+        });
+      }
     }
-
-    const primero = destinos[0];
+    const primero = grupos[0];
     await onSubmit({
-      items: buildItems(),
+      items,
       // Destino a nivel de pedido = primer destino (compatibilidad/visualización).
       distrito_destino: primero.distrito,
       barrio_destino: primero.barrio,
@@ -1085,8 +1055,15 @@ function PedidoModal({
 
           <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <ModalStat label="Productos con stock" value={productosDisponibles.length} />
-            <ModalStat label="Líneas en cesta" value={cartLines.length} tone={cartLines.length ? "success" : "default"} />
+            <ModalStat label="Líneas del pedido" value={totalLineas} tone={totalLineas ? "success" : "default"} />
           </div>
+
+          {esEmpresaExterna && (
+            <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.18)", color: "#1e3a8a", fontWeight: 800, fontSize: 12 }}>
+              Añadiendo a: <strong>Destino {Math.max(0, grupos.findIndex((g) => g._id === activeGrupo?._id)) + 1}</strong>
+              {activeGrupo?.barrio ? ` · ${activeGrupo.barrio}` : ""}
+            </div>
+          )}
 
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             {productosDisponibles.length === 0 ? (
@@ -1332,148 +1309,124 @@ function PedidoModal({
               "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(240,249,255,0.65) 100%)",
           }}
         >
-          <div style={{ fontSize: 24, fontWeight: 900, color: "#0f172a" }}>Resumen y destino</div>
+          <div style={{ fontSize: 24, fontWeight: 900, color: "#0f172a" }}>Resumen y destinos</div>
           <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700 }}>
-            Revisa la cesta y define el destino exacto del pedido.
+            {esEmpresaExterna
+              ? "Añade productos a un destino y, si lo necesitas, crea más destinos para el mismo pedido."
+              : "Revisa la cesta y define el destino exacto del pedido."}
           </div>
 
           <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <ModalStat label="Líneas" value={cartLines.length} />
+            <ModalStat label={esEmpresaExterna ? "Destinos" : "Líneas"} value={esEmpresaExterna ? grupos.length : totalLineas} />
             <ModalStat label="Unidades" value={totalItems} tone={totalItems ? "success" : "default"} />
             <ModalStat label="Estado" value={canSubmit ? "Listo" : "Pendiente"} tone={canSubmit ? "success" : "warn"} />
           </div>
 
-          <div style={{ ...cardStyle(), marginTop: 16, padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
-              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 17 }}>
-                {esEmpresaExterna ? `Destinos del pedido (${destinos.length}/${MAX_DESTINOS})` : "Destino del pedido"}
-              </div>
-              {esEmpresaExterna && (
-                <button
-                  type="button"
-                  onClick={addDestino}
-                  disabled={destinos.length >= MAX_DESTINOS}
+          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            {grupos.map((g, idx) => {
+              const lines = grupoLines(g);
+              const isActive = g._id === activeGrupo?._id;
+              const labelMini = { fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" };
+              return (
+                <div
+                  key={g._id}
                   style={{
-                    padding: "7px 12px", borderRadius: 10, border: "none",
-                    background: destinos.length >= MAX_DESTINOS ? "#cbd5e1" : "linear-gradient(90deg,#10b981,#06b6d4)",
-                    color: "#fff", fontWeight: 900, fontSize: 12, whiteSpace: "nowrap",
-                    cursor: destinos.length >= MAX_DESTINOS ? "not-allowed" : "pointer",
+                    ...cardStyle(),
+                    padding: 16,
+                    border: esEmpresaExterna && isActive
+                      ? "2px solid rgba(6,182,212,0.45)"
+                      : "1px solid rgba(148,163,184,0.16)",
                   }}
                 >
-                  + Añadir destino
-                </button>
-              )}
-            </div>
-
-            <div style={{ display: "grid", gap: 14 }}>
-              {destinos.map((d, idx) => {
-                const boxed = destinos.length > 1;
-                const labelMini = { fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" };
-                return (
-                  <div
-                    key={d._id}
-                    style={{
-                      display: "grid", gap: 10,
-                      padding: boxed ? 12 : 0,
-                      borderRadius: 12,
-                      border: boxed ? "1px solid rgba(148,163,184,0.18)" : "none",
-                      background: boxed ? "rgba(248,250,252,0.7)" : "transparent",
-                    }}
-                  >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                    <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>
+                      {esEmpresaExterna ? `Destino ${idx + 1}` : "Destino del pedido"}
+                    </div>
                     {esEmpresaExterna && (
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 13 }}>Destino {idx + 1}</div>
-                        {destinos.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeDestino(d._id)}
-                            style={{ border: "none", background: "transparent", color: "#ef4444", fontWeight: 900, cursor: "pointer", fontSize: 12 }}
-                          >
-                            Quitar
-                          </button>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {isActive ? (
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "#0e7490", background: "rgba(6,182,212,0.12)", padding: "4px 8px", borderRadius: 999 }}>Añadiendo aquí</span>
+                        ) : (
+                          <button type="button" onClick={() => setActiveGrupoId(g._id)} style={{ border: "1px solid rgba(6,182,212,0.30)", background: "rgba(6,182,212,0.06)", color: "#0e7490", fontWeight: 900, fontSize: 11, padding: "4px 8px", borderRadius: 999, cursor: "pointer" }}>Añadir aquí</button>
+                        )}
+                        {grupos.length > 1 && (
+                          <button type="button" onClick={() => removeGrupo(g._id)} style={{ border: "none", background: "transparent", color: "#ef4444", fontWeight: 900, cursor: "pointer", fontSize: 12 }}>Quitar</button>
                         )}
                       </div>
                     )}
+                  </div>
 
+                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
                     <div>
                       <div style={labelMini}>Distrito</div>
-                      <select value={d.distrito} onChange={(e) => updateDestino(d._id, "distrito", e.target.value)} style={softInputStyle()}>
+                      <select value={g.distrito} onChange={(e) => updateGrupo(g._id, "distrito", e.target.value)} style={softInputStyle()}>
                         <option value="">Seleccionar distrito</option>
                         {DISTRITOS.map((x) => <option key={x} value={x}>{x}</option>)}
                       </select>
                     </div>
-
                     <div>
                       <div style={labelMini}>Barrio</div>
-                      <select
-                        value={d.barrio}
-                        onChange={(e) => updateDestino(d._id, "barrio", e.target.value)}
-                        disabled={!d.distrito}
-                        style={{ ...softInputStyle(), opacity: d.distrito ? 1 : 0.66 }}
-                      >
-                        <option value="">{d.distrito ? "Seleccionar barrio" : "Primero selecciona un distrito"}</option>
-                        {barriosDe(d.distrito).map((b) => <option key={b} value={b}>{b}</option>)}
+                      <select value={g.barrio} onChange={(e) => updateGrupo(g._id, "barrio", e.target.value)} disabled={!g.distrito} style={{ ...softInputStyle(), opacity: g.distrito ? 1 : 0.66 }}>
+                        <option value="">{g.distrito ? "Seleccionar barrio" : "Primero el distrito"}</option>
+                        {barriosDe(g.distrito).map((b) => <option key={b} value={b}>{b}</option>)}
                       </select>
                     </div>
-
-                    <div>
+                    <div style={{ gridColumn: "span 2" }}>
                       <div style={labelMini}>Dirección</div>
-                      <input
-                        value={d.direccion}
-                        onChange={(e) => updateDestino(d._id, "direccion", e.target.value)}
-                        placeholder="Escribe la dirección de destino"
-                        style={softInputStyle()}
-                      />
+                      <input value={g.direccion} onChange={(e) => updateGrupo(g._id, "direccion", e.target.value)} placeholder="Escribe la dirección de destino" style={softInputStyle()} />
                     </div>
                   </div>
-                );
-              })}
-            </div>
 
-            {multiDestino && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 15, marginBottom: 4 }}>Reparto por destino</div>
-                <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>
-                  Indica cuántas unidades de cada producto van a cada destino. La suma debe coincidir con la cantidad total.
-                </div>
-                {cartLines.length === 0 ? (
-                  <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Añade productos a la cesta para repartirlos.</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {cartLines.map((line) => {
-                      const prod = productos.find((p) => p.id === line.producto_id);
-                      const allowDecimals = !!getProductFormatoConfig(prod)?.allowDecimals;
-                      const suma = repartoSumOf(line.key);
-                      const ok = Math.abs(suma - line.cantidad) < 1e-9;
-                      return (
-                        <div key={line.key} style={{ ...cardStyle(), padding: 12 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{line.nombre} · {line.tamano}</div>
-                            <div style={{ fontWeight: 900, fontSize: 12, color: ok ? "#065f46" : "#991b1b" }}>{suma}/{line.cantidad}</div>
-                          </div>
-                          <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                            {destinos.map((d, idx) => (
-                              <div key={d._id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  Destino {idx + 1}{d.barrio ? ` · ${d.barrio}` : ""}
-                                </div>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step={allowDecimals ? "0.001" : "1"}
-                                  value={reparto[line.key]?.[d._id] ?? ""}
-                                  onChange={(e) => setRepartoQty(line.key, d._id, e.target.value)}
-                                  style={{ ...softInputStyle(), width: 90, textAlign: "right" }}
-                                />
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, marginBottom: 6 }}>Productos ({lines.length})</div>
+                    {lines.length === 0 ? (
+                      <div style={{ color: "#94a3b8", fontWeight: 700, fontSize: 12 }}>
+                        {esEmpresaExterna ? "Pulsa «Añadir aquí» y elige productos en el panel izquierdo." : "Añade productos desde el panel izquierdo."}
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {lines.map((line) => {
+                          const prod = productos.find((p) => p.id === line.producto_id);
+                          const allowDecimals = !!getProductFormatoConfig(prod)?.allowDecimals;
+                          return (
+                            <div key={line.key} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line.nombre}</div>
+                                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>Tamaño: {line.tamano}</div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
+                              <input
+                                type="number"
+                                min={0}
+                                step={allowDecimals ? "0.001" : "1"}
+                                value={line.cantidad}
+                                onChange={(e) => setGrupoLineQty(g._id, line.key, clampNumber(e.target.value, 0, Number.MAX_SAFE_INTEGER))}
+                                style={{ width: 84, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.12)", textAlign: "center", fontWeight: 900, color: "#0f172a" }}
+                              />
+                              <button type="button" onClick={() => setGrupoLineQty(g._id, line.key, 0)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(239,68,68,0.18)", background: "rgba(239,68,68,0.08)", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 12 }}>Quitar</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              );
+            })}
+
+            {esEmpresaExterna && (
+              <button
+                type="button"
+                onClick={addGrupo}
+                disabled={grupos.length >= MAX_DESTINOS}
+                style={{
+                  padding: "12px 14px", borderRadius: 12, border: "1px dashed rgba(6,182,212,0.5)",
+                  background: grupos.length >= MAX_DESTINOS ? "rgba(148,163,184,0.1)" : "rgba(6,182,212,0.06)",
+                  color: grupos.length >= MAX_DESTINOS ? "#94a3b8" : "#0e7490", fontWeight: 900, fontSize: 13,
+                  cursor: grupos.length >= MAX_DESTINOS ? "not-allowed" : "pointer",
+                }}
+              >
+                {grupos.length >= MAX_DESTINOS ? `Máximo ${MAX_DESTINOS} destinos` : "+ Añadir otro destino"}
+              </button>
             )}
           </div>
 
@@ -1492,95 +1445,6 @@ function PedidoModal({
               {localError}
             </div>
           ) : null}
-
-          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
-            {cartLines.length === 0 ? (
-              <div
-                style={{
-                  ...cardStyle(),
-                  padding: 18,
-                  color: "#64748b",
-                  fontWeight: 700,
-                }}
-              >
-                Todavía no has añadido productos al pedido.
-              </div>
-            ) : (
-              cartLines.map((line) => {
-                const remainingAfterThisLine = Math.max(0, line.disponible - line.cantidad);
-                const invalid = line.cantidad > line.disponible;
-
-                return (
-                  <div
-                    key={line.key}
-                    style={{
-                      ...cardStyle(),
-                      padding: 14,
-                      border: invalid
-                        ? "1px solid rgba(239,68,68,0.22)"
-                        : "1px solid rgba(148,163,184,0.14)",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
-                      <div>
-                        <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 17 }}>{line.nombre}</div>
-                        <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 800 }}>
-                          Tamaño: {line.tamano} · Disponible: {formatCantidad(line.disponible)} · Restante: {formatCantidad(remainingAfterThisLine)}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          background: invalid ? "rgba(239,68,68,0.10)" : "rgba(16,185,129,0.10)",
-                          color: invalid ? "#991b1b" : "#065f46",
-                          fontWeight: 900,
-                          fontSize: 12,
-                        }}
-                      >
-                        {invalid ? "Sin stock suficiente" : "Válido"}
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={line.disponible}
-                        value={line.cantidad}
-                        onChange={(e) => updateCartLine(line.key, e.target.value)}
-                        style={{
-                          width: 96,
-                          padding: "9px 10px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(15,23,42,0.12)",
-                          textAlign: "center",
-                          fontWeight: 900,
-                          color: "#0f172a",
-                        }}
-                      />
-
-                      <button
-                        onClick={() => updateCartLine(line.key, 0)}
-                        style={{
-                          padding: "9px 12px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(239,68,68,0.18)",
-                          background: "rgba(239,68,68,0.08)",
-                          color: "#991b1b",
-                          fontWeight: 900,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Quitar
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
             <button
