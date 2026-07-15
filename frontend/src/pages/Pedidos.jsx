@@ -691,6 +691,21 @@ function ModalStat({ label, value, tone = "default" }) {
    NUEVO PEDIDO
    =========================== */
 
+// Colores intensos y distintos por destino, coherentes con Aprobaciones/Movimientos.
+const DESTINO_COLORS = [
+  { bg: "#1e3a8a", fg: "#ffffff" },
+  { bg: "#065f46", fg: "#ffffff" },
+  { bg: "#9a3412", fg: "#ffffff" },
+  { bg: "#6b21a8", fg: "#ffffff" },
+  { bg: "#155e75", fg: "#ffffff" },
+  { bg: "#9f1239", fg: "#ffffff" },
+  { bg: "#3f6212", fg: "#ffffff" },
+  { bg: "#854d0e", fg: "#ffffff" },
+  { bg: "#5b21b6", fg: "#ffffff" },
+  { bg: "#0f766e", fg: "#ffffff" },
+];
+const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
+
 function PedidoModal({
   open,
   onClose,
@@ -717,6 +732,9 @@ function PedidoModal({
   const [grupos, setGrupos] = useState(() => [makeGrupo()]);
   // Grupo al que se añaden los productos seleccionados en el panel izquierdo.
   const [activeGrupoId, setActiveGrupoId] = useState(null);
+  // Destinos plegados en el modal (por _id de grupo).
+  const [gruposColapsados, setGruposColapsados] = useState({});
+  const toggleGrupoColapsado = (id) => setGruposColapsados((p) => ({ ...p, [id]: !p[id] }));
 
   useEffect(() => {
     if (!open) {
@@ -729,6 +747,7 @@ function PedidoModal({
       const g = makeGrupo();
       setGrupos([g]);
       setActiveGrupoId(g._id);
+      setGruposColapsados({});
     }
   }, [open]);
 
@@ -1381,6 +1400,8 @@ function PedidoModal({
             {grupos.map((g, idx) => {
               const lines = grupoLines(g);
               const isActive = g._id === activeGrupo?._id;
+              const col = destinoColorAt(idx);
+              const colapsado = !!gruposColapsados[g._id];
               const labelMini = { fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" };
               return (
                 <div
@@ -1393,9 +1414,17 @@ function PedidoModal({
                       : "1px solid rgba(148,163,184,0.16)",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                    <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: colapsado ? 0 : 10 }}>
+                    <div
+                      onClick={() => toggleGrupoColapsado(g._id)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: col.bg, color: col.fg, fontWeight: 900, fontSize: 14, cursor: "pointer" }}
+                      title={colapsado ? "Desplegar destino" : "Plegar destino"}
+                    >
+                      <span style={{ fontSize: 11 }}>{colapsado ? "▶" : "▼"}</span>
                       {esEmpresaExterna ? `Destino ${idx + 1}` : "Destino del pedido"}
+                      <span style={{ opacity: 0.85, fontWeight: 800, fontSize: 12 }}>
+                        ({lines.length}{g.barrio ? ` · ${g.barrio}` : ""})
+                      </span>
                     </div>
                     {esEmpresaExterna && (
                       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1411,6 +1440,7 @@ function PedidoModal({
                     )}
                   </div>
 
+                  {!colapsado && (<>
                   <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
                     <div>
                       <div style={labelMini}>Distrito</div>
@@ -1464,6 +1494,7 @@ function PedidoModal({
                       </div>
                     )}
                   </div>
+                  </>)}
                 </div>
               );
             })}
