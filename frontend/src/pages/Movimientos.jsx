@@ -840,7 +840,13 @@ function MovimientoModal({
   // Zonas que el usuario ha añadido al reparto de una salida (vía desplegable).
   const [zonasSalida, setZonasSalida] = useState([]);
   // Zona elegida por cada línea de pedido (clave: line._key -> zona).
-  const [pedidoLineZona, setPedidoLineZona] = useState({});
+  // Asignación por línea y zona al servir: { [linea._key]: { [zonaId]: cantidad } }.
+  // Permite repartir la cantidad de una línea entre varias zonas de origen.
+  const [pedidoLineAlloc, setPedidoLineAlloc] = useState({});
+  const setAllocQty = (key, zona, val) =>
+    setPedidoLineAlloc((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [zona]: val } }));
+  const allocSum = (key) =>
+    Object.values(pedidoLineAlloc[key] || {}).reduce((s, v) => s + Number(v || 0), 0);
   // Destinos colapsados (por texto) en la vista de servir el pedido.
   const [destinosColapsados, setDestinosColapsados] = useState({});
   const toggleDestinoColapsado = (dst) => setDestinosColapsados((p) => ({ ...p, [dst]: !p[dst] }));
@@ -862,7 +868,7 @@ function MovimientoModal({
       setShowPrestamoModal(false);
       setDistribucion({});
       setZonasSalida([]);
-      setPedidoLineZona({});
+      setPedidoLineAlloc({});
       setBatchPayloads([]);
       setProductoSearch("");
       setFiltroCategoria("");
@@ -1330,10 +1336,8 @@ function MovimientoModal({
       return getZonasPermitidasParaCategoria(prod, ZONAS).map((z) => ({ zona: z, disponible: null }));
     }
     const pid = String(linea.producto_id);
-    // Solo tienen sentido las zonas que pueden cubrir la línea COMPLETA (una
-    // línea se sirve de una sola zona). Filtramos las que tienen menos de lo
-    // solicitado para no ofrecer zonas insuficientes.
-    const necesaria = Math.max(0, Number(linea.cantidad || 0) - Number(linea._cantidad_movida || 0));
+    // Mostramos TODAS las zonas con stock del producto/tamaño; la cantidad de
+    // la línea puede repartirse entre varias zonas (ver la asignación por zona).
     const out = [];
     for (const [key, qty] of stockByProductZoneSize.entries()) {
       if (Number(qty) <= 0) continue;
@@ -1341,29 +1345,51 @@ function MovimientoModal({
       if (parts[0] !== pid) continue;
       const tam = parts.slice(2).join("__");
       if (linea.tamano && tam !== linea.tamano) continue;
-      if (necesaria > 0 && Number(qty) < necesaria) continue;
       out.push({ zona: zonaIdByLower.get(parts[1]) || parts[1], disponible: Number(qty) });
     }
+    // Zonas con más stock primero.
+    out.sort((a, b) => b.disponible - a.disponible);
     return out;
   };
 
   const lineasPendientesPedido = pedidoLineas.filter((l) => !l._disabled).length;
 
-  // Añade una línea del pedido al lote con su zona elegida. Todas las líneas
-  // comparten la dirección del pedido (no editable).
+  // Añade una línea del pedido al lote. La cantidad de la línea puede repartirse
+  // entre varias zonas de origen: se genera un movimiento por zona con cantidad
+  // > 0. Todas comparten la dirección de destino del pedido (no editable).
   const addPedidoLinea = (linea) => {
     const esRepo = (selectedPedido?.tipo || "salida") === "reposicion";
-    const zona = pedidoLineZona[linea._key];
-    const cantidad = Number(linea.cantidad) || 0;
-    if (!zona) { setErrors(["Elige la zona de esta línea."]); return; }
-    if (cantidad <= 0) { setErrors(["La línea no tiene cantidad válida."]); return; }
+    const necesaria = Math.max(0, Number(linea.cantidad || 0) - Number(linea._cantidad_movida || 0));
+    if (necesaria <= 0) { setErrors(["La línea no tiene cantidad pendiente."]); return; }
+
+    const alloc = pedidoLineAlloc[linea._key] || {};
+    // Zonas con cantidad asignada > 0.
+    const entradas = Object.entries(alloc)
+      .map(([zona, v]) => ({ zona, cant: Number(v || 0) }))
+      .filter((e) => e.cant > 0);
+
+    if (entradas.length === 0) { setErrors(["Indica cuántas unidades sacar de cada zona para esta línea."]); return; }
+
+    // Validación de stock por zona (para salidas).
     if (!esRepo) {
-      const disp = Number(stockByProductZoneSize.get(`${linea.producto_id}__${String(zona).toLowerCase()}__${linea.tamano}`) || 0);
-      if (cantidad > disp) { setErrors([`En ${getZonaLabel(zona)} solo hay ${disp} de ${linea.producto_nombre || "este producto"} (${linea.tamano}).`]); return; }
+      for (const e of entradas) {
+        const disp = Number(stockByProductZoneSize.get(`${linea.producto_id}__${String(e.zona).toLowerCase()}__${linea.tamano}`) || 0);
+        if (e.cant > disp) {
+          setErrors([`En ${getZonaLabel(e.zona)} solo hay ${disp} de ${linea.producto_nombre || "este producto"} (${linea.tamano}).`]);
+          return;
+        }
+      }
     }
+
+    const suma = entradas.reduce((s, e) => s + e.cant, 0);
+    if (Math.abs(suma - necesaria) > 1e-9) {
+      setErrors([`La suma repartida (${suma}) debe coincidir con la cantidad de la línea (${necesaria}).`]);
+      return;
+    }
+
     const destinoTipo = esRepo ? "Vivero" : (DESTINOS_EXTERNOS.includes(form.destino_tipo) ? form.destino_tipo : "Empresa");
     const nota = `Movimiento asociado al pedido #${selectedPedido?.id || ""}`;
-    const payload = {
+    const nuevos = entradas.map((e) => ({
       pedido_id: selectedPedido?.id ? Number(selectedPedido.id) : null,
       pedido_item_id: linea.id ? Number(linea.id) : null,
       producto_id: Number(linea.producto_id),
@@ -1371,8 +1397,8 @@ function MovimientoModal({
       destino_tipo: destinoTipo,
       tamano_origen: esRepo ? null : (linea.tamano || null),
       tamano_destino: esRepo ? (linea.tamano || null) : null,
-      zona_origen: esRepo ? null : zona,
-      zona_destino: esRepo ? zona : null,
+      zona_origen: esRepo ? null : e.zona,
+      zona_destino: esRepo ? e.zona : null,
       distrito_destino: esRepo ? null : (selectedPedido?.distrito_destino || null),
       barrio_destino: esRepo ? null : (selectedPedido?.barrio_destino || null),
       direccion_destino: esRepo ? null : (selectedPedido?.direccion_destino || null),
@@ -1384,10 +1410,10 @@ function MovimientoModal({
       prestamo_referencia_id: null,
       fecha_disponibilidad: null,
       fecha_movimiento: form.usar_fecha_personalizada && form.fecha_movimiento ? form.fecha_movimiento : null,
-      cantidad,
-    };
-    setBatchPayloads((prev) => [...prev, payload]);
-    setPedidoLineZona((prev) => { const n = { ...prev }; delete n[linea._key]; return n; });
+      cantidad: e.cant,
+    }));
+    setBatchPayloads((prev) => [...prev, ...nuevos]);
+    setPedidoLineAlloc((prev) => { const n = { ...prev }; delete n[linea._key]; return n; });
     setErrors([]);
   };
 
@@ -1669,8 +1695,11 @@ function MovimientoModal({
                             {!colapsado && grupo.lineas.map((linea) => {
                         const disabled = !!linea._disabled;
                         const zonasLinea = disabled ? [] : zonasParaLineaPedido(linea);
-                        const zonaSel = pedidoLineZona[linea._key] || "";
                         const esUltima = lineasPendientesPedido <= 1;
+                        const esRepoPedido = (selectedPedido?.tipo || "salida") === "reposicion";
+                        const necesaria = Math.max(0, Number(linea.cantidad || 0) - Number(linea._cantidad_movida || 0));
+                        const asignado = allocSum(linea._key);
+                        const repartoOk = Math.abs(asignado - necesaria) < 1e-9;
                         return (
                           <div key={linea._key} style={{ padding: "10px 12px", borderRadius: 10, border: disabled ? "1px solid rgba(148,163,184,0.18)" : "1px solid rgba(15,23,42,0.08)", background: disabled ? "rgba(148,163,184,0.06)" : "#fff", opacity: disabled ? 0.6 : 1 }}>
                             <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -1680,19 +1709,43 @@ function MovimientoModal({
                               </div>
                             </div>
                             {!disabled && (
-                              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
-                                <div style={{ flex: "1 1 200px" }}>
-                                  <SLabel>{(selectedPedido?.tipo || "salida") === "reposicion" ? "Zona destino" : "Zona origen"}</SLabel>
-                                  <select value={zonaSel} onChange={(e) => setPedidoLineZona((prev) => ({ ...prev, [linea._key]: e.target.value }))} style={iStyle()} disabled={zonasLinea.length === 0}>
-                                    <option value="">{zonasLinea.length === 0 ? "Ninguna zona con stock suficiente" : "Selecciona zona"}</option>
+                              <div style={{ marginTop: 8 }}>
+                                <SLabel>{esRepoPedido ? "Zonas destino (reparte la cantidad)" : "Zonas de origen (reparte la cantidad)"}</SLabel>
+                                {zonasLinea.length === 0 ? (
+                                  <div style={{ color: "#991b1b", fontWeight: 700, fontSize: 12 }}>Este producto no tiene stock en ninguna zona.</div>
+                                ) : (
+                                  <div style={{ display: "grid", gap: 6 }}>
                                     {zonasLinea.map(({ zona, disponible }) => (
-                                      <option key={zona} value={zona}>{getZonaLabel(zona)}{disponible != null ? ` (${disponible} uds)` : ""}</option>
+                                      <div key={zona} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <div style={{ flex: 1, fontSize: 12, fontWeight: 800, color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {getZonaLabel(zona)}{disponible != null ? ` · ${disponible} uds` : ""}
+                                        </div>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={disponible != null ? disponible : undefined}
+                                          placeholder="0"
+                                          value={pedidoLineAlloc[linea._key]?.[zona] ?? ""}
+                                          onChange={(e) => setAllocQty(linea._key, zona, e.target.value)}
+                                          style={{ ...iStyle(), width: 90, textAlign: "right" }}
+                                        />
+                                      </div>
                                     ))}
-                                  </select>
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+                                  <div style={{ fontWeight: 900, fontSize: 12, color: repartoOk ? "#065f46" : "#92400e" }}>
+                                    Repartido: {asignado} / {necesaria}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => addPedidoLinea(linea)}
+                                    disabled={!repartoOk || zonasLinea.length === 0}
+                                    style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: (repartoOk && zonasLinea.length > 0) ? "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: (repartoOk && zonasLinea.length > 0) ? "pointer" : "not-allowed", fontSize: 12, whiteSpace: "nowrap" }}
+                                  >
+                                    {esUltima ? "Añadir al lote y finalizar" : "Añadir al lote y seleccionar otra"}
+                                  </button>
                                 </div>
-                                <button type="button" onClick={() => addPedidoLinea(linea)} disabled={!zonaSel} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: zonaSel ? "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: zonaSel ? "pointer" : "not-allowed", fontSize: 12, whiteSpace: "nowrap" }}>
-                                  {esUltima ? "Añadir al lote y finalizar" : "Añadir al lote y seleccionar otra"}
-                                </button>
                               </div>
                             )}
                           </div>
