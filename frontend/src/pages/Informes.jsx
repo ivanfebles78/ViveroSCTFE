@@ -1330,19 +1330,23 @@ export default function Informes() {
   const { me } = useOutletContext();
 
   const role = me?.rol || me?.role;
-  // La empresa externa solo puede ver el informe de movimientos externos.
+  // Acceso restringido por rol a informes concretos:
+  //   - empresa externa → solo "Movimientos externos".
+  //   - técnico → solo "Distribución".
   const isEmpresaExterna = role === "empresa_externa";
-  const canAccess = role === "admin" || role === "manager" || isEmpresaExterna;
+  const isTecnico = role === "tecnico";
+  const canAccess = role === "admin" || role === "manager" || isEmpresaExterna || isTecnico;
 
-  // Pestañas visibles según el rol: la empresa externa solo "Movimientos externos".
+  // Clave del único informe permitido para roles restringidos (o null = todos).
+  const soloInforme = isEmpresaExterna ? "externos" : isTecnico ? "distribucion" : null;
+
+  // Pestañas visibles según el rol.
   const visibleReports = useMemo(
-    () => (isEmpresaExterna ? REPORTS.filter((r) => r.key === "externos") : REPORTS),
-    [isEmpresaExterna]
+    () => (soloInforme ? REPORTS.filter((r) => r.key === soloInforme) : REPORTS),
+    [soloInforme]
   );
 
-  const [activeReport, setActiveReport] = useState(
-    isEmpresaExterna ? "externos" : "trazabilidad"
-  );
+  const [activeReport, setActiveReport] = useState(soloInforme || "trazabilidad");
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 

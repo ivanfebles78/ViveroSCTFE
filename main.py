@@ -3004,7 +3004,7 @@ def reporte_trazabilidad(
 def reporte_distribucion(
     producto: str,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     producto = (producto or "").strip()
     if not producto:

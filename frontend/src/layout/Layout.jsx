@@ -177,7 +177,7 @@ function getVisibleNavItems(role) {
 
   if (role === "tecnico") {
     return NAV_ITEMS.filter((i) =>
-      ["/dashboard", "/productos", "/movimientos", "/pedidos"].includes(i.to)
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/informes"].includes(i.to)
     );
   }
 
@@ -243,6 +243,7 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
+      "/informes",
       "/lotes",
       "/vivero",
     ].includes(pathname);
