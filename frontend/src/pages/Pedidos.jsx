@@ -833,6 +833,12 @@ function PedidoModal({
     const g = makeGrupo();
     setGrupos((prev) => [...prev, g]);
     setActiveGrupoId(g._id);
+    // Colapsa los destinos anteriores para que el foco quede en el nuevo.
+    setGruposColapsados((prev) => {
+      const next = { ...prev };
+      for (const gr of grupos) next[gr._id] = true;
+      return next;
+    });
   };
   const removeGrupo = (id) => {
     if (grupos.length <= 1) return;
@@ -2200,9 +2206,18 @@ function ImprimirPedidosModal({ open, pedidos, mapProdName, onClose }) {
               </div>
               {lista.map((p) => {
                 const checked = !!seleccion[p.id];
+                // Si el pedido reparte en varios destinos distintos, lo indicamos
+                // en vez de mostrar solo el primero.
+                const _destinosPedido = new Set(
+                  safeArray(p.items)
+                    .map((it) => [it.distrito_destino, it.barrio_destino, it.direccion_destino].filter(Boolean).join(" · "))
+                    .filter(Boolean)
+                );
                 const destino =
                   p.tipo === "reposicion"
                     ? "Vivero"
+                    : _destinosPedido.size > 1
+                    ? `Múltiples destinos (${_destinosPedido.size})`
                     : [p.distrito_destino, p.barrio_destino, p.direccion_destino]
                         .filter(Boolean)
                         .join(" · ") || "—";

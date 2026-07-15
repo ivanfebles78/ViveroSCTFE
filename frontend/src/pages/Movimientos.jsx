@@ -1330,6 +1330,10 @@ function MovimientoModal({
       return getZonasPermitidasParaCategoria(prod, ZONAS).map((z) => ({ zona: z, disponible: null }));
     }
     const pid = String(linea.producto_id);
+    // Solo tienen sentido las zonas que pueden cubrir la línea COMPLETA (una
+    // línea se sirve de una sola zona). Filtramos las que tienen menos de lo
+    // solicitado para no ofrecer zonas insuficientes.
+    const necesaria = Math.max(0, Number(linea.cantidad || 0) - Number(linea._cantidad_movida || 0));
     const out = [];
     for (const [key, qty] of stockByProductZoneSize.entries()) {
       if (Number(qty) <= 0) continue;
@@ -1337,6 +1341,7 @@ function MovimientoModal({
       if (parts[0] !== pid) continue;
       const tam = parts.slice(2).join("__");
       if (linea.tamano && tam !== linea.tamano) continue;
+      if (necesaria > 0 && Number(qty) < necesaria) continue;
       out.push({ zona: zonaIdByLower.get(parts[1]) || parts[1], disponible: Number(qty) });
     }
     return out;
@@ -1679,7 +1684,7 @@ function MovimientoModal({
                                 <div style={{ flex: "1 1 200px" }}>
                                   <SLabel>{(selectedPedido?.tipo || "salida") === "reposicion" ? "Zona destino" : "Zona origen"}</SLabel>
                                   <select value={zonaSel} onChange={(e) => setPedidoLineZona((prev) => ({ ...prev, [linea._key]: e.target.value }))} style={iStyle()} disabled={zonasLinea.length === 0}>
-                                    <option value="">{zonasLinea.length === 0 ? "Sin stock en ninguna zona" : "Selecciona zona"}</option>
+                                    <option value="">{zonasLinea.length === 0 ? "Ninguna zona con stock suficiente" : "Selecciona zona"}</option>
                                     {zonasLinea.map(({ zona, disponible }) => (
                                       <option key={zona} value={zona}>{getZonaLabel(zona)}{disponible != null ? ` (${disponible} uds)` : ""}</option>
                                     ))}

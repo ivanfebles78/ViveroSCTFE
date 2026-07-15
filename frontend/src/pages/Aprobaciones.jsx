@@ -758,9 +758,9 @@ export default function Aprobaciones() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
-  // Default to "PENDIENTES" so RESERVA + APROBADO_PARCIAL both show — those
-  // are the pedidos that still need the manager's attention.
-  const [estadoFiltro, setEstadoFiltro] = useState("PENDIENTES");
+  // Por defecto se muestran TODOS los pedidos, para que tras aprobar/denegar el
+  // pedido decidido siga visible en la lista (no desaparezca del filtro).
+  const [estadoFiltro, setEstadoFiltro] = useState("TODOS");
   const [idFiltro, setIdFiltro] = useState("");
   const [fechaFiltro, setFechaFiltro] = useState("");
   const [solicitanteFiltro, setSolicitanteFiltro] = useState("");
