@@ -49,6 +49,26 @@ import email_service
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
 
+
+def _ensure_schema() -> None:
+    """Migraciones ligeras e idempotentes para columnas nuevas que create_all()
+    no añade a tablas ya existentes (PostgreSQL soporta ADD COLUMN IF NOT
+    EXISTS). Seguro de ejecutar en cada arranque."""
+    ddl = [
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS distrito_destino VARCHAR(150)",
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS barrio_destino VARCHAR(150)",
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS direccion_destino VARCHAR(255)",
+    ]
+    try:
+        with engine.begin() as conn:
+            for stmt in ddl:
+                conn.execute(text(stmt))
+    except Exception as exc:  # pragma: no cover - no debe tumbar el arranque
+        print(f"[schema] aviso al asegurar columnas: {exc}")
+
+
+_ensure_schema()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -127,6 +147,11 @@ class PedidoItemCreate(BaseModel):
     producto_id: int
     tamano: str
     cantidad: float
+    # Destino de esta línea (pedidos con varios destinos). Si es None se usa el
+    # destino a nivel de pedido.
+    distrito_destino: Optional[str] = None
+    barrio_destino: Optional[str] = None
+    direccion_destino: Optional[str] = None
 
 
 class PedidoCreate(BaseModel):
@@ -1023,6 +1048,11 @@ def _pedido_to_dict(
                 "cantidad": getattr(item, "cantidad", 0),
                 "cantidad_servida": getattr(item, "cantidad_servida", 0),
                 "estado_item": _item_estado(item),
+                # Destino de la línea. Si la línea no lo tiene (pedidos antiguos
+                # o de un solo destino), cae al destino del pedido.
+                "distrito_destino": getattr(item, "distrito_destino", None) or getattr(pedido, "distrito_destino", None),
+                "barrio_destino": getattr(item, "barrio_destino", None) or getattr(pedido, "barrio_destino", None),
+                "direccion_destino": getattr(item, "direccion_destino", None) or getattr(pedido, "direccion_destino", None),
                 "servicio_completo": int(getattr(item, "cantidad_servida", 0) or 0)
                 >= int(getattr(item, "cantidad", 0) or 0),
                 "producto_nombre_cientifico": getattr(getattr(item, "producto", None), "nombre_cientifico", None),
@@ -1742,6 +1772,14 @@ def create_pedido(
     db.flush()
 
     for item in payload.items:
+        # Destino efectivo de la línea: el propio de la línea (pedidos con
+        # varios destinos) o, si no lo trae, el del pedido (un solo destino).
+        if tipo_pedido == "salida":
+            it_distrito = item.distrito_destino or payload.distrito_destino or None
+            it_barrio = item.barrio_destino or payload.barrio_destino or None
+            it_direccion = item.direccion_destino or payload.direccion_destino or None
+        else:
+            it_distrito = it_barrio = it_direccion = None
         db.add(
             PedidoItem(
                 pedido_id=pedido.id,
@@ -1749,6 +1787,9 @@ def create_pedido(
                 tamano=item.tamano,
                 cantidad=item.cantidad,
                 cantidad_servida=0,
+                distrito_destino=it_distrito,
+                barrio_destino=it_barrio,
+                direccion_destino=it_direccion,
             )
         )
 
@@ -1838,6 +1879,12 @@ def update_pedido(
     db.flush()
 
     for item in payload.items:
+        if tipo_pedido == "salida":
+            it_distrito = item.distrito_destino or payload.distrito_destino or None
+            it_barrio = item.barrio_destino or payload.barrio_destino or None
+            it_direccion = item.direccion_destino or payload.direccion_destino or None
+        else:
+            it_distrito = it_barrio = it_direccion = None
         db.add(
             PedidoItem(
                 pedido_id=pedido.id,
@@ -1845,6 +1892,9 @@ def update_pedido(
                 tamano=item.tamano,
                 cantidad=item.cantidad,
                 cantidad_servida=0,
+                distrito_destino=it_distrito,
+                barrio_destino=it_barrio,
+                direccion_destino=it_direccion,
             )
         )
 
@@ -2402,6 +2452,23 @@ def crear_movimiento(
         if fecha_caducidad is not None and fecha_disp > fecha_caducidad:
             raise HTTPException(status_code=400, detail="La fecha de disponibilidad no puede ser posterior a la fecha de caducidad")
 
+    # Destino del movimiento: al servir una línea de un pedido de SALIDA, el
+    # destino lo manda la propia LÍNEA del pedido (pedidos repartidos en varios
+    # destinos), con fallback al destino del pedido y luego al del payload. Así,
+    # al servir un pedido con varios destinos, cada línea genera un movimiento
+    # con su destino correcto.
+    mov_distrito = payload.distrito_destino
+    mov_barrio = payload.barrio_destino
+    mov_direccion = payload.direccion_destino
+    if (
+        pedido is not None
+        and pedido_item is not None
+        and (getattr(pedido, "tipo", "salida") or "salida").strip().lower() == "salida"
+    ):
+        mov_distrito = getattr(pedido_item, "distrito_destino", None) or getattr(pedido, "distrito_destino", None) or mov_distrito
+        mov_barrio = getattr(pedido_item, "barrio_destino", None) or getattr(pedido, "barrio_destino", None) or mov_barrio
+        mov_direccion = getattr(pedido_item, "direccion_destino", None) or getattr(pedido, "direccion_destino", None) or mov_direccion
+
     movimiento = Movimiento(
         pedido_id=payload.pedido_id,
         pedido_item_id=payload.pedido_item_id,
@@ -2415,9 +2482,9 @@ def crear_movimiento(
         tamano_origen=payload.tamano_origen,
         tamano_destino=payload.tamano_destino,
         cantidad=payload.cantidad,
-        distrito_destino=payload.distrito_destino,
-        barrio_destino=payload.barrio_destino,
-        direccion_destino=payload.direccion_destino,
+        distrito_destino=mov_distrito,
+        barrio_destino=mov_barrio,
+        direccion_destino=mov_direccion,
         cp_destino=payload.cp_destino,
 
         # 🔥 NUEVO

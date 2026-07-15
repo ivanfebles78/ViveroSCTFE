@@ -643,6 +643,7 @@ function PedidoModal({
   stockByProductSize,
   onSubmit,
   saving,
+  esEmpresaExterna = false,
 }) {
   const [search, setSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -651,9 +652,16 @@ function PedidoModal({
   const [qtyInput, setQtyInput] = useState({});
   const [cart, setCart] = useState({});
   const [localError, setLocalError] = useState("");
-  const [distritoDestino, setDistritoDestino] = useState("");
-  const [barrioDestino, setBarrioDestino] = useState("");
-  const [direccionDestino, setDireccionDestino] = useState("");
+
+  // Destinos del pedido. Un pedido normal tiene un único destino; la empresa
+  // externa (UTE) puede añadir hasta 10 y repartir el material entre ellos.
+  const MAX_DESTINOS = 10;
+  const destinoSeqRef = useRef(1);
+  const makeDestino = () => ({ _id: destinoSeqRef.current++, distrito: "", barrio: "", direccion: "" });
+  const [destinos, setDestinos] = useState(() => [makeDestino()]);
+  // Reparto por línea: { [cartKey]: { [destinoId]: cantidad } }. Solo se usa
+  // cuando hay más de un destino.
+  const [reparto, setReparto] = useState({});
 
   useEffect(() => {
     if (!open) {
@@ -664,9 +672,8 @@ function PedidoModal({
       setQtyInput({});
       setCart({});
       setLocalError("");
-      setDistritoDestino("");
-      setBarrioDestino("");
-      setDireccionDestino("");
+      setDestinos([makeDestino()]);
+      setReparto({});
     }
   }, [open]);
 
@@ -709,14 +716,42 @@ function PedidoModal({
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
   }, [productosConStock, filtroCategoria]);
 
-  useEffect(() => {
-    setBarrioDestino("");
-  }, [distritoDestino]);
+  const barriosDe = (distrito) => (distrito ? DISTRITO_BARRIOS[distrito] || [] : []);
 
-  const barriosDisponibles = useMemo(
-    () => (distritoDestino ? DISTRITO_BARRIOS[distritoDestino] || [] : []),
-    [distritoDestino]
-  );
+  // Gestión de destinos (solo la UTE puede tener más de uno).
+  const updateDestino = (id, field, value) => {
+    setDestinos((prev) =>
+      prev.map((d) =>
+        d._id === id
+          ? { ...d, [field]: value, ...(field === "distrito" ? { barrio: "" } : {}) }
+          : d
+      )
+    );
+  };
+  const addDestino = () => {
+    setDestinos((prev) => (prev.length >= MAX_DESTINOS ? prev : [...prev, makeDestino()]));
+  };
+  const removeDestino = (id) => {
+    setDestinos((prev) => (prev.length <= 1 ? prev : prev.filter((d) => d._id !== id)));
+    // Limpia el reparto asignado a ese destino.
+    setReparto((prev) => {
+      const next = {};
+      for (const [k, m] of Object.entries(prev)) {
+        const { [id]: _drop, ...rest } = m || {};
+        next[k] = rest;
+      }
+      return next;
+    });
+  };
+
+  const setRepartoQty = (cartKey, destinoId, value) => {
+    setReparto((prev) => ({
+      ...prev,
+      [cartKey]: { ...(prev[cartKey] || {}), [destinoId]: value },
+    }));
+  };
+  const repartoSumOf = (cartKey) =>
+    destinos.reduce((s, d) => s + Number(reparto[cartKey]?.[d._id] || 0), 0);
 
   const productosDisponibles = useMemo(() => {
     const texto = search.trim().toLowerCase();
@@ -808,10 +843,22 @@ function PedidoModal({
     return cartLines.every((line) => line.cantidad > 0 && line.cantidad <= line.disponible);
   }, [cartLines]);
 
-  const destinationIsValid =
-    !!distritoDestino && !!barrioDestino && !!String(direccionDestino || "").trim();
+  // Todos los destinos añadidos deben tener distrito, barrio y dirección.
+  const destinosValid = useMemo(
+    () => destinos.every((d) => d.distrito && d.barrio && String(d.direccion || "").trim()),
+    [destinos]
+  );
 
-  const canSubmit = !saving && cartIsValid && destinationIsValid;
+  const multiDestino = destinos.length > 1;
+
+  // Con varios destinos, cada línea de la cesta debe estar repartida por
+  // completo (la suma por destino = cantidad total de la línea).
+  const distribucionValid = useMemo(() => {
+    if (!multiDestino) return true;
+    return cartLines.every((line) => Math.abs(repartoSumOf(line.key) - line.cantidad) < 1e-9);
+  }, [multiDestino, cartLines, destinos, reparto]);
+
+  const canSubmit = !saving && cartIsValid && destinosValid && distribucionValid;
 
   const addToCart = (productoId, tamano) => {
     setLocalError("");
@@ -861,6 +908,40 @@ function PedidoModal({
     }));
   };
 
+  // Construye las líneas del pedido a enviar. Con un solo destino, cada línea
+  // de la cesta va entera a ese destino. Con varios, se genera una línea por
+  // (producto, destino) con la cantidad repartida (cantidad > 0).
+  const buildItems = () => {
+    if (!multiDestino) {
+      const d = destinos[0];
+      return cartLines.map((x) => ({
+        producto_id: x.producto_id,
+        tamano: x.tamano,
+        cantidad: x.cantidad,
+        distrito_destino: d.distrito,
+        barrio_destino: d.barrio,
+        direccion_destino: String(d.direccion || "").trim(),
+      }));
+    }
+    const items = [];
+    for (const line of cartLines) {
+      for (const d of destinos) {
+        const q = Number(reparto[line.key]?.[d._id] || 0);
+        if (q > 0) {
+          items.push({
+            producto_id: line.producto_id,
+            tamano: line.tamano,
+            cantidad: q,
+            distrito_destino: d.distrito,
+            barrio_destino: d.barrio,
+            direccion_destino: String(d.direccion || "").trim(),
+          });
+        }
+      }
+    }
+    return items;
+  };
+
   const submitPedido = async () => {
     setLocalError("");
 
@@ -869,8 +950,8 @@ function PedidoModal({
       return;
     }
 
-    if (!destinationIsValid) {
-      setLocalError("Debes indicar distrito, barrio y dirección de destino.");
+    if (!destinosValid) {
+      setLocalError("Cada destino debe tener distrito, barrio y dirección.");
       return;
     }
 
@@ -879,15 +960,18 @@ function PedidoModal({
       return;
     }
 
+    if (!distribucionValid) {
+      setLocalError("Reparte cada producto entre los destinos: la suma debe coincidir con la cantidad total de cada línea.");
+      return;
+    }
+
+    const primero = destinos[0];
     await onSubmit({
-      items: cartLines.map((x) => ({
-        producto_id: x.producto_id,
-        tamano: x.tamano,
-        cantidad: x.cantidad,
-      })),
-      distrito_destino: distritoDestino,
-      barrio_destino: barrioDestino,
-      direccion_destino: direccionDestino.trim(),
+      items: buildItems(),
+      // Destino a nivel de pedido = primer destino (compatibilidad/visualización).
+      distrito_destino: primero.distrito,
+      barrio_destino: primero.barrio,
+      direccion_destino: String(primero.direccion || "").trim(),
     });
   };
 
@@ -1260,65 +1344,137 @@ function PedidoModal({
           </div>
 
           <div style={{ ...cardStyle(), marginTop: 16, padding: 18 }}>
-            <div style={{ fontWeight: 900, color: "#0f172a", marginBottom: 12, fontSize: 17 }}>
-              Destino del pedido
-            </div>
-
-            <div style={{ display: "grid", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
-                  Distrito
-                </div>
-                <select
-                  value={distritoDestino}
-                  onChange={(e) => setDistritoDestino(e.target.value)}
-                  style={softInputStyle()}
-                >
-                  <option value="">Seleccionar distrito</option>
-                  {DISTRITOS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
+              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 17 }}>
+                {esEmpresaExterna ? `Destinos del pedido (${destinos.length}/${MAX_DESTINOS})` : "Destino del pedido"}
               </div>
-
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
-                  Barrio
-                </div>
-                <select
-                  value={barrioDestino}
-                  onChange={(e) => setBarrioDestino(e.target.value)}
-                  disabled={!distritoDestino}
+              {esEmpresaExterna && (
+                <button
+                  type="button"
+                  onClick={addDestino}
+                  disabled={destinos.length >= MAX_DESTINOS}
                   style={{
-                    ...softInputStyle(),
-                    opacity: distritoDestino ? 1 : 0.66,
+                    padding: "7px 12px", borderRadius: 10, border: "none",
+                    background: destinos.length >= MAX_DESTINOS ? "#cbd5e1" : "linear-gradient(90deg,#10b981,#06b6d4)",
+                    color: "#fff", fontWeight: 900, fontSize: 12, whiteSpace: "nowrap",
+                    cursor: destinos.length >= MAX_DESTINOS ? "not-allowed" : "pointer",
                   }}
                 >
-                  <option value="">
-                    {distritoDestino ? "Seleccionar barrio" : "Primero selecciona un distrito"}
-                  </option>
-                  {barriosDisponibles.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>
-                  Dirección
-                </div>
-                <input
-                  value={direccionDestino}
-                  onChange={(e) => setDireccionDestino(e.target.value)}
-                  placeholder="Escribe la dirección de destino"
-                  style={softInputStyle()}
-                />
-              </div>
+                  + Añadir destino
+                </button>
+              )}
             </div>
+
+            <div style={{ display: "grid", gap: 14 }}>
+              {destinos.map((d, idx) => {
+                const boxed = destinos.length > 1;
+                const labelMini = { fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6, textTransform: "uppercase" };
+                return (
+                  <div
+                    key={d._id}
+                    style={{
+                      display: "grid", gap: 10,
+                      padding: boxed ? 12 : 0,
+                      borderRadius: 12,
+                      border: boxed ? "1px solid rgba(148,163,184,0.18)" : "none",
+                      background: boxed ? "rgba(248,250,252,0.7)" : "transparent",
+                    }}
+                  >
+                    {esEmpresaExterna && (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 13 }}>Destino {idx + 1}</div>
+                        {destinos.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeDestino(d._id)}
+                            style={{ border: "none", background: "transparent", color: "#ef4444", fontWeight: 900, cursor: "pointer", fontSize: 12 }}
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <div style={labelMini}>Distrito</div>
+                      <select value={d.distrito} onChange={(e) => updateDestino(d._id, "distrito", e.target.value)} style={softInputStyle()}>
+                        <option value="">Seleccionar distrito</option>
+                        {DISTRITOS.map((x) => <option key={x} value={x}>{x}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div style={labelMini}>Barrio</div>
+                      <select
+                        value={d.barrio}
+                        onChange={(e) => updateDestino(d._id, "barrio", e.target.value)}
+                        disabled={!d.distrito}
+                        style={{ ...softInputStyle(), opacity: d.distrito ? 1 : 0.66 }}
+                      >
+                        <option value="">{d.distrito ? "Seleccionar barrio" : "Primero selecciona un distrito"}</option>
+                        {barriosDe(d.distrito).map((b) => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div style={labelMini}>Dirección</div>
+                      <input
+                        value={d.direccion}
+                        onChange={(e) => updateDestino(d._id, "direccion", e.target.value)}
+                        placeholder="Escribe la dirección de destino"
+                        style={softInputStyle()}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {multiDestino && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 15, marginBottom: 4 }}>Reparto por destino</div>
+                <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>
+                  Indica cuántas unidades de cada producto van a cada destino. La suma debe coincidir con la cantidad total.
+                </div>
+                {cartLines.length === 0 ? (
+                  <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Añade productos a la cesta para repartirlos.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {cartLines.map((line) => {
+                      const prod = productos.find((p) => p.id === line.producto_id);
+                      const allowDecimals = !!getProductFormatoConfig(prod)?.allowDecimals;
+                      const suma = repartoSumOf(line.key);
+                      const ok = Math.abs(suma - line.cantidad) < 1e-9;
+                      return (
+                        <div key={line.key} style={{ ...cardStyle(), padding: 12 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{line.nombre} · {line.tamano}</div>
+                            <div style={{ fontWeight: 900, fontSize: 12, color: ok ? "#065f46" : "#991b1b" }}>{suma}/{line.cantidad}</div>
+                          </div>
+                          <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                            {destinos.map((d, idx) => (
+                              <div key={d._id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ flex: 1, fontSize: 12, fontWeight: 700, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  Destino {idx + 1}{d.barrio ? ` · ${d.barrio}` : ""}
+                                </div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step={allowDecimals ? "0.001" : "1"}
+                                  value={reparto[line.key]?.[d._id] ?? ""}
+                                  onChange={(e) => setRepartoQty(line.key, d._id, e.target.value)}
+                                  style={{ ...softInputStyle(), width: 90, textAlign: "right" }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {localError ? (
@@ -2982,6 +3138,7 @@ export default function Pedidos() {
         stockByProductSize={stockByProductSize}
         onSubmit={handleCreatePedidoFromModal}
         saving={savingNewPedido}
+        esEmpresaExterna={role === "empresa_externa"}
       />
 
       <ImprimirPedidosModal

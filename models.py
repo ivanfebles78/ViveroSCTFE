@@ -156,6 +156,13 @@ class PedidoItem(Base):
     cantidad = Column(Numeric(12, 3), nullable=False)
     cantidad_servida = Column(Numeric(12, 3), nullable=False, default=0)
 
+    # Destino por línea (para pedidos con varios destinos: la empresa externa
+    # puede repartir el material entre distintas direcciones). Si es NULL, se
+    # usa el destino a nivel de pedido (pedidos internos de un solo destino).
+    distrito_destino = Column(String(150), nullable=True)
+    barrio_destino = Column(String(150), nullable=True)
+    direccion_destino = Column(String(255), nullable=True)
+
     # Per-item approval state (RESERVA | APROBADO | DENEGADO).  The pedido's
     # aggregate `estado` is derived from these — see `recompute_pedido_estado`
     # in main.py.

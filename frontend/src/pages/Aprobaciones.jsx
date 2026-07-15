@@ -279,12 +279,21 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
       pedido?.solicitante_username || pedido?.solicitante || pedido?.created_by || pedido?.usuario || ""
     ) || "—";
 
+  const destinoDeItem = (it) =>
+    [it?.distrito_destino, it?.barrio_destino, it?.direccion_destino].filter(Boolean).join(" · ");
+
   const destino =
     pedido?.tipo === "reposicion"
       ? "Vivero"
       : [pedido?.distrito_destino, pedido?.barrio_destino, pedido?.direccion_destino]
           .filter(Boolean)
           .join(" · ") || "—";
+
+  // ¿El pedido reparte material en varios destinos distintos?
+  const destinosUnicos = Array.from(
+    new Set(items.map(destinoDeItem).filter(Boolean))
+  );
+  const variosDestinos = pedido?.tipo !== "reposicion" && destinosUnicos.length > 1;
 
   return (
     <div
@@ -372,7 +381,9 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
             </div>
             <div style={{ gridColumn: "span 2", padding: 12, borderRadius: 12, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)" }}>
               <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Destino</div>
-              <div style={{ marginTop: 4, fontWeight: 900, color: "#0f172a" }}>{destino}</div>
+              <div style={{ marginTop: 4, fontWeight: 900, color: "#0f172a" }}>
+                {variosDestinos ? `${destinosUnicos.length} destinos (ver columna Destino)` : destino}
+              </div>
             </div>
             {pedido.nota ? (
               <div style={{ gridColumn: "span 2", padding: 12, borderRadius: 12, background: "#fffbeb", border: "1px solid rgba(245,158,11,0.25)" }}>
@@ -394,6 +405,7 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
                     <th style={thStyle()}>Producto</th>
+                    {variosDestinos ? <th style={thStyle()}>Destino</th> : null}
                     <th style={thStyle()}>Tamaño</th>
                     <th style={thStyle()}>Cantidad</th>
                     <th style={thStyle()}>Servido</th>
@@ -422,6 +434,11 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                         <td style={{ ...tdStyle(), textDecoration: estIt === "DENEGADO" ? "line-through" : "none" }}>
                           {productoLabel}
                         </td>
+                        {variosDestinos ? (
+                          <td style={{ ...tdStyle(), fontWeight: 700, color: "#1e3a8a" }}>
+                            {destinoDeItem(it) || destino}
+                          </td>
+                        ) : null}
                         <td style={tdStyle()}>{it.tamano || "—"}</td>
                         <td style={{ ...tdStyle(), fontWeight: 900 }}>{formatCantidad(cantidad) || "0"}</td>
                         <td style={{ ...tdStyle(), color: "#065f46", fontWeight: 900 }}>{formatCantidad(servida) || "0"}</td>

@@ -1631,7 +1631,7 @@ function MovimientoModal({
                   <div style={{ padding: 14, borderRadius: 14, background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)" }}>
                     <div style={{ fontWeight: 900, color: "#1e3a8a", marginBottom: 4, fontSize: 13 }}>Líneas del pedido #{selectedPedido.id}</div>
                     <div style={{ color: "#475569", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>
-                      Elige la zona de origen de cada línea y añádela. La dirección de destino es la del pedido (igual para todas).
+                      Elige la zona de origen de cada línea y añádela. Cada línea se sirve a su destino (se guarda un movimiento por línea).
                     </div>
                     <div style={{ display: "grid", gap: 8 }}>
                       {pedidoLineas.map((linea) => {
@@ -1645,6 +1645,10 @@ function MovimientoModal({
                               <div>
                                 <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
                                 <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · ${linea._razon_bloqueo === "ya_en_lote" ? "✓ añadida al lote" : linea._razon_bloqueo === "ya_servida" ? "ya movida" : linea._razon_bloqueo === "item_denegado" ? "línea denegada" : linea._razon_bloqueo === "item_pendiente" ? "pendiente de aprobar" : "no disponible"}` : ""}</div>
+                                {(() => {
+                                  const dst = [linea.distrito_destino, linea.barrio_destino, linea.direccion_destino].filter(Boolean).join(" · ");
+                                  return dst ? <div style={{ marginTop: 2, color: "#1e3a8a", fontWeight: 800, fontSize: 12 }}>📍 {dst}</div> : null;
+                                })()}
                               </div>
                             </div>
                             {!disabled && (
