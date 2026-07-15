@@ -99,9 +99,12 @@ def _send_console(*, to: str, subject: str, html: str, text: str,
 
 
 def _send_resend(*, to: str, subject: str, html: str, text: str,
-                 attachments: Optional[List[Attachment]] = None) -> None:
+                 attachments: Optional[List[Attachment]] = None,
+                 strict: bool = False) -> None:
     api_key = _env("RESEND_API_KEY")
     if not api_key:
+        if strict:
+            raise RuntimeError("Driver resend pero RESEND_API_KEY no está configurada.")
         # Sin API key, caemos a consola para no perder el mensaje
         print(
             "[email:resend] WARNING: RESEND_API_KEY no configurada. "
@@ -150,19 +153,30 @@ def _send_resend(*, to: str, subject: str, html: str, text: str,
             if resp.status >= 400:
                 body = resp.read().decode("utf-8", errors="replace")
                 print(f"[email:resend] HTTP {resp.status}: {body}")
+                if strict:
+                    raise RuntimeError(f"Resend rechazó el envío (HTTP {resp.status}): {body}")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
         print(f"[email:resend] ERROR HTTP {e.code}: {body}")
+        if strict:
+            raise RuntimeError(f"Resend rechazó el envío (HTTP {e.code}): {body}")
         # No relanzamos: el flujo de admin no debería romperse porque falle el email.
         # El admin puede usar "Reenviar invitación" si hace falta.
+    except RuntimeError:
+        raise
     except Exception as e:  # noqa: BLE001
         print(f"[email:resend] ERROR: {e}")
+        if strict:
+            raise RuntimeError(f"Error al enviar por Resend: {type(e).__name__}: {e}")
 
 
 def _send_brevo(*, to: str, subject: str, html: str, text: str,
-                attachments: Optional[List[Attachment]] = None) -> None:
+                attachments: Optional[List[Attachment]] = None,
+                strict: bool = False) -> None:
     api_key = _env("BREVO_API_KEY")
     if not api_key:
+        if strict:
+            raise RuntimeError("Driver brevo pero BREVO_API_KEY no está configurada.")
         print(
             "[email:brevo] WARNING: BREVO_API_KEY no configurada. "
             "Cayendo a driver consola."
@@ -209,6 +223,8 @@ def _send_brevo(*, to: str, subject: str, html: str, text: str,
             if resp.status >= 400:
                 body = resp.read().decode("utf-8", errors="replace")
                 print(f"[email:brevo] HTTP {resp.status}: {body}")
+                if strict:
+                    raise RuntimeError(f"Brevo rechazó el envío (HTTP {resp.status}): {body}")
             else:
                 # Brevo responde 201 con un messageId al aceptar el envío.
                 body = resp.read().decode("utf-8", errors="replace")
@@ -216,12 +232,19 @@ def _send_brevo(*, to: str, subject: str, html: str, text: str,
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
         print(f"[email:brevo] ERROR HTTP {e.code}: {body}")
+        if strict:
+            raise RuntimeError(f"Brevo rechazó el envío (HTTP {e.code}): {body}")
+    except RuntimeError:
+        raise
     except Exception as e:  # noqa: BLE001
         print(f"[email:brevo] ERROR: {e}")
+        if strict:
+            raise RuntimeError(f"Error al enviar por Brevo: {type(e).__name__}: {e}")
 
 
 def _send_smtp(*, to: str, subject: str, html: str, text: str,
-               attachments: Optional[List[Attachment]] = None) -> None:
+               attachments: Optional[List[Attachment]] = None,
+               strict: bool = False) -> None:
     """
     Send via plain SMTP (e.g. Office 365 on smtp.office365.com:587).
     Uses STARTTLS by default — Office 365 requires it.
@@ -245,6 +268,8 @@ def _send_smtp(*, to: str, subject: str, html: str, text: str,
     use_ssl = _env("SMTP_USE_SSL", "false").lower() in ("1", "true", "yes", "y")
 
     if not host or not username or not password:
+        if strict:
+            raise RuntimeError("Driver smtp pero faltan SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD.")
         print(
             "[email:smtp] WARNING: SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD "
             "no configurados.  Cayendo a driver consola."
@@ -313,8 +338,15 @@ def _send_smtp(*, to: str, subject: str, html: str, text: str,
             "para el buzón y, si hay MFA, usa una App Password.",
             flush=True,
         )
+        if strict:
+            raise RuntimeError(
+                f"SMTP autenticación fallida ({e.smtp_code}): {e.smtp_error!r}. "
+                "Revisa SMTP_USERNAME/SMTP_PASSWORD (usa App Password si hay MFA)."
+            )
     except smtplib.SMTPRecipientsRefused as e:
         print(f"[email:smtp] ERROR recipient refused: {e.recipients!r}", flush=True)
+        if strict:
+            raise RuntimeError(f"SMTP destinatario rechazado: {e.recipients!r}")
     except smtplib.SMTPSenderRefused as e:
         print(
             f"[email:smtp] ERROR sender refused {e.smtp_code}: {e.smtp_error!r}.  "
@@ -322,10 +354,19 @@ def _send_smtp(*, to: str, subject: str, html: str, text: str,
             "o un alias autorizado del mismo buzón.",
             flush=True,
         )
+        if strict:
+            raise RuntimeError(
+                f"SMTP remitente rechazado ({e.smtp_code}): {e.smtp_error!r}. "
+                "EMAIL_FROM debe coincidir con SMTP_USERNAME o un alias autorizado."
+            )
     except smtplib.SMTPException as e:
         print(f"[email:smtp] ERROR SMTP: {type(e).__name__}: {e}", flush=True)
+        if strict:
+            raise RuntimeError(f"Error SMTP: {type(e).__name__}: {e}")
     except Exception as e:  # noqa: BLE001
         print(f"[email:smtp] ERROR: {type(e).__name__}: {e}", flush=True)
+        if strict:
+            raise RuntimeError(f"Error al enviar por SMTP: {type(e).__name__}: {e}")
 
 
 def _send_disabled(*, to: str, subject: str, html: str, text: str,
@@ -339,17 +380,27 @@ def _send_disabled(*, to: str, subject: str, html: str, text: str,
 
 
 def _dispatch(*, to: str, subject: str, html: str, text: str,
-              attachments: Optional[List[Attachment]] = None) -> None:
+              attachments: Optional[List[Attachment]] = None,
+              strict: bool = False) -> None:
+    """Envía por el driver activo. Con strict=True lanza una excepción con el
+    motivo real del fallo (para el diagnóstico), en vez de tragarlo."""
     driver = _driver()
     if driver == "disabled":
+        if strict:
+            raise RuntimeError("EMAIL_DRIVER=disabled: el envío de correos está desactivado.")
         _send_disabled(to=to, subject=subject, html=html, text=text, attachments=attachments)
     elif driver == "resend":
-        _send_resend(to=to, subject=subject, html=html, text=text, attachments=attachments)
+        _send_resend(to=to, subject=subject, html=html, text=text, attachments=attachments, strict=strict)
     elif driver == "brevo":
-        _send_brevo(to=to, subject=subject, html=html, text=text, attachments=attachments)
+        _send_brevo(to=to, subject=subject, html=html, text=text, attachments=attachments, strict=strict)
     elif driver == "smtp":
-        _send_smtp(to=to, subject=subject, html=html, text=text, attachments=attachments)
+        _send_smtp(to=to, subject=subject, html=html, text=text, attachments=attachments, strict=strict)
     else:
+        if strict:
+            raise RuntimeError(
+                f"EMAIL_DRIVER='{driver or 'console'}': no se envían correos reales, solo se "
+                "imprimen en el log. Configura EMAIL_DRIVER=resend/brevo/smtp y sus claves en Railway."
+            )
         _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
 
 
@@ -544,6 +595,7 @@ def send_test_email(*, to: str) -> None:
             "Si lo recibes, el envío de correos está configurado correctamente.\n"
             f"{url}"
         ),
+        strict=True,
     )
 
 
