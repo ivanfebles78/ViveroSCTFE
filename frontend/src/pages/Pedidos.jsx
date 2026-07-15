@@ -2954,13 +2954,24 @@ export default function Pedidos() {
                       >
                         {p?.tipo === "reposicion" ? (
                           <span style={{ fontWeight: 900, color: "#065f46" }}>Vivero</span>
-                        ) : (
-                          <DestinoResumen
-                            distrito={p?.distrito_destino}
-                            barrio={p?.barrio_destino}
-                            direccion={p?.direccion_destino}
-                          />
-                        )}
+                        ) : (() => {
+                          // Si el pedido reparte en varios destinos distintos
+                          // (según sus líneas), lo indicamos en vez del primero.
+                          const dset = new Set(
+                            safeArray(p?.items)
+                              .map((it) => [it.distrito_destino, it.barrio_destino, it.direccion_destino].filter(Boolean).join(" · "))
+                              .filter(Boolean)
+                          );
+                          return dset.size > 1 ? (
+                            <span style={{ fontWeight: 900, color: "#1e3a8a" }}>Múltiples destinos ({dset.size})</span>
+                          ) : (
+                            <DestinoResumen
+                              distrito={p?.distrito_destino}
+                              barrio={p?.barrio_destino}
+                              direccion={p?.direccion_destino}
+                            />
+                          );
+                        })()}
                       </td>
 
                       <td
