@@ -1115,7 +1115,7 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
           gridTemplateColumns: "1.45fr 0.8fr",
         }}
       >
-        <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)" }}>
+        <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", minHeight: 0, overflowY: "auto" }}>
           <div
             style={{
               display: "flex",
@@ -1207,10 +1207,16 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
           </div>
         </div>
 
-        <div style={{ padding: 20, overflow: "auto" }}>
+        <div style={{ padding: 20, overflowY: "auto", minHeight: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
             {selectedZone ? selectedZoneLabel : "Selecciona una zona"}
           </div>
+
+          {selectedZone && !loading && !zonaError && zonaData?.items?.length ? (
+            <div style={{ marginTop: 2, fontSize: 14, fontWeight: 800, color: "#1e3a8a" }}>
+              {zonaData.items.length} {zonaData.items.length === 1 ? "producto" : "productos"} en esta zona
+            </div>
+          ) : null}
 
           {!selectedZone ? (
             <div style={{ marginTop: 12, color: "#64748b", fontWeight: 700 }}>
