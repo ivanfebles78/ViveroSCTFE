@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import "./MapaVivero.css";
-import Modal from "../common/Modal";
 import useMapaDebug from "./useMapaDebug";
 import { getMe, getZonaItems } from "../../api/api";
 import zonasDefault from "./zonasConfig";
@@ -108,6 +107,13 @@ export default function MapaVivero() {
   };
 
   const items = zonaData?.items || zonaData?.productos || [];
+  // Nº de productos DIFERENTES en la zona (una misma especie en varios tamaños
+  // cuenta como un solo producto).
+  const numProductosDistintos = new Set(
+    items
+      .map((i) => String(i.nombre_cientifico || i.cientifico || i.producto || "").trim().toLowerCase())
+      .filter(Boolean)
+  ).size;
 
   if (editMode && canEdit) {
     return (
@@ -164,37 +170,64 @@ export default function MapaVivero() {
           ))}
         </svg>
 
-        {zonaSeleccionada && (
-          <Modal onClose={cerrarModal}>
-            <h2>{getZonaDisplayName(zonaSeleccionada.nombre || zonaSeleccionada.apiId || zonaSeleccionada.id)}</h2>
+      </div>
 
-            {loading && <p>Cargando información...</p>}
-
-            {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
-
-            {!loading && !error && items.length === 0 && (
-              <p>No hay stock registrado en esta zona.</p>
-            )}
-
-            {!loading && !error && items.length > 0 && (
-              <>
-                <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, margin: "4px 0 8px" }}>
-                  {items.length} {items.length === 1 ? "especie" : "especies"} en esta zona
+      {/* Modal de zona: overlay AUTÓNOMO (fuera del wrapper del mapa, que tiene
+          overflow:hidden). Cabecera y botón fijos; la lista de especies hace
+          scroll dentro del modal aunque haya muchas. */}
+      {zonaSeleccionada && (
+        <div
+          onClick={cerrarModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 3000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 14,
+              width: "min(560px, 96vw)",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 18px 50px rgba(0,0,0,0.28)",
+            }}
+          >
+            {/* Cabecera fija */}
+            <div style={{ padding: "18px 20px 10px", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>
+                {getZonaDisplayName(zonaSeleccionada.nombre || zonaSeleccionada.apiId || zonaSeleccionada.id)}
+              </h2>
+              {!loading && !error && items.length > 0 && (
+                <div style={{ fontSize: 13, color: "#1e3a8a", fontWeight: 800, marginTop: 4 }}>
+                  {numProductosDistintos} {numProductosDistintos === 1 ? "producto diferente" : "productos diferentes"}
+                  {items.length !== numProductosDistintos ? ` · ${items.length} líneas` : ""}
                 </div>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                  }}
-                >
+              )}
+            </div>
+
+            {/* Cuerpo con scroll */}
+            <div style={{ padding: "12px 20px", overflowY: "auto", flex: 1 }}>
+              {loading && <p>Cargando información...</p>}
+              {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
+              {!loading && !error && items.length === 0 && (
+                <p>No hay stock registrado en esta zona.</p>
+              )}
+              {!loading && !error && items.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {items.map((item, index) => (
                     <div key={index} className="zona-item">
                       <strong>
-                        {item.nombre_cientifico ||
-                          item.cientifico ||
-                          item.producto ||
-                          "Producto"}
+                        {item.nombre_cientifico || item.cientifico || item.producto || "Producto"}
                       </strong>
                       <br />
                       Cantidad: {formatCantidad(item.cantidad || item.total || 0) || "0"}
@@ -207,13 +240,16 @@ export default function MapaVivero() {
                     </div>
                   ))}
                 </div>
-              </>
-            )}
+              )}
+            </div>
 
-            <button onClick={cerrarModal} style={{ marginTop: 12 }}>Cerrar</button>
-          </Modal>
-        )}
-      </div>
+            {/* Pie fijo */}
+            <div style={{ padding: "10px 20px 16px", borderTop: "1px solid rgba(15,23,42,0.08)", textAlign: "right" }}>
+              <button onClick={cerrarModal}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
