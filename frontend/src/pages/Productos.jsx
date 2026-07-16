@@ -647,6 +647,8 @@ function CartModal({ open, cart, onClose, onRemove, onUpdate, onFinalizar, onAdd
 function GestionProductosModal({ open, productos, onClose, onChanged }) {
   const [tab, setTab] = useState("listado");
   const [search, setSearch] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [nuevo, setNuevo] = useState({
@@ -699,11 +701,39 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
     setMsg("");
   };
 
+  // Categorías y subcategorías presentes en el catálogo (para los desplegables).
+  const categoriasDisponibles = useMemo(() => {
+    const set = new Set();
+    for (const p of Array.isArray(productos) ? productos : []) {
+      const c = String(p?.categoria || "").trim();
+      if (c) set.add(c);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos]);
+
+  const subcategoriasDisponibles = useMemo(() => {
+    if (!filtroCategoria) return [];
+    const set = new Set();
+    for (const p of Array.isArray(productos) ? productos : []) {
+      if (String(p?.categoria || "").trim() !== filtroCategoria) continue;
+      const s = String(p?.subcategoria || "").trim();
+      if (s) set.add(s);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos, filtroCategoria]);
+
+  // Al cambiar de categoría, se limpia la subcategoría (dependen entre sí).
+  useEffect(() => {
+    setFiltroSubcategoria("");
+  }, [filtroCategoria]);
+
   const productosFiltrados = useMemo(() => {
     const t = search.trim().toLowerCase();
     const base = Array.isArray(productos) ? productos : [];
-    if (!t) return base;
     return base.filter((p) => {
+      if (filtroCategoria && String(p.categoria || "").trim() !== filtroCategoria) return false;
+      if (filtroSubcategoria && String(p.subcategoria || "").trim() !== filtroSubcategoria) return false;
+      if (!t) return true;
       return (
         String(p.nombre_cientifico || "").toLowerCase().includes(t) ||
         String(p.nombre_natural || "").toLowerCase().includes(t) ||
@@ -711,7 +741,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         String(p.subcategoria || "").toLowerCase().includes(t)
       );
     });
-  }, [productos, search]);
+  }, [productos, search, filtroCategoria, filtroSubcategoria]);
 
   const startEdit = (p) => {
     setEditingId(p.id);
@@ -922,12 +952,47 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         <div style={{ padding: 22 }}>
           {tab === "listado" && (
             <div>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar producto..."
-                style={{ ...inputS, marginBottom: 12 }}
-              />
+              <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar producto..."
+                  style={{ ...inputS, flex: "1 1 220px", marginBottom: 0 }}
+                />
+                <select
+                  value={filtroCategoria}
+                  onChange={(e) => setFiltroCategoria(e.target.value)}
+                  style={{ ...inputS, flex: "0 1 200px", marginBottom: 0 }}
+                >
+                  <option value="">Todas las categorías</option>
+                  {categoriasDisponibles.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select
+                  value={filtroSubcategoria}
+                  onChange={(e) => setFiltroSubcategoria(e.target.value)}
+                  disabled={!filtroCategoria || subcategoriasDisponibles.length === 0}
+                  style={{ ...inputS, flex: "0 1 200px", marginBottom: 0, opacity: filtroCategoria ? 1 : 0.55 }}
+                >
+                  <option value="">Todas las subcategorías</option>
+                  {subcategoriasDisponibles.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                {(search || filtroCategoria || filtroSubcategoria) && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria(""); }}
+                    style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "#fff", color: "#475569", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+              <div style={{ marginBottom: 10, fontSize: 13, color: "#64748b", fontWeight: 700 }}>
+                {productosFiltrados.length} {productosFiltrados.length === 1 ? "producto" : "productos"}
+              </div>
 
               <div style={{ overflowX: "auto", border: "1px solid rgba(15,23,42,0.08)", borderRadius: 12 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", wordBreak: "break-word" }}>
