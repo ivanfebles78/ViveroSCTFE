@@ -183,9 +183,6 @@ export default function MapaVivero() {
                 </div>
                 <div
                   style={{
-                    maxHeight: "55vh",
-                    overflowY: "auto",
-                    paddingRight: 6,
                     display: "flex",
                     flexDirection: "column",
                     gap: 8,
