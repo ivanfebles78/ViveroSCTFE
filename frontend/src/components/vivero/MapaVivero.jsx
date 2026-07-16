@@ -176,28 +176,44 @@ export default function MapaVivero() {
               <p>No hay stock registrado en esta zona.</p>
             )}
 
-            {!loading &&
-              !error &&
-              items.map((item, index) => (
-                <div key={index} className="zona-item">
-                  <strong>
-                    {item.nombre_cientifico ||
-                      item.cientifico ||
-                      item.producto ||
-                      "Producto"}
-                  </strong>
-                  <br />
-                  Cantidad: {formatCantidad(item.cantidad || item.total || 0) || "0"}
-                  {item.tamano && (
-                    <>
-                      <br />
-                      Tamaño: {item.tamano}
-                    </>
-                  )}
+            {!loading && !error && items.length > 0 && (
+              <>
+                <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, margin: "4px 0 8px" }}>
+                  {items.length} {items.length === 1 ? "especie" : "especies"} en esta zona
                 </div>
-              ))}
+                <div
+                  style={{
+                    maxHeight: "55vh",
+                    overflowY: "auto",
+                    paddingRight: 6,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                  }}
+                >
+                  {items.map((item, index) => (
+                    <div key={index} className="zona-item">
+                      <strong>
+                        {item.nombre_cientifico ||
+                          item.cientifico ||
+                          item.producto ||
+                          "Producto"}
+                      </strong>
+                      <br />
+                      Cantidad: {formatCantidad(item.cantidad || item.total || 0) || "0"}
+                      {item.tamano && (
+                        <>
+                          <br />
+                          Tamaño: {item.tamano}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
-            <button onClick={cerrarModal}>Cerrar</button>
+            <button onClick={cerrarModal} style={{ marginTop: 12 }}>Cerrar</button>
           </Modal>
         )}
       </div>
