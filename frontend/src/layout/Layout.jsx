@@ -922,11 +922,19 @@ function NotificationModal({ open, onClose, notifications, onMarkAsRead }) {
   );
 }
 
+const ZONA_ITEMS_STEP = 8; // cuántos productos se muestran por tanda
+
 function ZonaMapModal({ open, onClose, isAdmin = false }) {
   const [selectedZone, setSelectedZone] = useState(null);
   const [zonaData, setZonaData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [zonaError, setZonaError] = useState("");
+  // Nº de productos visibles (paginación "Mostrar más"). Se reinicia al cambiar
+  // de zona.
+  const [visibleCount, setVisibleCount] = useState(ZONA_ITEMS_STEP);
+  useEffect(() => {
+    setVisibleCount(ZONA_ITEMS_STEP);
+  }, [selectedZone]);
 
   // Arrancamos con los defaults estáticos para pintar instantáneamente.
   // El useEffect refresca desde el servidor cuando el modal se abre.
@@ -1207,7 +1215,7 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
           </div>
         </div>
 
-        <div style={{ padding: 20, overflowY: "auto", minHeight: 0 }}>
+        <div style={{ padding: 20, overflowY: "auto", minHeight: 0, maxHeight: "86vh" }}>
           <div style={{ fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
             {selectedZone ? selectedZoneLabel : "Selecciona una zona"}
           </div>
@@ -1255,7 +1263,7 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
             </div>
           ) : (
             <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-              {zonaData.items.map((item, idx) => (
+              {zonaData.items.slice(0, visibleCount).map((item, idx) => (
                 <div
                   key={`${item.producto_id || item.nombre_cientifico || "item"}-${idx}`}
                   style={{
@@ -1303,6 +1311,43 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
                   </div>
                 </div>
               ))}
+
+              {zonaData.items.length > visibleCount && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((c) => c + ZONA_ITEMS_STEP)}
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    border: "1px dashed rgba(6,182,212,0.5)",
+                    background: "rgba(6,182,212,0.06)",
+                    color: "#0e7490",
+                    fontWeight: 900,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  Mostrar más ({zonaData.items.length - visibleCount} restantes)
+                </button>
+              )}
+              {visibleCount > ZONA_ITEMS_STEP && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount(ZONA_ITEMS_STEP)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(148,163,184,0.35)",
+                    background: "#fff",
+                    color: "#475569",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Mostrar menos
+                </button>
+              )}
             </div>
           )}
         </div>
