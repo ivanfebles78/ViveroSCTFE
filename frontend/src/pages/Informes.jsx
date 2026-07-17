@@ -1402,6 +1402,10 @@ export default function Informes() {
   );
 
   const [activeReport, setActiveReport] = useState(soloInforme || "trazabilidad");
+  // Zonas colapsadas en el informe de inventario (por id de zona).
+  const [zonasInvColapsadas, setZonasInvColapsadas] = useState({});
+  const toggleZonaInv = (zona) =>
+    setZonasInvColapsadas((prev) => ({ ...prev, [zona]: !prev[zona] }));
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -2560,21 +2564,50 @@ export default function Informes() {
 
         {activeReport === "inventario" && (
           <div style={{ marginTop: 22 }}>
-            <div style={{ color: "#64748b", fontWeight: 700, marginBottom: 14 }}>
-              Inventario del vivero por zona. Cada zona muestra sus productos y las unidades por tamaño.
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+              <div style={{ color: "#64748b", fontWeight: 700 }}>
+                Inventario del vivero por zona. Pulsa cada zona para plegar/desplegar.
+              </div>
+              {inventarioVivero.length > 0 && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setZonasInvColapsadas({})}
+                    style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "#fff", color: "#475569", fontWeight: 800, cursor: "pointer", fontSize: 13 }}
+                  >
+                    Expandir todo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setZonasInvColapsadas(Object.fromEntries(inventarioVivero.map((z) => [z.zona, true])))}
+                    style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "#fff", color: "#475569", fontWeight: 800, cursor: "pointer", fontSize: 13 }}
+                  >
+                    Colapsar todo
+                  </button>
+                </div>
+              )}
             </div>
             {inventarioVivero.length === 0 ? (
               <EmptyState text="No hay stock registrado en ninguna zona del vivero." />
             ) : (
               <div style={{ display: "grid", gap: 22 }}>
-                {inventarioVivero.map((zona) => (
+                {inventarioVivero.map((zona) => {
+                  const colapsada = !!zonasInvColapsadas[zona.zona];
+                  return (
                   <div key={zona.zona} style={{ border: "1px solid rgba(15,23,42,0.10)", borderRadius: 14, overflow: "hidden" }}>
-                    <div style={{ padding: "10px 14px", background: "#0f172a", color: "#fff", fontWeight: 900, fontSize: 15, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                      <span>📍 Zona {zona.label}</span>
+                    <div
+                      onClick={() => toggleZonaInv(zona.zona)}
+                      style={{ padding: "10px 14px", background: "#0f172a", color: "#fff", fontWeight: 900, fontSize: 15, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer" }}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12 }}>{colapsada ? "▶" : "▼"}</span>
+                        📍 Zona {zona.label}
+                      </span>
                       <span style={{ opacity: 0.85, fontWeight: 700, fontSize: 13 }}>
                         {zona.productos.length} {zona.productos.length === 1 ? "producto" : "productos"}
                       </span>
                     </div>
+                    {!colapsada && (
                     <div style={{ overflowX: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
                         <thead>
@@ -2608,8 +2641,10 @@ export default function Informes() {
                         </tbody>
                       </table>
                     </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
