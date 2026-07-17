@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
 import { formatFechaCanaria, formatFechaHoraCanaria } from "../utils/fecha";
+import { getZonaLabel } from "../utils/zonas";
 import {
   getDistribucionReporte,
   getMovimientosExternosReporte,
@@ -16,6 +17,7 @@ import {
 const REPORTS = [
   { key: "trazabilidad", label: "Trazabilidad" },
   { key: "distribucion", label: "Distribución" },
+  { key: "inventario", label: "Inventario vivero" },
   { key: "stock", label: "Existencias" },
   { key: "caducidad", label: "Caducidad" },
   { key: "externos", label: "Movimientos externos" },
@@ -23,6 +25,25 @@ const REPORTS = [
   { key: "abastecimiento", label: "Abastecimiento" },
   { key: "bajas", label: "Baja vivero" },
 ];
+
+function fmtCantInv(v) {
+  const n = Number(v || 0);
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2).replace(/\.?0+$/, "");
+}
+
+// Orden de tamaños de maceta para las columnas del inventario por zona.
+const TAM_ORDEN = ["Semillero", "M12", "M20", "M35"];
+function ordenarTamanos(tams) {
+  return [...tams].sort((a, b) => {
+    const ia = TAM_ORDEN.indexOf(a);
+    const ib = TAM_ORDEN.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return String(a).localeCompare(String(b), "es");
+  });
+}
 
 const DISTRICTS = [
   "Anaga",
@@ -916,6 +937,7 @@ async function exportReportToPdf({
   me,
   trazabilidadData,
   distribucionData,
+  inventarioVivero,
   stockExportData,
   caducidadExportData,
   externosData,
@@ -930,6 +952,8 @@ async function exportReportToPdf({
       ? "Reporte de trazabilidad"
       : activeReport === "distribucion"
       ? "Reporte de distribución"
+      : activeReport === "inventario"
+      ? "Inventario del vivero por zona"
       : activeReport === "stock"
       ? "Reporte de existencias"
       : activeReport === "caducidad"
@@ -943,6 +967,35 @@ async function exportReportToPdf({
       : "Reporte de movimientos externos",
     me
   );
+
+  if (activeReport === "inventario") {
+    const zonas = Array.isArray(inventarioVivero) ? inventarioVivero : [];
+    if (zonas.length === 0) {
+      doc.setFontSize(11);
+      doc.text("No hay stock registrado en ninguna zona del vivero.", 14, y + 6);
+    } else {
+      for (const zona of zonas) {
+        const startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : y) + 8;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`Zona ${zona.label}  (${zona.productos.length} productos)`, 14, startY);
+        autoTable(doc, {
+          startY: startY + 3,
+          theme: "grid",
+          head: [["Producto", ...zona.tamanos, "Total"]],
+          body: zona.productos.map((p) => [
+            p.nombre,
+            ...zona.tamanos.map((t) => (p.tamanos[t] ? fmtCantInv(p.tamanos[t]) : "—")),
+            fmtCantInv(p.total),
+          ]),
+          styles: { halign: "center", fontSize: 8, cellPadding: 1.8 },
+          headStyles: { fillColor: [15, 23, 42], halign: "center" },
+          columnStyles: { 0: { halign: "left", cellWidth: "auto", fontStyle: "bold" } },
+        });
+      }
+    }
+  }
 
   if (activeReport === "trazabilidad" && trazabilidadData) {
     autoTable(doc, {
@@ -1248,6 +1301,8 @@ async function exportReportToPdf({
       ? "reporte_trazabilidad"
       : activeReport === "distribucion"
       ? "reporte_distribucion"
+      : activeReport === "inventario"
+      ? "inventario_vivero"
       : activeReport === "stock"
       ? "reporte_existencias"
       : activeReport === "caducidad"
@@ -1543,6 +1598,80 @@ export default function Informes() {
       a.localeCompare(b, "es")
     );
   }, [normalizedStockItems, stockCategoriaFilter]);
+
+  // Inventario por zona: reconstruido de los movimientos (misma lógica que el
+  // mapa del vivero). Por cada zona, productos con su cantidad por tamaño.
+  const inventarioVivero = useMemo(() => {
+    const movs = Array.isArray(movimientos) ? movimientos : [];
+    const prods = Array.isArray(productos) ? productos : [];
+    const prodById = new Map();
+    for (const p of prods) prodById.set(String(p.id), p);
+
+    const agg = new Map(); // zona -> Map(producto_id -> Map(tamaño -> cantidad))
+    const addTo = (zona, pid, tam, delta) => {
+      const z = String(zona || "").trim();
+      const t = String(tam || "").trim();
+      if (!z || !pid || !t) return;
+      if (!agg.has(z)) agg.set(z, new Map());
+      const porProd = agg.get(z);
+      const key = String(pid);
+      if (!porProd.has(key)) porProd.set(key, new Map());
+      const porTam = porProd.get(key);
+      porTam.set(t, (porTam.get(t) || 0) + delta);
+    };
+
+    for (const m of movs) {
+      const cant = Number(m?.cantidad || 0);
+      if (!cant) continue;
+      const pid = m?.producto_id;
+      if (!pid) continue;
+      const destino = String(m?.destino_tipo || "").trim().toLowerCase();
+      const origen = String(m?.origen_tipo || "").trim().toLowerCase();
+      if (destino === "vivero" && m?.zona_destino && m?.tamano_destino) {
+        addTo(m.zona_destino, pid, m.tamano_destino, cant);
+      }
+      if (origen === "vivero" && m?.zona_origen && m?.tamano_origen) {
+        addTo(m.zona_origen, pid, m.tamano_origen, -cant);
+      }
+    }
+
+    const zonas = [];
+    for (const [zona, porProd] of agg.entries()) {
+      const tamsSet = new Set();
+      const productosZona = [];
+      for (const [pid, porTam] of porProd.entries()) {
+        const tamanos = {};
+        let total = 0;
+        for (const [tam, q] of porTam.entries()) {
+          if (q > 1e-9) {
+            tamanos[tam] = q;
+            tamsSet.add(tam);
+            total += q;
+          }
+        }
+        if (total <= 0) continue;
+        const prod = prodById.get(String(pid));
+        productosZona.push({
+          producto_id: pid,
+          nombre: prod?.nombre_cientifico || prod?.nombre_natural || `Producto #${pid}`,
+          categoria: prod?.categoria || "",
+          subcategoria: prod?.subcategoria || "",
+          tamanos,
+          total,
+        });
+      }
+      if (productosZona.length === 0) continue;
+      productosZona.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+      zonas.push({
+        zona,
+        label: getZonaLabel(zona) || zona,
+        tamanos: ordenarTamanos([...tamsSet]),
+        productos: productosZona,
+      });
+    }
+    zonas.sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { numeric: true }));
+    return zonas;
+  }, [movimientos, productos]);
 
   const stockFilteredItems = useMemo(() => {
     const term = stockSearch.trim().toLowerCase();
@@ -1853,6 +1982,7 @@ export default function Informes() {
   const canExportCurrentReport = useMemo(() => {
     if (activeReport === "trazabilidad") return !!trazabilidadData;
     if (activeReport === "distribucion") return !!distribucionData;
+    if (activeReport === "inventario") return inventarioVivero.length > 0;
     if (activeReport === "stock") return stockFilteredItems.length > 0;
     if (activeReport === "caducidad") return caducidadItems.length > 0;
     if (activeReport === "externos") return externosSearched;
@@ -1881,6 +2011,7 @@ export default function Informes() {
         me,
         trazabilidadData,
         distribucionData,
+        inventarioVivero,
         stockExportData,
         caducidadExportData,
         externosData,
@@ -2425,6 +2556,63 @@ export default function Informes() {
               <EmptyState text="Escribe y selecciona un producto para ver su distribución dentro del vivero." />
             )}
           </>
+        )}
+
+        {activeReport === "inventario" && (
+          <div style={{ marginTop: 22 }}>
+            <div style={{ color: "#64748b", fontWeight: 700, marginBottom: 14 }}>
+              Inventario del vivero por zona. Cada zona muestra sus productos y las unidades por tamaño.
+            </div>
+            {inventarioVivero.length === 0 ? (
+              <EmptyState text="No hay stock registrado en ninguna zona del vivero." />
+            ) : (
+              <div style={{ display: "grid", gap: 22 }}>
+                {inventarioVivero.map((zona) => (
+                  <div key={zona.zona} style={{ border: "1px solid rgba(15,23,42,0.10)", borderRadius: 14, overflow: "hidden" }}>
+                    <div style={{ padding: "10px 14px", background: "#0f172a", color: "#fff", fontWeight: 900, fontSize: 15, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <span>📍 Zona {zona.label}</span>
+                      <span style={{ opacity: 0.85, fontWeight: 700, fontSize: 13 }}>
+                        {zona.productos.length} {zona.productos.length === 1 ? "producto" : "productos"}
+                      </span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+                        <thead>
+                          <tr style={{ background: "#f8fafc" }}>
+                            <th style={{ padding: 10, textAlign: "left", fontWeight: 900, fontSize: 12, color: "#334155", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>Producto</th>
+                            {zona.tamanos.map((t) => (
+                              <th key={t} style={{ padding: 10, textAlign: "center", fontWeight: 900, fontSize: 12, color: "#334155", borderBottom: "1px solid rgba(15,23,42,0.08)", whiteSpace: "nowrap" }}>{t}</th>
+                            ))}
+                            <th style={{ padding: 10, textAlign: "center", fontWeight: 900, fontSize: 12, color: "#0f172a", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {zona.productos.map((p) => (
+                            <tr key={p.producto_id} style={{ borderTop: "1px solid rgba(15,23,42,0.06)" }}>
+                              <td style={{ padding: 10, textAlign: "left" }}>
+                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13 }}>{p.nombre}</div>
+                                {(p.categoria || p.subcategoria) && (
+                                  <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
+                                    {[p.categoria, p.subcategoria].filter(Boolean).join(" · ")}
+                                  </div>
+                                )}
+                              </td>
+                              {zona.tamanos.map((t) => (
+                                <td key={t} style={{ padding: 10, textAlign: "center", fontWeight: 800, color: p.tamanos[t] ? "#0f172a" : "#cbd5e1" }}>
+                                  {p.tamanos[t] ? fmtCantInv(p.tamanos[t]) : "—"}
+                                </td>
+                              ))}
+                              <td style={{ padding: 10, textAlign: "center", fontWeight: 900, color: "#065f46" }}>{fmtCantInv(p.total)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {activeReport === "stock" && (
