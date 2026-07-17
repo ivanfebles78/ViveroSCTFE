@@ -985,7 +985,7 @@ async function exportReportToPdf({
           theme: "grid",
           head: [["Producto", ...zona.tamanos, "Total"]],
           body: zona.productos.map((p) => [
-            p.nombre,
+            p.nombreComun ? `${p.nombre}\n${p.nombreComun}` : p.nombre,
             ...zona.tamanos.map((t) => (p.tamanos[t] ? fmtCantInv(p.tamanos[t]) : "—")),
             fmtCantInv(p.total),
           ]),
@@ -1658,6 +1658,7 @@ export default function Informes() {
         productosZona.push({
           producto_id: pid,
           nombre: prod?.nombre_cientifico || prod?.nombre_natural || `Producto #${pid}`,
+          nombreComun: prod?.nombre_natural || "",
           categoria: prod?.categoria || "",
           subcategoria: prod?.subcategoria || "",
           tamanos,
@@ -2623,7 +2624,10 @@ export default function Informes() {
                           {zona.productos.map((p) => (
                             <tr key={p.producto_id} style={{ borderTop: "1px solid rgba(15,23,42,0.06)" }}>
                               <td style={{ padding: 10, textAlign: "left" }}>
-                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13 }}>{p.nombre}</div>
+                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13, fontStyle: "italic" }}>{p.nombre}</div>
+                                {p.nombreComun && (
+                                  <div style={{ fontSize: 12, color: "#334155", fontWeight: 700 }}>{p.nombreComun}</div>
+                                )}
                                 {(p.categoria || p.subcategoria) && (
                                   <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
                                     {[p.categoria, p.subcategoria].filter(Boolean).join(" · ")}
