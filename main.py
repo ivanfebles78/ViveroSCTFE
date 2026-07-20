@@ -3290,6 +3290,7 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
                 "nombre_natural": getattr(prod, "nombre_natural", None),
                 "categoria": getattr(prod, "categoria", None),
                 "subcategoria": getattr(prod, "subcategoria", None),
+                "es_interno": bool(getattr(prod, "es_interno", False)),
                 "cantidad": 0.0,
                 "tamanos_map": {},
             }
@@ -3312,6 +3313,7 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
                 "nombre_natural": item["nombre_natural"],
                 "categoria": item["categoria"],
                 "subcategoria": item["subcategoria"],
+                "es_interno": item["es_interno"],
                 "cantidad": _num_clean(item["cantidad"]),
                 "tamanos": tamanos,
             }
@@ -3323,7 +3325,64 @@ def get_zona_items(zona_id: str, db: Session = Depends(get_db)):
         "zona": zona_id,
         "zona_normalizada": zona_norm,
         "total_productos": len(items),
+        # True si TODOS los productos de la zona son internos (para el checkbox
+        # "Marcar como interna"). Si la zona está vacía, es False.
+        "todos_internos": bool(items) and all(it.get("es_interno") for it in items),
         "items": items,
+    }
+
+
+class ZonaInternaRequest(BaseModel):
+    interno: bool
+
+
+@app.post("/zonas/{zona_id}/marcar-interna")
+def marcar_zona_interna(
+    zona_id: str,
+    payload: ZonaInternaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Marca (o desmarca) como INTERNOS todos los productos con stock en la zona.
+    Los productos internos no los ve ni puede pedir la empresa externa."""
+    zona_norm = _normalize_zona_id(zona_id)
+    movimientos = db.query(Movimiento).all()
+
+    # Neto por (producto, tamaño) en la zona (misma lógica que get_zona_items).
+    agg: dict[tuple, float] = {}
+    for m in movimientos:
+        cant = float(getattr(m, "cantidad", 0) or 0)
+        if cant == 0:
+            continue
+        pid = getattr(m, "producto_id", None)
+        if pid is None:
+            continue
+        destino = _norm_str(getattr(m, "destino_tipo", None))
+        origen = _norm_str(getattr(m, "origen_tipo", None))
+        zd = getattr(m, "zona_destino", None)
+        zo = getattr(m, "zona_origen", None)
+        td = (getattr(m, "tamano_destino", None) or "").strip()
+        to = (getattr(m, "tamano_origen", None) or "").strip()
+        if destino == "vivero" and zd and td and _normalize_zona_id(zd) == zona_norm:
+            agg[(pid, td)] = agg.get((pid, td), 0.0) + cant
+        if origen == "vivero" and zo and to and _normalize_zona_id(zo) == zona_norm:
+            agg[(pid, to)] = agg.get((pid, to), 0.0) - cant
+
+    prod_ids = sorted({pid for (pid, _t), q in agg.items() if q > 1e-9})
+    if not prod_ids:
+        return {"ok": True, "actualizados": 0, "interno": bool(payload.interno), "producto_ids": []}
+
+    actualizados = (
+        db.query(Producto)
+        .filter(Producto.id.in_(prod_ids))
+        .update({Producto.es_interno: bool(payload.interno)}, synchronize_session=False)
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "actualizados": int(actualizados or 0),
+        "interno": bool(payload.interno),
+        "producto_ids": prod_ids,
     }
 
 

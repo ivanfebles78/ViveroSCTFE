@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos } from "../api/api";
+import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos, marcarZonaInterna } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
 import zonasDefault from "../components/vivero/zonasConfig";
 import ZoneEditor from "../components/vivero/ZoneEditor";
@@ -929,6 +929,7 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
   const [zonaData, setZonaData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [zonaError, setZonaError] = useState("");
+  const [internaBusy, setInternaBusy] = useState(false);
   // Nº de productos visibles (paginación "Mostrar más"). Se reinicia al cambiar
   // de zona.
   const [visibleCount, setVisibleCount] = useState(ZONA_ITEMS_STEP);
@@ -1048,6 +1049,24 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Marcar/desmarcar como interna la zona actual (solo admin).
+  const handleMarcarInterna = async (checked) => {
+    const zid = zonaData?._resolvedZone;
+    if (!zid) return;
+    setInternaBusy(true);
+    setZonaError("");
+    try {
+      await marcarZonaInterna(zid, checked);
+      const data = await getZonaItems(zid);
+      setZonaData({ ...(data || {}), _resolvedZone: zid });
+      try { window.dispatchEvent(new Event("vivero:data-changed")); } catch { /* noop */ }
+    } catch (e) {
+      setZonaError(e?.response?.data?.detail || e?.message || "No se pudo actualizar la zona.");
+    } finally {
+      setInternaBusy(false);
     }
   };
 
@@ -1224,6 +1243,40 @@ function ZonaMapModal({ open, onClose, isAdmin = false }) {
             <div style={{ marginTop: 2, fontSize: 14, fontWeight: 800, color: "#1e3a8a" }}>
               {zonaData.items.length} {zonaData.items.length === 1 ? "producto" : "productos"} en esta zona
             </div>
+          ) : null}
+
+          {isAdmin && selectedZone && !loading && !zonaError && zonaData?.items?.length ? (
+            <label
+              style={{
+                marginTop: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(15,23,42,0.12)",
+                background: zonaData.todos_internos ? "rgba(239,68,68,0.06)" : "#f8fafc",
+                cursor: internaBusy ? "wait" : "pointer",
+                fontWeight: 800,
+                color: "#0f172a",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!zonaData.todos_internos}
+                disabled={internaBusy}
+                onChange={(e) => handleMarcarInterna(e.target.checked)}
+                style={{ width: 18, height: 18, cursor: internaBusy ? "wait" : "pointer" }}
+              />
+              <span>
+                Marcar zona como interna
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600, marginTop: 2 }}>
+                  {internaBusy
+                    ? "Actualizando…"
+                    : "Si está marcada, todos los productos de esta zona son internos y la empresa externa no los ve ni los puede pedir."}
+                </div>
+              </span>
+            </label>
           ) : null}
 
           {!selectedZone ? (

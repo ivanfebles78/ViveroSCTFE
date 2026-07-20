@@ -154,6 +154,15 @@ export const getZonaItems = async (zonaId) => {
   return data;
 };
 
+// Marca/desmarca como internos TODOS los productos con stock en la zona (admin).
+export const marcarZonaInterna = async (zonaId, interno) => {
+  const { data } = await api.post(
+    `/zonas/${encodeURIComponent(zonaId)}/marcar-interna`,
+    { interno: !!interno }
+  );
+  return data;
+};
+
 // ---------------- PEDIDOS ----------------
 
 export const getPedidos = async () => {
