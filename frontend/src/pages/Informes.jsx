@@ -1402,6 +1402,8 @@ export default function Informes() {
   );
 
   const [activeReport, setActiveReport] = useState(soloInforme || "trazabilidad");
+  // Menú del botón Exportar (PDF / Excel).
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   // Zonas colapsadas en el informe de inventario (por id de zona).
   const [zonasInvColapsadas, setZonasInvColapsadas] = useState({});
   const toggleZonaInv = (zona) =>
@@ -2187,6 +2189,44 @@ export default function Informes() {
     URL.revokeObjectURL(url);
   };
 
+  // Exporta el informe de Inventario vivero a CSV (matriz por zona con una
+  // columna por tamaño; lo abre Excel).
+  const exportarInventarioExcel = () => {
+    const zonas = Array.isArray(inventarioVivero) ? inventarioVivero : [];
+    if (zonas.length === 0) return;
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    // Unión ordenada de todos los tamaños presentes en cualquier zona.
+    const tamsSet = new Set();
+    for (const z of zonas) for (const t of z.tamanos) tamsSet.add(t);
+    const tamanos = ordenarTamanos([...tamsSet]);
+    const headers = ["Zona", "Nombre científico", "Nombre común", "Categoría", "Subcategoría", ...tamanos, "Total"];
+    const lineas = [];
+    for (const z of zonas) {
+      for (const p of z.productos) {
+        lineas.push([
+          z.label,
+          p.nombre,
+          p.nombreComun || "",
+          p.categoria || "",
+          p.subcategoria || "",
+          ...tamanos.map((t) => (p.tamanos[t] ? fmtCantInv(p.tamanos[t]) : "")),
+          fmtCantInv(p.total),
+        ].map(esc).join(";"));
+      }
+    }
+    const csv = [headers.map(esc).join(";"), ...lineas].join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "inventario_vivero.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (!canAccess) {
     return (
       <div style={{ width: "100%" }}>
@@ -2276,14 +2316,41 @@ export default function Informes() {
             })}
           </div>
 
-          <button
-            onClick={handleExportPdf}
-            disabled={!canExportCurrentReport || exporting}
-            style={secondaryBtnStyle(!canExportCurrentReport || exporting)}
-            title={canExportCurrentReport ? "Exportar informe a PDF" : "Genera primero un informe"}
-          >
-            {exporting ? "Exportando..." : "Exportar a PDF"}
-          </button>
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setExportMenuOpen((o) => !o)}
+              disabled={!canExportCurrentReport || exporting}
+              style={secondaryBtnStyle(!canExportCurrentReport || exporting)}
+              title={canExportCurrentReport ? "Exportar informe" : "Genera primero un informe"}
+            >
+              {exporting ? "Exportando..." : "Exportar ▾"}
+            </button>
+            {exportMenuOpen && canExportCurrentReport && (
+              <>
+                <div onClick={() => setExportMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "#fff", border: "1px solid rgba(15,23,42,0.12)", borderRadius: 12, boxShadow: "0 12px 30px rgba(2,6,23,0.18)", zIndex: 50, minWidth: 190, overflow: "hidden" }}>
+                  <button
+                    onClick={() => { setExportMenuOpen(false); handleExportPdf(); }}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none", borderBottom: "1px solid rgba(15,23,42,0.06)", background: "#fff", cursor: "pointer", fontWeight: 800, color: "#0f172a", fontSize: 14 }}
+                  >
+                    📄 Exportar a PDF
+                  </button>
+                  {(activeReport === "inventario" || activeReport === "externos") && (
+                    <button
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        if (activeReport === "inventario") exportarInventarioExcel();
+                        else if (activeReport === "externos") exportarExternosExcel();
+                      }}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none", background: "#fff", cursor: "pointer", fontWeight: 800, color: "#0f172a", fontSize: 14 }}
+                    >
+                      📊 Exportar a Excel
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {activeReport === "trazabilidad" && (
