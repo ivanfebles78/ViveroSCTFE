@@ -2157,6 +2157,312 @@ const DESTINO_COLORS = [
 ];
 const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
 
+// Modal de SALIDA con varios productos (estilo "Nuevo pedido"): productos
+// filtrables a la izquierda, zonas+cantidades del producto en el centro, y
+// destino + carrito a la derecha. Todas las líneas van al mismo destino.
+function SalidaModal({ open, onClose, productos, stockByProductZoneSize, zonas, onSubmit, saving }) {
+  const [search, setSearch] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [zonaQty, setZonaQty] = useState({}); // { `${zonaLower}__${tam}`: cantidad }
+  const [cart, setCart] = useState([]); // [{ key, producto_id, nombre, zona, tamano, cantidad }]
+  const [destinoTipo, setDestinoTipo] = useState("");
+  const [distrito, setDistrito] = useState("");
+  const [barrio, setBarrio] = useState("");
+  const [direccion, setDireccion] = useState("");
+  const [localError, setLocalError] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria("");
+      setSelectedProductId(""); setZonaQty({}); setCart([]);
+      setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion(""); setLocalError("");
+    }
+  }, [open]);
+  useEffect(() => { setFiltroSubcategoria(""); }, [filtroCategoria]);
+  useEffect(() => { setBarrio(""); }, [distrito]);
+  useEffect(() => { setZonaQty({}); }, [selectedProductId]);
+
+  const sInput = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" };
+
+  const zonaIdByLower = useMemo(() => {
+    const m = new Map();
+    for (const z of safeArray(zonas)) m.set(String(z).toLowerCase(), z);
+    return m;
+  }, [zonas]);
+
+  const esExterno = isExternalDestination(destinoTipo);
+  const esBaja = destinoTipo === "Baja Vivero";
+
+  // Stock disponible por producto (solo tamaños válidos para salida).
+  const stockPorProducto = useMemo(() => {
+    const totals = new Map();
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      const pid = parts[0];
+      const tam = parts.slice(2).join("__");
+      const prod = productos.find((p) => String(p.id) === pid);
+      if (!tamanoDisponiblePlanta(prod, tam)) continue;
+      totals.set(pid, (totals.get(pid) || 0) + Number(qty));
+    }
+    return totals;
+  }, [stockByProductZoneSize, productos]);
+
+  const productosConStock = useMemo(
+    () => safeArray(productos).filter((p) => (stockPorProducto.get(String(p.id)) || 0) > 0),
+    [productos, stockPorProducto]
+  );
+
+  const categoriasDisponibles = useMemo(() => {
+    const s = new Set();
+    for (const p of productosConStock) { const c = String(p?.categoria || "").trim(); if (c) s.add(c); }
+    return [...s].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productosConStock]);
+  const subcategoriasDisponibles = useMemo(() => {
+    if (!filtroCategoria) return [];
+    const s = new Set();
+    for (const p of productosConStock) { if (String(p?.categoria || "").trim() !== filtroCategoria) continue; const sc = String(p?.subcategoria || "").trim(); if (sc) s.add(sc); }
+    return [...s].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productosConStock, filtroCategoria]);
+
+  const productosFiltrados = useMemo(() => {
+    const t = search.trim().toLowerCase();
+    return productosConStock.filter((p) => {
+      if (filtroCategoria && String(p.categoria || "").trim() !== filtroCategoria) return false;
+      if (filtroSubcategoria && String(p.subcategoria || "").trim() !== filtroSubcategoria) return false;
+      if (!t) return true;
+      return getProductDisplayName(p).toLowerCase().includes(t) ||
+        String(p.categoria || "").toLowerCase().includes(t) ||
+        String(p.subcategoria || "").toLowerCase().includes(t);
+    }).sort((a, b) => getProductDisplayName(a).localeCompare(getProductDisplayName(b), "es"));
+  }, [productosConStock, search, filtroCategoria, filtroSubcategoria]);
+
+  const selectedProduct = productos.find((p) => String(p.id) === selectedProductId) || null;
+  const allowDecimals = !!getProductFormatoConfig(selectedProduct)?.allowDecimals;
+
+  // Zonas (con tamaño) del producto seleccionado, descontando lo ya en el carrito.
+  const zonasDelProducto = useMemo(() => {
+    if (!selectedProduct) return [];
+    const pid = String(selectedProduct.id);
+    const rows = [];
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      if (parts[0] !== pid) continue;
+      const zonaLower = parts[1];
+      const tam = parts.slice(2).join("__");
+      if (!tamanoDisponiblePlanta(selectedProduct, tam)) continue;
+      const enCarrito = cart
+        .filter((c) => String(c.producto_id) === pid && String(c.zona).toLowerCase() === zonaLower && c.tamano === tam)
+        .reduce((s, c) => s + Number(c.cantidad || 0), 0);
+      const disp = Math.max(0, Number(qty) - enCarrito);
+      if (disp <= 0) continue;
+      rows.push({ zonaLower, zona: zonaIdByLower.get(zonaLower) || zonaLower, tamano: tam, disponible: disp });
+    }
+    rows.sort((a, b) => b.disponible - a.disponible || String(a.tamano).localeCompare(String(b.tamano)));
+    return rows;
+  }, [selectedProduct, stockByProductZoneSize, cart, zonaIdByLower]);
+
+  const totalSeleccionado = zonasDelProducto.reduce((s, r) => s + Number(zonaQty[`${r.zonaLower}__${r.tamano}`] || 0), 0);
+
+  const addToCart = () => {
+    setLocalError("");
+    if (!selectedProduct) return;
+    const nuevos = [];
+    for (const r of zonasDelProducto) {
+      const rk = `${r.zonaLower}__${r.tamano}`;
+      let q = Number(zonaQty[rk] || 0);
+      if (!allowDecimals) q = Math.round(q);
+      if (q <= 0) continue;
+      if (q > r.disponible) { setLocalError(`En ${getZonaLabel(r.zona)} · ${r.tamano} solo hay ${r.disponible} disponibles.`); return; }
+      nuevos.push({ key: `${selectedProduct.id}-${rk}-${cart.length}-${nuevos.length}`, producto_id: selectedProduct.id, nombre: getProductDisplayName(selectedProduct), zona: r.zona, tamano: r.tamano, cantidad: q });
+    }
+    if (nuevos.length === 0) { setLocalError("Indica cuántas unidades sacar de al menos una zona."); return; }
+    setCart((prev) => [...prev, ...nuevos]);
+    setZonaQty({}); setSelectedProductId("");
+  };
+
+  const removeCart = (key) => setCart((prev) => prev.filter((c) => c.key !== key));
+
+  const destinoValido = !!destinoTipo && (esBaja || (!!distrito && !!barrio && !!String(direccion).trim()));
+  const canSubmit = !saving && cart.length > 0 && destinoValido;
+
+  const submit = async () => {
+    setLocalError("");
+    if (cart.length === 0) { setLocalError("Añade al menos un producto al carrito."); return; }
+    if (!destinoTipo) { setLocalError("Elige el destino de la salida."); return; }
+    if (esExterno && (!distrito || !barrio || !String(direccion).trim())) { setLocalError("Indica distrito, barrio y dirección de destino."); return; }
+    const payloads = cart.map((c) => ({
+      pedido_id: null, pedido_item_id: null,
+      producto_id: Number(c.producto_id),
+      origen_tipo: "Vivero",
+      destino_tipo: destinoTipo,
+      tamano_origen: c.tamano || null,
+      tamano_destino: null,
+      zona_origen: c.zona,
+      zona_destino: null,
+      distrito_destino: esExterno ? (distrito || null) : null,
+      barrio_destino: esExterno ? (barrio || null) : null,
+      direccion_destino: esExterno ? (String(direccion).trim() || null) : null,
+      cp_destino: null,
+      observaciones: null, nota: null,
+      es_prestamo: false, es_devolucion: false, prestamo_referencia_id: null,
+      fecha_disponibilidad: null, fecha_movimiento: null,
+      cantidad: c.cantidad,
+    }));
+    await onSubmit(payloads);
+  };
+
+  if (!open) return null;
+
+  const totalUds = cart.reduce((s, c) => s + Number(c.cantidad || 0), 0);
+  const barriosDisp = distrito ? (DISTRITO_BARRIOS[distrito] || []) : [];
+  const DISTRITOS = Object.keys(DISTRITO_BARRIOS);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.62)", backdropFilter: "blur(6px)", zIndex: 1400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ width: "min(1500px, 97vw)", height: "min(880px, 94vh)", background: "#fff", borderRadius: 22, overflow: "hidden", display: "grid", gridTemplateColumns: "0.95fr 1.05fr 0.9fr", boxShadow: "0 40px 100px rgba(2,6,23,0.4)" }}
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* IZQUIERDA: productos + filtros */}
+        <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", overflowY: "auto", minHeight: 0 }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Productos disponibles</div>
+          <input placeholder="Buscar por nombre, categoría o subcategoría…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...sInput, marginTop: 12 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+            <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={sInput}>
+              <option value="">Todas las categorías</option>
+              {categoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={filtroSubcategoria} onChange={(e) => setFiltroSubcategoria(e.target.value)} disabled={!filtroCategoria || subcategoriasDisponibles.length === 0} style={{ ...sInput, opacity: filtroCategoria ? 1 : 0.55 }}>
+              <option value="">Todas las subcategorías</option>
+              {subcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b", fontWeight: 700 }}>{productosFiltrados.length} con stock</div>
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            {productosFiltrados.length === 0 ? (
+              <div style={{ color: "#64748b", fontWeight: 700 }}>No hay productos con stock para esa búsqueda.</div>
+            ) : productosFiltrados.map((p) => {
+              const active = String(selectedProductId) === String(p.id);
+              const total = stockPorProducto.get(String(p.id)) || 0;
+              return (
+                <button key={p.id} onClick={() => setSelectedProductId(String(p.id))} style={{ textAlign: "left", padding: 12, borderRadius: 12, cursor: "pointer", border: active ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(148,163,184,0.18)", background: active ? "rgba(239,68,68,0.06)" : "#fff" }}>
+                  <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>{getProductDisplayName(p)}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>{(p.categoria || "—") + (p.subcategoria ? ` · ${p.subcategoria}` : "")}</div>
+                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 900, color: "#065f46" }}>Disponible: {formatCantidad(total)}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* CENTRO: zonas del producto seleccionado */}
+        <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", overflowY: "auto", minHeight: 0 }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{selectedProduct ? getProductDisplayName(selectedProduct) : "Selecciona un producto"}</div>
+          {!selectedProduct ? (
+            <div style={{ marginTop: 16, color: "#64748b", fontWeight: 700 }}>Elige un producto de la izquierda para ver sus zonas y las cantidades a sacar de cada una.</div>
+          ) : zonasDelProducto.length === 0 ? (
+            <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto ya no tiene stock disponible para salida (o ya lo has añadido todo al carrito).</div>
+          ) : (
+            <>
+              <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Indica cuántas unidades sacar de cada zona.</div>
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {zonasDelProducto.map((r) => {
+                  const rk = `${r.zonaLower}__${r.tamano}`;
+                  return (
+                    <div key={rk} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{getZonaLabel(r.zona)}</div>
+                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>Tamaño: {r.tamano} · Disponible: {formatCantidad(r.disponible)}</div>
+                      </div>
+                      <input type="number" min={0} max={r.disponible} step={allowDecimals ? "0.01" : "1"} placeholder="0"
+                        value={zonaQty[rk] ?? ""}
+                        onChange={(e) => { let raw = allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); if (raw !== "" && Number(raw) > r.disponible) raw = String(r.disponible); setZonaQty((prev) => ({ ...prev, [rk]: raw })); }}
+                        style={{ ...sInput, width: 92, textAlign: "right" }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ fontWeight: 900, fontSize: 13, color: totalSeleccionado > 0 ? "#065f46" : "#64748b" }}>Seleccionado: {formatCantidad(totalSeleccionado)}</div>
+                <button type="button" onClick={addToCart} disabled={totalSeleccionado <= 0}
+                  style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: totalSeleccionado > 0 ? "linear-gradient(90deg,#10b981,#06b6d4)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: totalSeleccionado > 0 ? "pointer" : "not-allowed", fontSize: 13 }}>
+                  + Añadir al carrito
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* DERECHA: destino + carrito */}
+        <div style={{ padding: 20, overflowY: "auto", minHeight: 0, background: "linear-gradient(180deg,#fff,rgba(240,249,255,0.6))", display: "flex", flexDirection: "column" }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Destino de la salida</div>
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Tipo de destino</div>
+              <select value={destinoTipo} onChange={(e) => setDestinoTipo(e.target.value)} style={sInput}>
+                <option value="">Seleccionar destino</option>
+                {SALIDA_DESTINOS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            {esExterno && (
+              <>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Distrito</div>
+                  <select value={distrito} onChange={(e) => setDistrito(e.target.value)} style={sInput}>
+                    <option value="">Seleccionar distrito</option>
+                    {DISTRITOS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Barrio</div>
+                  <select value={barrio} onChange={(e) => setBarrio(e.target.value)} disabled={!distrito} style={{ ...sInput, opacity: distrito ? 1 : 0.6 }}>
+                    <option value="">{distrito ? "Seleccionar barrio" : "Primero el distrito"}</option>
+                    {barriosDisp.map((b) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Dirección</div>
+                  <input value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Escribe la dirección de destino" style={sInput} />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div style={{ marginTop: 16, fontWeight: 900, color: "#0f172a", fontSize: 15 }}>Carrito ({cart.length} · {formatCantidad(totalUds)} uds)</div>
+          <div style={{ marginTop: 8, display: "grid", gap: 8, flex: 1 }}>
+            {cart.length === 0 ? (
+              <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Añade productos desde el panel central.</div>
+            ) : cart.map((c) => (
+              <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: "#fff", border: "1px solid rgba(15,23,42,0.08)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</div>
+                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>{getZonaLabel(c.zona)} · {c.tamano} · {formatCantidad(c.cantidad)} uds</div>
+                </div>
+                <button type="button" onClick={() => removeCart(c.key)} style={{ border: "none", background: "transparent", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          {localError ? (
+            <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{localError}</div>
+          ) : null}
+
+          <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+            <button onClick={onClose} disabled={saving} style={{ padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cerrar</button>
+            <button onClick={submit} disabled={!canSubmit} style={{ marginLeft: "auto", padding: "11px 22px", borderRadius: 10, border: "none", background: canSubmit ? "linear-gradient(90deg,#ef4444,#f59e0b)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: canSubmit ? "pointer" : "not-allowed", minWidth: 180 }}>
+              {saving ? "Guardando…" : "✓ Registrar salidas"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Movimientos() {
   const [movimientos, setMovimientos] = useState([]);
   const [productos, setProductos] = useState([]);
@@ -2164,6 +2470,7 @@ export default function Movimientos() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showSalidaModal, setShowSalidaModal] = useState(false);
   const [detalleMovimiento, setDetalleMovimiento] = useState(null);
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState("success");
@@ -2338,6 +2645,7 @@ export default function Movimientos() {
         );
       } else {
         setShowModal(false);
+        setShowSalidaModal(false);
         await load();
         showTimedMessage(
           payloads.length > 1
@@ -2378,21 +2686,38 @@ export default function Movimientos() {
           </div>
         </div>
 
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            padding: "12px 18px",
-            borderRadius: 16,
-            border: "1px solid rgba(16,185,129,0.28)",
-            background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
-            color: "white",
-            fontWeight: 900,
-            cursor: "pointer",
-            boxShadow: "0 16px 36px rgba(6,182,212,0.18)",
-          }}
-        >
-          Nuevo movimiento
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowSalidaModal(true)}
+            style={{
+              padding: "12px 18px",
+              borderRadius: 16,
+              border: "1px solid rgba(239,68,68,0.30)",
+              background: "linear-gradient(90deg, #ef4444 0%, #f59e0b 100%)",
+              color: "white",
+              fontWeight: 900,
+              cursor: "pointer",
+              boxShadow: "0 16px 36px rgba(239,68,68,0.18)",
+            }}
+          >
+            Nueva salida (varios productos)
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            style={{
+              padding: "12px 18px",
+              borderRadius: 16,
+              border: "1px solid rgba(16,185,129,0.28)",
+              background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
+              color: "white",
+              fontWeight: 900,
+              cursor: "pointer",
+              boxShadow: "0 16px 36px rgba(6,182,212,0.18)",
+            }}
+          >
+            Nuevo movimiento
+          </button>
+        </div>
       </div>
 
       <MessageBanner
@@ -2832,6 +3157,16 @@ export default function Movimientos() {
         onSubmit={handleCreateMovimiento}
         saving={saving}
         zonas={zonasDisponibles}
+      />
+
+      <SalidaModal
+        open={showSalidaModal}
+        onClose={() => setShowSalidaModal(false)}
+        productos={productos}
+        stockByProductZoneSize={stockByProductZoneSize}
+        zonas={zonasDisponibles}
+        onSubmit={handleCreateMovimiento}
+        saving={saving}
       />
 
       <MovimientoDetalleModal
