@@ -2160,7 +2160,15 @@ const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DEST
 // Modal de SALIDA con varios productos (estilo "Nuevo pedido"): productos
 // filtrables a la izquierda, zonas+cantidades del producto en el centro, y
 // destino + carrito a la derecha. Todas las líneas van al mismo destino.
-function SalidaModal({ open, onClose, productos, stockByProductZoneSize, zonas, onSubmit, saving }) {
+function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, saving }) {
+  // El stock por producto/zona/tamaño se reconstruye aquí de los movimientos
+  // (mismo helper que el resto de la pantalla).
+  const stockByProductZoneSize = useMemo(() => buildStockByProductZoneSize(movimientos), [movimientos]);
+  const prodById = useMemo(() => {
+    const m = new Map();
+    for (const p of safeArray(productos)) m.set(String(p.id), p);
+    return m;
+  }, [productos]);
   const [search, setSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
@@ -2203,12 +2211,12 @@ function SalidaModal({ open, onClose, productos, stockByProductZoneSize, zonas, 
       const parts = key.split("__");
       const pid = parts[0];
       const tam = parts.slice(2).join("__");
-      const prod = productos.find((p) => String(p.id) === pid);
+      const prod = prodById.get(pid);
       if (!tamanoDisponiblePlanta(prod, tam)) continue;
       totals.set(pid, (totals.get(pid) || 0) + Number(qty));
     }
     return totals;
-  }, [stockByProductZoneSize, productos]);
+  }, [stockByProductZoneSize, prodById]);
 
   const productosConStock = useMemo(
     () => safeArray(productos).filter((p) => (stockPorProducto.get(String(p.id)) || 0) > 0),
@@ -2239,7 +2247,7 @@ function SalidaModal({ open, onClose, productos, stockByProductZoneSize, zonas, 
     }).sort((a, b) => getProductDisplayName(a).localeCompare(getProductDisplayName(b), "es"));
   }, [productosConStock, search, filtroCategoria, filtroSubcategoria]);
 
-  const selectedProduct = productos.find((p) => String(p.id) === selectedProductId) || null;
+  const selectedProduct = prodById.get(String(selectedProductId)) || null;
   const allowDecimals = !!getProductFormatoConfig(selectedProduct)?.allowDecimals;
 
   // Zonas (con tamaño) del producto seleccionado, descontando lo ya en el carrito.
@@ -3163,7 +3171,7 @@ export default function Movimientos() {
         open={showSalidaModal}
         onClose={() => setShowSalidaModal(false)}
         productos={productos}
-        stockByProductZoneSize={stockByProductZoneSize}
+        movimientos={movimientos}
         zonas={zonasDisponibles}
         onSubmit={handleCreateMovimiento}
         saving={saving}
