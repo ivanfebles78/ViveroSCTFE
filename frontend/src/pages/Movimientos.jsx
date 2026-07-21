@@ -1434,16 +1434,27 @@ function MovimientoModal({
       if (!result.ok) return;
       allPayloads = [...allPayloads, ...result.payloads];
     } else { setErrors([]); }
-    // La fecha/hora personalizada y las observaciones se eligen en el paso 3,
-    // pero las líneas del lote (salida por zonas, pedido…) se construyeron en el
-    // paso 2. Aplicamos aquí esos campos globales a TODAS las líneas.
+    // La fecha/hora personalizada, las observaciones y —en salidas directas— la
+    // dirección de destino se eligen en el paso 3, pero las líneas del lote se
+    // construyeron en el paso 2 (sin dirección). Aplicamos aquí esos campos
+    // globales a TODAS las líneas. En pedidos NO se toca la dirección (cada
+    // línea lleva la suya).
     const fechaMov = form.usar_fecha_personalizada && form.fecha_movimiento ? datetimeLocalToUtcIso(form.fecha_movimiento) : null;
     const obs = (form.observaciones || "").trim();
+    const aplicarDireccion = !selectedPedido && isExternalDestination(form.destino_tipo);
     const finalPayloads = allPayloads.map((p) => ({
       ...p,
       fecha_movimiento: fechaMov,
       observaciones: obs || p.observaciones || null,
       nota: obs || p.nota || null,
+      ...(aplicarDireccion
+        ? {
+            distrito_destino: form.distrito_destino || null,
+            barrio_destino: form.barrio_destino || null,
+            direccion_destino: form.direccion_destino || null,
+            cp_destino: form.cp_destino || null,
+          }
+        : {}),
     }));
     await onSubmit(finalPayloads);
   };
@@ -1877,6 +1888,9 @@ function MovimientoModal({
 
                 {selectedProducto && formTieneLineaActual() && selectedPedido && (
                   <button type="button" onClick={addCurrentToBatch} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(59,130,246,0.30)", background: "rgba(59,130,246,0.10)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>+ Añadir al lote y seleccionar otra línea</button>
+                )}
+                {selectedProducto && formTieneLineaActual() && !selectedPedido && (
+                  <button type="button" onClick={addCurrentToBatch} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(16,185,129,0.35)", background: "rgba(16,185,129,0.10)", color: "#065f46", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>+ Añadir este producto y elegir otro</button>
                 )}
               </div>
             )}
