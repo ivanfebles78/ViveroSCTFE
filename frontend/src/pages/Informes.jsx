@@ -979,7 +979,7 @@ async function exportReportToPdf({
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12);
         doc.setTextColor(15, 23, 42);
-        doc.text(`Zona ${zona.label}  (${zona.productos.length} productos)`, 14, startY);
+        doc.text(`${zona.label}  (${zona.productos.length} productos)`, 14, startY);
         autoTable(doc, {
           startY: startY + 3,
           theme: "grid",
@@ -1392,16 +1392,24 @@ export default function Informes() {
   const isTecnico = role === "tecnico";
   const canAccess = role === "admin" || role === "manager" || isEmpresaExterna || isTecnico;
 
-  // Clave del único informe permitido para roles restringidos (o null = todos).
-  const soloInforme = isEmpresaExterna ? "externos" : isTecnico ? "distribucion" : null;
+  // Informes permitidos por rol (null = todos):
+  //   - empresa externa → solo "Movimientos externos".
+  //   - técnico → "Distribución" e "Inventario vivero".
+  const allowedReportKeys = isEmpresaExterna
+    ? ["externos"]
+    : isTecnico
+    ? ["distribucion", "inventario"]
+    : null;
 
   // Pestañas visibles según el rol.
   const visibleReports = useMemo(
-    () => (soloInforme ? REPORTS.filter((r) => r.key === soloInforme) : REPORTS),
-    [soloInforme]
+    () => (allowedReportKeys ? REPORTS.filter((r) => allowedReportKeys.includes(r.key)) : REPORTS),
+    [role]
   );
 
-  const [activeReport, setActiveReport] = useState(soloInforme || "trazabilidad");
+  const [activeReport, setActiveReport] = useState(
+    allowedReportKeys ? allowedReportKeys[0] : "trazabilidad"
+  );
   // Menú del botón Exportar (PDF / Excel).
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   // Zonas colapsadas en el informe de inventario (por id de zona).
@@ -2669,7 +2677,7 @@ export default function Informes() {
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 12 }}>{colapsada ? "▶" : "▼"}</span>
-                        📍 Zona {zona.label}
+                        📍 {zona.label}
                       </span>
                       <span style={{ opacity: 0.85, fontWeight: 700, fontSize: 13 }}>
                         {zona.productos.length} {zona.productos.length === 1 ? "producto" : "productos"}
