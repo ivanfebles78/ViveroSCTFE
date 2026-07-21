@@ -743,6 +743,35 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
     });
   }, [productos, search, filtroCategoria, filtroSubcategoria]);
 
+  // Exporta TODOS los productos del catálogo a CSV (lo abre Excel).
+  const exportarProductosExcel = () => {
+    const lista = Array.isArray(productos) ? productos : [];
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ["Nombre científico", "Nombre común", "Categoría", "Subcategoría", "Stock", "Stock mínimo", "Interno"];
+    const lineas = lista.map((p) =>
+      [
+        p.nombre_cientifico || "",
+        p.nombre_natural || "",
+        p.categoria || "",
+        p.subcategoria || "",
+        p.stock ?? "",
+        p.stock_minimo === null || p.stock_minimo === undefined ? "" : p.stock_minimo,
+        p.es_interno ? "Sí" : "No",
+      ].map(esc).join(";")
+    );
+    const csv = [headers.map(esc).join(";"), ...lineas].join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "productos_vivero.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const startEdit = (p) => {
     setEditingId(p.id);
     setEditForm({
@@ -989,6 +1018,15 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                     Limpiar
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={exportarProductosExcel}
+                  disabled={!productos.length}
+                  title="Exportar todos los productos a Excel"
+                  style={{ marginLeft: "auto", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(16,185,129,0.35)", background: productos.length ? "rgba(16,185,129,0.10)" : "#f1f5f9", color: "#065f46", fontWeight: 800, cursor: productos.length ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
+                >
+                  ⬇ Exportar a Excel
+                </button>
               </div>
               <div style={{ marginBottom: 10, fontSize: 13, color: "#64748b", fontWeight: 700 }}>
                 {productosFiltrados.length} {productosFiltrados.length === 1 ? "producto" : "productos"}
