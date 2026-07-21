@@ -2157,40 +2157,77 @@ const DESTINO_COLORS = [
 ];
 const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
 
-// Modal de SALIDA con varios productos (estilo "Nuevo pedido"): productos
-// filtrables a la izquierda, zonas+cantidades del producto en el centro, y
-// destino + carrito a la derecha. Todas las líneas van al mismo destino.
-function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, saving }) {
-  // El stock por producto/zona/tamaño se reconstruye aquí de los movimientos
-  // (mismo helper que el resto de la pantalla).
+// Modal unificado de movimiento con carrito (estilo "Nuevo pedido"). Un
+// selector de tipo arriba (Entrada / Salida / Traslado) y tres columnas:
+//   · Entrada  → izq: productos · centro: cantidad por tamaño + zona destino ·
+//                der: origen (compartido) + carrito. Cada línea a su zona.
+//   · Salida   → izq: productos con stock · centro: cantidad por zona ·
+//                der: destino + dirección (compartido) + carrito.
+//   · Traslado → izq: zona origen + sus productos · centro: cuánto sale de
+//                cada tamaño + zona/tamaño destino · der: carrito.
+// Se pueden añadir varios productos antes de registrar.
+const TIPO_META = {
+  entrada: { label: "Entrada", grad: "linear-gradient(90deg,#10b981,#06b6d4)", accent: "#10b981", tint: "rgba(16,185,129,0.07)", border: "rgba(16,185,129,0.4)", cta: "✓ Registrar entradas" },
+  salida: { label: "Salida", grad: "linear-gradient(90deg,#ef4444,#f59e0b)", accent: "#ef4444", tint: "rgba(239,68,68,0.06)", border: "rgba(239,68,68,0.4)", cta: "✓ Registrar salidas" },
+  traslado_interno: { label: "Traslado", grad: "linear-gradient(90deg,#6366f1,#0ea5e9)", accent: "#6366f1", tint: "rgba(99,102,241,0.07)", border: "rgba(99,102,241,0.4)", cta: "✓ Registrar traslados" },
+};
+
+function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, onSubmit, saving }) {
   const stockByProductZoneSize = useMemo(() => buildStockByProductZoneSize(movimientos), [movimientos]);
   const prodById = useMemo(() => {
     const m = new Map();
     for (const p of safeArray(productos)) m.set(String(p.id), p);
     return m;
   }, [productos]);
+
+  const [tipo, setTipo] = useState("salida"); // entrada | salida | traslado_interno
   const [search, setSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroSubcategoria, setFiltroSubcategoria] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
-  const [zonaQty, setZonaQty] = useState({}); // { `${zonaLower}__${tam}`: cantidad }
-  const [cart, setCart] = useState([]); // [{ key, producto_id, nombre, zona, tamano, cantidad }]
+  const [sourceZone, setSourceZone] = useState("");       // traslado: zona origen
+  const [sizeQty, setSizeQty] = useState({});              // entrada/traslado: { tamano: cantidad }
+  const [zonaQty, setZonaQty] = useState({});              // salida: { `${zonaLower}__${tam}`: cantidad }
+  const [lineZonaDestino, setLineZonaDestino] = useState(""); // entrada/traslado: zona destino de la línea
+  const [lineTamanoDestino, setLineTamanoDestino] = useState(""); // traslado: tamaño destino ("" = mismo)
+  // Compartido de entrada / salida.
+  const [entradaOrigen, setEntradaOrigen] = useState("");
+  const [entradaOtros, setEntradaOtros] = useState("");
   const [destinoTipo, setDestinoTipo] = useState("");
   const [distrito, setDistrito] = useState("");
   const [barrio, setBarrio] = useState("");
   const [direccion, setDireccion] = useState("");
+  const [cart, setCart] = useState([]);
   const [localError, setLocalError] = useState("");
+
+  const meta = TIPO_META[tipo] || TIPO_META.salida;
+  const esEntrada = tipo === "entrada";
+  const esSalida = tipo === "salida";
+  const esTraslado = tipo === "traslado_interno";
+
+  const resetSeleccion = () => { setSelectedProductId(""); setSizeQty({}); setZonaQty({}); setLineZonaDestino(""); setLineTamanoDestino(""); };
 
   useEffect(() => {
     if (!open) {
-      setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria("");
-      setSelectedProductId(""); setZonaQty({}); setCart([]);
-      setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion(""); setLocalError("");
+      setTipo("salida"); setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria("");
+      setSelectedProductId(""); setSourceZone(""); setSizeQty({}); setZonaQty({});
+      setLineZonaDestino(""); setLineTamanoDestino("");
+      setEntradaOrigen(""); setEntradaOtros(""); setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion("");
+      setCart([]); setLocalError("");
     }
   }, [open]);
+  // Cambiar de tipo reinicia toda la selección y el carrito (las líneas son
+  // específicas del tipo).
+  useEffect(() => {
+    setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria("");
+    resetSeleccion(); setSourceZone("");
+    setEntradaOrigen(""); setEntradaOtros(""); setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion("");
+    setCart([]); setLocalError("");
+  }, [tipo]);
   useEffect(() => { setFiltroSubcategoria(""); }, [filtroCategoria]);
   useEffect(() => { setBarrio(""); }, [distrito]);
-  useEffect(() => { setZonaQty({}); }, [selectedProductId]);
+  useEffect(() => { setSizeQty({}); setZonaQty({}); setLineZonaDestino(""); setLineTamanoDestino(""); }, [selectedProductId]);
+  useEffect(() => { resetSeleccion(); }, [sourceZone]); // traslado: cambiar origen resetea producto
 
   const sInput = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" };
 
@@ -2203,7 +2240,7 @@ function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, s
   const esExterno = isExternalDestination(destinoTipo);
   const esBaja = destinoTipo === "Baja Vivero";
 
-  // Stock disponible por producto (solo tamaños válidos para salida).
+  // Stock total por producto (solo tamaños válidos) — para salida.
   const stockPorProducto = useMemo(() => {
     const totals = new Map();
     for (const [key, qty] of stockByProductZoneSize.entries()) {
@@ -2218,26 +2255,52 @@ function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, s
     return totals;
   }, [stockByProductZoneSize, prodById]);
 
-  const productosConStock = useMemo(
-    () => safeArray(productos).filter((p) => (stockPorProducto.get(String(p.id)) || 0) > 0),
-    [productos, stockPorProducto]
-  );
+  // Stock por producto en la zona origen (solo traslado).
+  const stockEnZonaOrigen = useMemo(() => {
+    const totals = new Map();
+    if (!sourceZone) return totals;
+    const zl = String(sourceZone).toLowerCase();
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      if (parts[1] !== zl) continue;
+      const pid = parts[0];
+      const tam = parts.slice(2).join("__");
+      const prod = prodById.get(pid);
+      if (!tamanoDisponiblePlanta(prod, tam)) continue;
+      totals.set(pid, (totals.get(pid) || 0) + Number(qty));
+    }
+    return totals;
+  }, [sourceZone, stockByProductZoneSize, prodById]);
+
+  // Base de productos del panel izquierdo según el tipo.
+  const productosBase = useMemo(() => {
+    if (esEntrada) return safeArray(productos);
+    if (esTraslado) return safeArray(productos).filter((p) => (stockEnZonaOrigen.get(String(p.id)) || 0) > 0);
+    return safeArray(productos).filter((p) => (stockPorProducto.get(String(p.id)) || 0) > 0);
+  }, [esEntrada, esTraslado, productos, stockEnZonaOrigen, stockPorProducto]);
+
+  const infoStock = (pid) => {
+    if (esEntrada) return null;
+    if (esTraslado) return stockEnZonaOrigen.get(String(pid)) || 0;
+    return stockPorProducto.get(String(pid)) || 0;
+  };
 
   const categoriasDisponibles = useMemo(() => {
     const s = new Set();
-    for (const p of productosConStock) { const c = String(p?.categoria || "").trim(); if (c) s.add(c); }
+    for (const p of productosBase) { const c = String(p?.categoria || "").trim(); if (c) s.add(c); }
     return [...s].sort((a, b) => a.localeCompare(b, "es"));
-  }, [productosConStock]);
+  }, [productosBase]);
   const subcategoriasDisponibles = useMemo(() => {
     if (!filtroCategoria) return [];
     const s = new Set();
-    for (const p of productosConStock) { if (String(p?.categoria || "").trim() !== filtroCategoria) continue; const sc = String(p?.subcategoria || "").trim(); if (sc) s.add(sc); }
+    for (const p of productosBase) { if (String(p?.categoria || "").trim() !== filtroCategoria) continue; const sc = String(p?.subcategoria || "").trim(); if (sc) s.add(sc); }
     return [...s].sort((a, b) => a.localeCompare(b, "es"));
-  }, [productosConStock, filtroCategoria]);
+  }, [productosBase, filtroCategoria]);
 
   const productosFiltrados = useMemo(() => {
     const t = search.trim().toLowerCase();
-    return productosConStock.filter((p) => {
+    return productosBase.filter((p) => {
       if (filtroCategoria && String(p.categoria || "").trim() !== filtroCategoria) return false;
       if (filtroSubcategoria && String(p.subcategoria || "").trim() !== filtroSubcategoria) return false;
       if (!t) return true;
@@ -2245,14 +2308,56 @@ function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, s
         String(p.categoria || "").toLowerCase().includes(t) ||
         String(p.subcategoria || "").toLowerCase().includes(t);
     }).sort((a, b) => getProductDisplayName(a).localeCompare(getProductDisplayName(b), "es"));
-  }, [productosConStock, search, filtroCategoria, filtroSubcategoria]);
+  }, [productosBase, search, filtroCategoria, filtroSubcategoria]);
 
   const selectedProduct = prodById.get(String(selectedProductId)) || null;
-  const allowDecimals = !!getProductFormatoConfig(selectedProduct)?.allowDecimals;
+  const formatoConfig = getProductFormatoConfig(selectedProduct);
+  const allowDecimals = !!formatoConfig?.allowDecimals;
 
-  // Zonas (con tamaño) del producto seleccionado, descontando lo ya en el carrito.
-  const zonasDelProducto = useMemo(() => {
-    if (!selectedProduct) return [];
+  // Zonas destino permitidas según categoría (entrada/traslado).
+  const zonasDestinoPermitidas = useMemo(
+    () => getZonasPermitidasParaCategoria(selectedProduct, zonas),
+    [selectedProduct, zonas]
+  );
+  // Si solo hay una zona destino posible, la fijamos automáticamente.
+  useEffect(() => {
+    if ((esEntrada || esTraslado) && selectedProduct && zonasDestinoPermitidas.length === 1) {
+      setLineZonaDestino(zonasDestinoPermitidas[0]);
+    }
+  }, [esEntrada, esTraslado, selectedProduct, zonasDestinoPermitidas]);
+
+  // ENTRADA: tamaños posibles del producto (destino).
+  const tamanosEntrada = useMemo(() => {
+    if (!esEntrada || !selectedProduct) return [];
+    return getFormatoOptions(formatoConfig).filter((t) => tamanoDisponiblePlanta(selectedProduct, t));
+  }, [esEntrada, selectedProduct, formatoConfig]);
+
+  // TRASLADO: tamaños con stock en la zona origen (descontando carrito).
+  const tamanosTraslado = useMemo(() => {
+    if (!esTraslado || !selectedProduct || !sourceZone) return [];
+    const pid = String(selectedProduct.id);
+    const zl = String(sourceZone).toLowerCase();
+    const rows = [];
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      const parts = key.split("__");
+      if (parts[0] !== pid || parts[1] !== zl) continue;
+      const tam = parts.slice(2).join("__");
+      if (!tamanoDisponiblePlanta(selectedProduct, tam)) continue;
+      const enCarrito = cart
+        .filter((c) => String(c.producto_id) === pid && String(c.zona_origen || "").toLowerCase() === zl && c.tamano_origen === tam)
+        .reduce((s, c) => s + Number(c.cantidad || 0), 0);
+      const disp = Math.max(0, Number(qty) - enCarrito);
+      if (disp <= 0) continue;
+      rows.push({ tamano: tam, disponible: disp });
+    }
+    rows.sort((a, b) => String(a.tamano).localeCompare(String(b.tamano)));
+    return rows;
+  }, [esTraslado, selectedProduct, sourceZone, stockByProductZoneSize, cart]);
+
+  // SALIDA: zonas (con tamaño) del producto, descontando carrito.
+  const zonasSalida = useMemo(() => {
+    if (!esSalida || !selectedProduct) return [];
     const pid = String(selectedProduct.id);
     const rows = [];
     for (const [key, qty] of stockByProductZoneSize.entries()) {
@@ -2263,7 +2368,7 @@ function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, s
       const tam = parts.slice(2).join("__");
       if (!tamanoDisponiblePlanta(selectedProduct, tam)) continue;
       const enCarrito = cart
-        .filter((c) => String(c.producto_id) === pid && String(c.zona).toLowerCase() === zonaLower && c.tamano === tam)
+        .filter((c) => String(c.producto_id) === pid && String(c.zona_origen || "").toLowerCase() === zonaLower && c.tamano_origen === tam)
         .reduce((s, c) => s + Number(c.cantidad || 0), 0);
       const disp = Math.max(0, Number(qty) - enCarrito);
       if (disp <= 0) continue;
@@ -2271,55 +2376,102 @@ function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, s
     }
     rows.sort((a, b) => b.disponible - a.disponible || String(a.tamano).localeCompare(String(b.tamano)));
     return rows;
-  }, [selectedProduct, stockByProductZoneSize, cart, zonaIdByLower]);
+  }, [esSalida, selectedProduct, stockByProductZoneSize, cart, zonaIdByLower]);
 
-  const totalSeleccionado = zonasDelProducto.reduce((s, r) => s + Number(zonaQty[`${r.zonaLower}__${r.tamano}`] || 0), 0);
+  const totalSeleccionado = useMemo(() => {
+    if (esSalida) return zonasSalida.reduce((s, r) => s + Number(zonaQty[`${r.zonaLower}__${r.tamano}`] || 0), 0);
+    const sizes = esEntrada ? tamanosEntrada : tamanosTraslado.map((r) => r.tamano);
+    return sizes.reduce((s, t) => s + Number(sizeQty[t] || 0), 0);
+  }, [esSalida, esEntrada, zonasSalida, zonaQty, tamanosEntrada, tamanosTraslado, sizeQty]);
+
+  // Zonas seleccionables como origen del traslado (las que tienen algún stock).
+  const zonasConStockGlobal = useMemo(() => {
+    const s = new Set();
+    for (const [key, qty] of stockByProductZoneSize.entries()) {
+      if (Number(qty) <= 0) continue;
+      s.add(key.split("__")[1]);
+    }
+    return naturalSortZonas(safeArray(zonas).filter((z) => s.has(String(z).toLowerCase())));
+  }, [stockByProductZoneSize, zonas]);
+
+  const removeCart = (key) => setCart((prev) => prev.filter((c) => c.key !== key));
 
   const addToCart = () => {
     setLocalError("");
     if (!selectedProduct) return;
+    const nombre = getProductDisplayName(selectedProduct);
     const nuevos = [];
-    for (const r of zonasDelProducto) {
-      const rk = `${r.zonaLower}__${r.tamano}`;
-      let q = Number(zonaQty[rk] || 0);
-      if (!allowDecimals) q = Math.round(q);
-      if (q <= 0) continue;
-      if (q > r.disponible) { setLocalError(`En ${getZonaLabel(r.zona)} · ${r.tamano} solo hay ${r.disponible} disponibles.`); return; }
-      nuevos.push({ key: `${selectedProduct.id}-${rk}-${cart.length}-${nuevos.length}`, producto_id: selectedProduct.id, nombre: getProductDisplayName(selectedProduct), zona: r.zona, tamano: r.tamano, cantidad: q });
+
+    if (esEntrada) {
+      if (!lineZonaDestino) { setLocalError("Elige la zona destino de este producto."); return; }
+      for (const tam of tamanosEntrada) {
+        let q = Number(sizeQty[tam] || 0);
+        if (!allowDecimals) q = Math.round(q);
+        if (q <= 0) continue;
+        nuevos.push({ key: `${selectedProduct.id}-${tam}-${cart.length}-${nuevos.length}`, tipo: "entrada", producto_id: selectedProduct.id, nombre, tamano_destino: tam, zona_destino: lineZonaDestino, cantidad: q });
+      }
+      if (nuevos.length === 0) { setLocalError("Indica cuántas unidades entran de al menos un tamaño."); return; }
+    } else if (esTraslado) {
+      if (!lineZonaDestino) { setLocalError("Elige la zona destino del traslado."); return; }
+      for (const r of tamanosTraslado) {
+        let q = Number(sizeQty[r.tamano] || 0);
+        if (!allowDecimals) q = Math.round(q);
+        if (q <= 0) continue;
+        if (q > r.disponible) { setLocalError(`En ${getZonaLabel(sourceZone)} · ${r.tamano} solo hay ${r.disponible} disponibles.`); return; }
+        nuevos.push({ key: `${selectedProduct.id}-${r.tamano}-${cart.length}-${nuevos.length}`, tipo: "traslado_interno", producto_id: selectedProduct.id, nombre, zona_origen: sourceZone, tamano_origen: r.tamano, zona_destino: lineZonaDestino, tamano_destino: lineTamanoDestino || r.tamano, cantidad: q });
+      }
+      if (nuevos.length === 0) { setLocalError("Indica cuántas unidades trasladar de al menos un tamaño."); return; }
+    } else {
+      for (const r of zonasSalida) {
+        const rk = `${r.zonaLower}__${r.tamano}`;
+        let q = Number(zonaQty[rk] || 0);
+        if (!allowDecimals) q = Math.round(q);
+        if (q <= 0) continue;
+        if (q > r.disponible) { setLocalError(`En ${getZonaLabel(r.zona)} · ${r.tamano} solo hay ${r.disponible} disponibles.`); return; }
+        nuevos.push({ key: `${selectedProduct.id}-${rk}-${cart.length}-${nuevos.length}`, tipo: "salida", producto_id: selectedProduct.id, nombre, zona_origen: r.zona, tamano_origen: r.tamano, cantidad: q });
+      }
+      if (nuevos.length === 0) { setLocalError("Indica cuántas unidades sacar de al menos una zona."); return; }
     }
-    if (nuevos.length === 0) { setLocalError("Indica cuántas unidades sacar de al menos una zona."); return; }
     setCart((prev) => [...prev, ...nuevos]);
-    setZonaQty({}); setSelectedProductId("");
+    resetSeleccion();
   };
 
-  const removeCart = (key) => setCart((prev) => prev.filter((c) => c.key !== key));
-
-  const destinoValido = !!destinoTipo && (esBaja || (!!distrito && !!barrio && !!String(direccion).trim()));
-  const canSubmit = !saving && cart.length > 0 && destinoValido;
+  // Validez del panel derecho compartido.
+  const compartidoValido = esEntrada
+    ? (!!entradaOrigen && (entradaOrigen !== ENTRADA_ORIGEN_OTROS || !!entradaOtros.trim()))
+    : esSalida
+      ? (!!destinoTipo && (esBaja || (!!distrito && !!barrio && !!String(direccion).trim())))
+      : true; // traslado no tiene compartido
+  const canSubmit = !saving && cart.length > 0 && compartidoValido;
 
   const submit = async () => {
     setLocalError("");
     if (cart.length === 0) { setLocalError("Añade al menos un producto al carrito."); return; }
-    if (!destinoTipo) { setLocalError("Elige el destino de la salida."); return; }
-    if (esExterno && (!distrito || !barrio || !String(direccion).trim())) { setLocalError("Indica distrito, barrio y dirección de destino."); return; }
-    const payloads = cart.map((c) => ({
+    if (esEntrada && !entradaOrigen) { setLocalError("Elige el origen de la entrada."); return; }
+    if (esEntrada && entradaOrigen === ENTRADA_ORIGEN_OTROS && !entradaOtros.trim()) { setLocalError("Especifica el origen de la entrada."); return; }
+    if (esSalida && !destinoTipo) { setLocalError("Elige el destino de la salida."); return; }
+    if (esSalida && esExterno && (!distrito || !barrio || !String(direccion).trim())) { setLocalError("Indica distrito, barrio y dirección de destino."); return; }
+
+    const origenEntradaFinal = entradaOrigen === ENTRADA_ORIGEN_OTROS && entradaOtros.trim()
+      ? entradaOtros.trim().slice(0, 30)
+      : entradaOrigen;
+
+    const base = () => ({
       pedido_id: null, pedido_item_id: null,
-      producto_id: Number(c.producto_id),
-      origen_tipo: "Vivero",
-      destino_tipo: destinoTipo,
-      tamano_origen: c.tamano || null,
-      tamano_destino: null,
-      zona_origen: c.zona,
-      zona_destino: null,
-      distrito_destino: esExterno ? (distrito || null) : null,
-      barrio_destino: esExterno ? (barrio || null) : null,
-      direccion_destino: esExterno ? (String(direccion).trim() || null) : null,
-      cp_destino: null,
-      observaciones: null, nota: null,
+      cp_destino: null, observaciones: null, nota: null,
       es_prestamo: false, es_devolucion: false, prestamo_referencia_id: null,
       fecha_disponibilidad: null, fecha_movimiento: null,
-      cantidad: c.cantidad,
-    }));
+    });
+
+    const payloads = cart.map((c) => {
+      if (c.tipo === "entrada") {
+        return { ...base(), producto_id: Number(c.producto_id), origen_tipo: origenEntradaFinal, destino_tipo: "Vivero", tamano_origen: null, tamano_destino: c.tamano_destino || null, zona_origen: null, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad };
+      }
+      if (c.tipo === "traslado_interno") {
+        return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: "Vivero", tamano_origen: c.tamano_origen || null, tamano_destino: c.tamano_destino || c.tamano_origen || null, zona_origen: c.zona_origen, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad };
+      }
+      return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: destinoTipo, tamano_origen: c.tamano_origen || null, tamano_destino: null, zona_origen: c.zona_origen, zona_destino: null, distrito_destino: esExterno ? (distrito || null) : null, barrio_destino: esExterno ? (barrio || null) : null, direccion_destino: esExterno ? (String(direccion).trim() || null) : null, cantidad: c.cantidad };
+    });
     await onSubmit(payloads);
   };
 
@@ -2328,142 +2480,277 @@ function SalidaModal({ open, onClose, productos, movimientos, zonas, onSubmit, s
   const totalUds = cart.reduce((s, c) => s + Number(c.cantidad || 0), 0);
   const barriosDisp = distrito ? (DISTRITO_BARRIOS[distrito] || []) : [];
   const DISTRITOS = Object.keys(DISTRITO_BARRIOS);
+  // Tamaños destino ofrecidos en traslado (según categoría del producto).
+  const tamanosDestinoTraslado = getFormatoOptions(formatoConfig).filter((t) => tamanoDisponiblePlanta(selectedProduct, t));
+
+  const tipoBtn = (val) => {
+    const m = TIPO_META[val];
+    const active = tipo === val;
+    return (
+      <button key={val} type="button" onClick={() => setTipo(val)}
+        style={{ padding: "9px 20px", borderRadius: 999, border: active ? "none" : "1px solid rgba(15,23,42,0.14)", background: active ? m.grad : "#fff", color: active ? "#fff" : "#334155", fontWeight: 900, cursor: "pointer", fontSize: 14 }}>
+        {m.label}
+      </button>
+    );
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.62)", backdropFilter: "blur(6px)", zIndex: 1400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ width: "min(1500px, 97vw)", height: "min(880px, 94vh)", background: "#fff", borderRadius: 22, overflow: "hidden", display: "grid", gridTemplateColumns: "0.95fr 1.05fr 0.9fr", boxShadow: "0 40px 100px rgba(2,6,23,0.4)" }}
+      <div style={{ width: "min(1500px, 97vw)", height: "min(880px, 94vh)", background: "#fff", borderRadius: 22, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 40px 100px rgba(2,6,23,0.4)" }}
         onClick={(e) => e.stopPropagation()}>
 
-        {/* IZQUIERDA: productos + filtros */}
-        <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", overflowY: "auto", minHeight: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Productos disponibles</div>
-          <input placeholder="Buscar por nombre, categoría o subcategoría…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...sInput, marginTop: 12 }} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={sInput}>
-              <option value="">Todas las categorías</option>
-              {categoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select value={filtroSubcategoria} onChange={(e) => setFiltroSubcategoria(e.target.value)} disabled={!filtroCategoria || subcategoriasDisponibles.length === 0} style={{ ...sInput, opacity: filtroCategoria ? 1 : 0.55 }}>
-              <option value="">Todas las subcategorías</option>
-              {subcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+        {/* CABECERA: selector de tipo */}
+        <div style={{ padding: "16px 22px", borderBottom: "1px solid rgba(15,23,42,0.08)", display: "flex", alignItems: "center", gap: 12, background: meta.tint }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>Nuevo movimiento</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["entrada", "salida", "traslado_interno"].map(tipoBtn)}
           </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b", fontWeight: 700 }}>{productosFiltrados.length} con stock</div>
-          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-            {productosFiltrados.length === 0 ? (
-              <div style={{ color: "#64748b", fontWeight: 700 }}>No hay productos con stock para esa búsqueda.</div>
-            ) : productosFiltrados.map((p) => {
-              const active = String(selectedProductId) === String(p.id);
-              const total = stockPorProducto.get(String(p.id)) || 0;
-              return (
-                <button key={p.id} onClick={() => setSelectedProductId(String(p.id))} style={{ textAlign: "left", padding: 12, borderRadius: 12, cursor: "pointer", border: active ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(148,163,184,0.18)", background: active ? "rgba(239,68,68,0.06)" : "#fff" }}>
-                  <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>{getProductDisplayName(p)}</div>
-                  <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>{(p.categoria || "—") + (p.subcategoria ? ` · ${p.subcategoria}` : "")}</div>
-                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 900, color: "#065f46" }}>Disponible: {formatCantidad(total)}</div>
-                </button>
-              );
-            })}
-          </div>
+          <button onClick={onClose} style={{ marginLeft: "auto", border: "none", background: "transparent", color: "#64748b", fontWeight: 900, cursor: "pointer", fontSize: 20 }}>✕</button>
         </div>
 
-        {/* CENTRO: zonas del producto seleccionado */}
-        <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", overflowY: "auto", minHeight: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{selectedProduct ? getProductDisplayName(selectedProduct) : "Selecciona un producto"}</div>
-          {!selectedProduct ? (
-            <div style={{ marginTop: 16, color: "#64748b", fontWeight: 700 }}>Elige un producto de la izquierda para ver sus zonas y las cantidades a sacar de cada una.</div>
-          ) : zonasDelProducto.length === 0 ? (
-            <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto ya no tiene stock disponible para salida (o ya lo has añadido todo al carrito).</div>
-          ) : (
-            <>
-              <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Indica cuántas unidades sacar de cada zona.</div>
-              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                {zonasDelProducto.map((r) => {
-                  const rk = `${r.zonaLower}__${r.tamano}`;
-                  return (
-                    <div key={rk} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{getZonaLabel(r.zona)}</div>
-                        <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>Tamaño: {r.tamano} · Disponible: {formatCantidad(r.disponible)}</div>
-                      </div>
-                      <input type="number" min={0} max={r.disponible} step={allowDecimals ? "0.01" : "1"} placeholder="0"
-                        value={zonaQty[rk] ?? ""}
-                        onChange={(e) => { let raw = allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); if (raw !== "" && Number(raw) > r.disponible) raw = String(r.disponible); setZonaQty((prev) => ({ ...prev, [rk]: raw })); }}
-                        style={{ ...sInput, width: 92, textAlign: "right" }} />
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ fontWeight: 900, fontSize: 13, color: totalSeleccionado > 0 ? "#065f46" : "#64748b" }}>Seleccionado: {formatCantidad(totalSeleccionado)}</div>
-                <button type="button" onClick={addToCart} disabled={totalSeleccionado <= 0}
-                  style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: totalSeleccionado > 0 ? "linear-gradient(90deg,#10b981,#06b6d4)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: totalSeleccionado > 0 ? "pointer" : "not-allowed", fontSize: 13 }}>
-                  + Añadir al carrito
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        {/* CUERPO: 3 columnas */}
+        <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "0.95fr 1.05fr 0.9fr" }}>
 
-        {/* DERECHA: destino + carrito */}
-        <div style={{ padding: 20, overflowY: "auto", minHeight: 0, background: "linear-gradient(180deg,#fff,rgba(240,249,255,0.6))", display: "flex", flexDirection: "column" }}>
-          <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Destino de la salida</div>
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Tipo de destino</div>
-              <select value={destinoTipo} onChange={(e) => setDestinoTipo(e.target.value)} style={sInput}>
-                <option value="">Seleccionar destino</option>
-                {SALIDA_DESTINOS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            {esExterno && (
+          {/* IZQUIERDA: (traslado: zona origen) + productos + filtros */}
+          <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", overflowY: "auto", minHeight: 0 }}>
+            {esTraslado && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Zona de origen</div>
+                <select value={sourceZone} onChange={(e) => setSourceZone(e.target.value)} style={sInput}>
+                  <option value="">Selecciona la zona de origen</option>
+                  {zonasConStockGlobal.map((z) => <option key={z} value={z}>{getZonaLabel(z)}</option>)}
+                </select>
+              </div>
+            )}
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{esEntrada ? "Productos" : esTraslado ? (sourceZone ? "Productos en la zona" : "Elige zona origen") : "Productos disponibles"}</div>
+            {(esTraslado && !sourceZone) ? (
+              <div style={{ marginTop: 12, color: "#64748b", fontWeight: 700 }}>Selecciona primero la zona de origen para ver sus productos.</div>
+            ) : (
               <>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Distrito</div>
-                  <select value={distrito} onChange={(e) => setDistrito(e.target.value)} style={sInput}>
-                    <option value="">Seleccionar distrito</option>
-                    {DISTRITOS.map((d) => <option key={d} value={d}>{d}</option>)}
+                <input placeholder="Buscar por nombre, categoría o subcategoría…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...sInput, marginTop: 12 }} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={sInput}>
+                    <option value="">Todas las categorías</option>
+                    {categoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select value={filtroSubcategoria} onChange={(e) => setFiltroSubcategoria(e.target.value)} disabled={!filtroCategoria || subcategoriasDisponibles.length === 0} style={{ ...sInput, opacity: filtroCategoria ? 1 : 0.55 }}>
+                    <option value="">Todas las subcategorías</option>
+                    {subcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Barrio</div>
-                  <select value={barrio} onChange={(e) => setBarrio(e.target.value)} disabled={!distrito} style={{ ...sInput, opacity: distrito ? 1 : 0.6 }}>
-                    <option value="">{distrito ? "Seleccionar barrio" : "Primero el distrito"}</option>
-                    {barriosDisp.map((b) => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Dirección</div>
-                  <input value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Escribe la dirección de destino" style={sInput} />
+                <div style={{ marginTop: 10, fontSize: 12, color: "#64748b", fontWeight: 700 }}>{productosFiltrados.length} {esEntrada ? "productos" : "con stock"}</div>
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {productosFiltrados.length === 0 ? (
+                    <div style={{ color: "#64748b", fontWeight: 700 }}>No hay productos para esa búsqueda.</div>
+                  ) : productosFiltrados.map((p) => {
+                    const active = String(selectedProductId) === String(p.id);
+                    const info = infoStock(p.id);
+                    return (
+                      <button key={p.id} onClick={() => setSelectedProductId(String(p.id))} style={{ textAlign: "left", padding: 12, borderRadius: 12, cursor: "pointer", border: active ? `1px solid ${meta.border}` : "1px solid rgba(148,163,184,0.18)", background: active ? meta.tint : "#fff" }}>
+                        <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>{getProductDisplayName(p)}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>{(p.categoria || "—") + (p.subcategoria ? ` · ${p.subcategoria}` : "")}</div>
+                        {info != null && <div style={{ marginTop: 6, fontSize: 12, fontWeight: 900, color: "#065f46" }}>Disponible: {formatCantidad(info)}</div>}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
           </div>
 
-          <div style={{ marginTop: 16, fontWeight: 900, color: "#0f172a", fontSize: 15 }}>Carrito ({cart.length} · {formatCantidad(totalUds)} uds)</div>
-          <div style={{ marginTop: 8, display: "grid", gap: 8, flex: 1 }}>
-            {cart.length === 0 ? (
-              <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Añade productos desde el panel central.</div>
-            ) : cart.map((c) => (
-              <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: "#fff", border: "1px solid rgba(15,23,42,0.08)" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</div>
-                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>{getZonaLabel(c.zona)} · {c.tamano} · {formatCantidad(c.cantidad)} uds</div>
-                </div>
-                <button type="button" onClick={() => removeCart(c.key)} style={{ border: "none", background: "transparent", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 14 }}>✕</button>
+          {/* CENTRO: cantidades del producto seleccionado */}
+          <div style={{ padding: 20, borderRight: "1px solid rgba(15,23,42,0.08)", overflowY: "auto", minHeight: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>{selectedProduct ? getProductDisplayName(selectedProduct) : "Selecciona un producto"}</div>
+            {!selectedProduct ? (
+              <div style={{ marginTop: 16, color: "#64748b", fontWeight: 700 }}>Elige un producto de la izquierda para indicar cantidades{esEntrada ? " por tamaño y su zona destino" : esTraslado ? ", la zona y el tamaño destino" : " por zona"}.</div>
+            ) : esSalida ? (
+              zonasSalida.length === 0 ? (
+                <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto ya no tiene stock disponible (o ya lo has añadido todo al carrito).</div>
+              ) : (
+                <>
+                  <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Indica cuántas unidades sacar de cada zona.</div>
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    {zonasSalida.map((r) => {
+                      const rk = `${r.zonaLower}__${r.tamano}`;
+                      return (
+                        <div key={rk} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{getZonaLabel(r.zona)}</div>
+                            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>Tamaño: {r.tamano} · Disponible: {formatCantidad(r.disponible)}</div>
+                          </div>
+                          <input type="number" min={0} max={r.disponible} step={allowDecimals ? "0.01" : "1"} placeholder="0"
+                            value={zonaQty[rk] ?? ""}
+                            onChange={(e) => { let raw = allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); if (raw !== "" && Number(raw) > r.disponible) raw = String(r.disponible); setZonaQty((prev) => ({ ...prev, [rk]: raw })); }}
+                            style={{ ...sInput, width: 92, textAlign: "right" }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )
+            ) : esEntrada ? (
+              tamanosEntrada.length === 0 ? (
+                <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto no admite tamaños de entrada.</div>
+              ) : (
+                <>
+                  <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Indica cuántas unidades entran de cada tamaño.</div>
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    {tamanosEntrada.map((tam) => (
+                      <div key={tam} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
+                        <div style={{ flex: 1, minWidth: 0, fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{tam}</div>
+                        <input type="number" min={0} step={allowDecimals ? "0.01" : "1"} placeholder="0"
+                          value={sizeQty[tam] ?? ""}
+                          onChange={(e) => { const raw = allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); setSizeQty((prev) => ({ ...prev, [tam]: raw })); }}
+                          style={{ ...sInput, width: 92, textAlign: "right" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Zona destino de este producto</div>
+                    <select value={lineZonaDestino} onChange={(e) => setLineZonaDestino(e.target.value)} style={sInput}>
+                      <option value="">Selecciona la zona destino</option>
+                      {zonasDestinoPermitidas.map((z) => <option key={z} value={z}>{getZonaLabel(z)}</option>)}
+                    </select>
+                  </div>
+                </>
+              )
+            ) : ( // traslado
+              tamanosTraslado.length === 0 ? (
+                <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto ya no tiene stock disponible en la zona origen (o ya lo añadiste al carrito).</div>
+              ) : (
+                <>
+                  <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Indica cuántas unidades salen de cada tamaño de {getZonaLabel(sourceZone)}.</div>
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    {tamanosTraslado.map((r) => (
+                      <div key={r.tamano} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{r.tamano}</div>
+                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>Disponible: {formatCantidad(r.disponible)}</div>
+                        </div>
+                        <input type="number" min={0} max={r.disponible} step={allowDecimals ? "0.01" : "1"} placeholder="0"
+                          value={sizeQty[r.tamano] ?? ""}
+                          onChange={(e) => { let raw = allowDecimals ? e.target.value : e.target.value.replace(/[^\d]/g, ""); if (raw !== "" && Number(raw) > r.disponible) raw = String(r.disponible); setSizeQty((prev) => ({ ...prev, [r.tamano]: raw })); }}
+                          style={{ ...sInput, width: 92, textAlign: "right" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Zona destino</div>
+                      <select value={lineZonaDestino} onChange={(e) => setLineZonaDestino(e.target.value)} style={sInput}>
+                        <option value="">Selecciona la zona destino</option>
+                        {zonasDestinoPermitidas.map((z) => <option key={z} value={z}>{getZonaLabel(z)}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Tamaño destino (opcional)</div>
+                      <select value={lineTamanoDestino} onChange={(e) => setLineTamanoDestino(e.target.value)} style={sInput}>
+                        <option value="">Mismo tamaño que el origen</option>
+                        {tamanosDestinoTraslado.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )
+            )}
+
+            {selectedProduct && (
+              <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ fontWeight: 900, fontSize: 13, color: totalSeleccionado > 0 ? "#065f46" : "#64748b" }}>Seleccionado: {formatCantidad(totalSeleccionado)}</div>
+                <button type="button" onClick={addToCart} disabled={totalSeleccionado <= 0}
+                  style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: totalSeleccionado > 0 ? meta.grad : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: totalSeleccionado > 0 ? "pointer" : "not-allowed", fontSize: 13 }}>
+                  + Añadir al carrito
+                </button>
               </div>
-            ))}
+            )}
           </div>
 
-          {localError ? (
-            <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{localError}</div>
-          ) : null}
+          {/* DERECHA: (entrada: origen / salida: destino) + carrito */}
+          <div style={{ padding: 20, overflowY: "auto", minHeight: 0, background: "linear-gradient(180deg,#fff,rgba(240,249,255,0.6))", display: "flex", flexDirection: "column" }}>
+            {esEntrada && (
+              <>
+                <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Origen de la entrada</div>
+                <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                  <select value={entradaOrigen} onChange={(e) => setEntradaOrigen(e.target.value)} style={sInput}>
+                    <option value="">Seleccionar origen</option>
+                    {ENTRADA_ORIGENES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {entradaOrigen === ENTRADA_ORIGEN_OTROS && (
+                    <input value={entradaOtros} onChange={(e) => setEntradaOtros(e.target.value)} placeholder="Especifica el origen (ej. Palmetum)" maxLength={30} style={sInput} />
+                  )}
+                </div>
+              </>
+            )}
+            {esSalida && (
+              <>
+                <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Destino de la salida</div>
+                <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Tipo de destino</div>
+                    <select value={destinoTipo} onChange={(e) => setDestinoTipo(e.target.value)} style={sInput}>
+                      <option value="">Seleccionar destino</option>
+                      {SALIDA_DESTINOS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  {esExterno && (
+                    <>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Distrito</div>
+                        <select value={distrito} onChange={(e) => setDistrito(e.target.value)} style={sInput}>
+                          <option value="">Seleccionar distrito</option>
+                          {DISTRITOS.map((d) => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Barrio</div>
+                        <select value={barrio} onChange={(e) => setBarrio(e.target.value)} disabled={!distrito} style={{ ...sInput, opacity: distrito ? 1 : 0.6 }}>
+                          <option value="">{distrito ? "Seleccionar barrio" : "Primero el distrito"}</option>
+                          {barriosDisp.map((b) => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Dirección</div>
+                        <input value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Escribe la dirección de destino" style={sInput} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+            {esTraslado && (
+              <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Traslado entre zonas</div>
+            )}
 
-          <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-            <button onClick={onClose} disabled={saving} style={{ padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cerrar</button>
-            <button onClick={submit} disabled={!canSubmit} style={{ marginLeft: "auto", padding: "11px 22px", borderRadius: 10, border: "none", background: canSubmit ? "linear-gradient(90deg,#ef4444,#f59e0b)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: canSubmit ? "pointer" : "not-allowed", minWidth: 180 }}>
-              {saving ? "Guardando…" : "✓ Registrar salidas"}
-            </button>
+            <div style={{ marginTop: 16, fontWeight: 900, color: "#0f172a", fontSize: 15 }}>Carrito ({cart.length} · {formatCantidad(totalUds)} uds)</div>
+            <div style={{ marginTop: 8, display: "grid", gap: 8, flex: 1 }}>
+              {cart.length === 0 ? (
+                <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Añade productos desde el panel central.</div>
+              ) : cart.map((c) => (
+                <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: "#fff", border: "1px solid rgba(15,23,42,0.08)" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                      {c.tipo === "entrada" && `→ ${getZonaLabel(c.zona_destino)} · ${c.tamano_destino} · ${formatCantidad(c.cantidad)} uds`}
+                      {c.tipo === "salida" && `${getZonaLabel(c.zona_origen)} · ${c.tamano_origen} · ${formatCantidad(c.cantidad)} uds`}
+                      {c.tipo === "traslado_interno" && `${getZonaLabel(c.zona_origen)} (${c.tamano_origen}) → ${getZonaLabel(c.zona_destino)} (${c.tamano_destino}) · ${formatCantidad(c.cantidad)} uds`}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => removeCart(c.key)} style={{ border: "none", background: "transparent", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 14 }}>✕</button>
+                </div>
+              ))}
+            </div>
+
+            {localError ? (
+              <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{localError}</div>
+            ) : null}
+
+            <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+              <button onClick={onClose} disabled={saving} style={{ padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cerrar</button>
+              <button onClick={submit} disabled={!canSubmit} style={{ marginLeft: "auto", padding: "11px 22px", borderRadius: 10, border: "none", background: canSubmit ? meta.grad : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: canSubmit ? "pointer" : "not-allowed", minWidth: 180 }}>
+                {saving ? "Guardando…" : meta.cta}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2700,21 +2987,6 @@ export default function Movimientos() {
             style={{
               padding: "12px 18px",
               borderRadius: 16,
-              border: "1px solid rgba(239,68,68,0.30)",
-              background: "linear-gradient(90deg, #ef4444 0%, #f59e0b 100%)",
-              color: "white",
-              fontWeight: 900,
-              cursor: "pointer",
-              boxShadow: "0 16px 36px rgba(239,68,68,0.18)",
-            }}
-          >
-            Nueva salida (varios productos)
-          </button>
-          <button
-            onClick={() => setShowModal(true)}
-            style={{
-              padding: "12px 18px",
-              borderRadius: 16,
               border: "1px solid rgba(16,185,129,0.28)",
               background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
               color: "white",
@@ -2724,6 +2996,21 @@ export default function Movimientos() {
             }}
           >
             Nuevo movimiento
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            style={{
+              padding: "12px 18px",
+              borderRadius: 16,
+              border: "1px solid rgba(148,163,184,0.35)",
+              background: "#fff",
+              color: "#334155",
+              fontWeight: 900,
+              cursor: "pointer",
+              boxShadow: "0 10px 26px rgba(15,23,42,0.08)",
+            }}
+          >
+            Servir pedido / Devolución
           </button>
         </div>
       </div>
@@ -3167,7 +3454,7 @@ export default function Movimientos() {
         zonas={zonasDisponibles}
       />
 
-      <SalidaModal
+      <MovimientoCestaModal
         open={showSalidaModal}
         onClose={() => setShowSalidaModal(false)}
         productos={productos}
