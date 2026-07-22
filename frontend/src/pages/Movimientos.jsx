@@ -2254,8 +2254,8 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       const parts = key.split("__");
       const pid = parts[0];
       const tam = parts.slice(2).join("__");
-      const prod = prodById.get(pid);
-      if (!tamanoDisponiblePlanta(prod, tam)) continue;
+      // Contamos TODO el stock físico real, sin filtrar por tamaño "estándar":
+      // así los árboles/palmeras en M20 (u otros tamaños) siguen siendo movibles.
       totals.set(pid, (totals.get(pid) || 0) + Number(qty));
     }
     return totals;
@@ -2272,8 +2272,8 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       if (parts[1] !== zl) continue;
       const pid = parts[0];
       const tam = parts.slice(2).join("__");
-      const prod = prodById.get(pid);
-      if (!tamanoDisponiblePlanta(prod, tam)) continue;
+      // Contamos TODO el stock físico real, sin filtrar por tamaño "estándar":
+      // así los árboles/palmeras en M20 (u otros tamaños) siguen siendo movibles.
       totals.set(pid, (totals.get(pid) || 0) + Number(qty));
     }
     return totals;
@@ -2349,7 +2349,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       const parts = key.split("__");
       if (parts[0] !== pid || parts[1] !== zl) continue;
       const tam = parts.slice(2).join("__");
-      if (!tamanoDisponiblePlanta(selectedProduct, tam)) continue;
+      // Stock físico real: sin filtro de tamaño "estándar" (árboles en M20 movibles).
       const enCarrito = cart
         .filter((c) => String(c.producto_id) === pid && String(c.zona_origen || "").toLowerCase() === zl && c.tamano_origen === tam)
         .reduce((s, c) => s + Number(c.cantidad || 0), 0);
@@ -2372,7 +2372,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       if (parts[0] !== pid) continue;
       const zonaLower = parts[1];
       const tam = parts.slice(2).join("__");
-      if (!tamanoDisponiblePlanta(selectedProduct, tam)) continue;
+      // Stock físico real: sin filtro de tamaño "estándar" (árboles en M20 movibles).
       const enCarrito = cart
         .filter((c) => String(c.producto_id) === pid && String(c.zona_origen || "").toLowerCase() === zonaLower && c.tamano_origen === tam)
         .reduce((s, c) => s + Number(c.cantidad || 0), 0);
