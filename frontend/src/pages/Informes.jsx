@@ -267,6 +267,21 @@ function getEstadoStock(stockActual, stockMinimo) {
   return "Correcto";
 }
 
+// Opciones del filtro por estado de existencias (dropdown del informe).
+//   ""          → todos los productos
+//   "con_stock" → stock actual > 0
+//   "bajo"      → bajo stock pero aún con existencias (próximo a agotarse)
+//   "agotado"   → stock actual <= 0
+const ESTADO_STOCK_OPTIONS = [
+  { value: "", label: "Todos los productos" },
+  { value: "con_stock", label: "Productos con stock" },
+  { value: "bajo", label: "Productos con stock bajo (próximo a agotarse)" },
+  { value: "agotado", label: "Productos agotados" },
+];
+const ESTADO_STOCK_LABEL = Object.fromEntries(
+  ESTADO_STOCK_OPTIONS.map((o) => [o.value, o.label])
+);
+
 function toStartOfDay(value) {
   if (!value) return null;
   const d = new Date(value);
@@ -1080,8 +1095,7 @@ async function exportReportToPdf({
         ["Categoría", stockExportData.filters.categoria || "Todas"],
         ["Subcategoría", stockExportData.filters.subcategoria || "Todas"],
         ["Texto", stockExportData.filters.search || "—"],
-        ["Solo bajo stock", stockExportData.filters.onlyLowStock ? "Sí" : "No"],
-        ["Solo productos en stock", stockExportData.filters.onlyInStock ? "Sí" : "No"],
+        ["Estado", ESTADO_STOCK_LABEL[stockExportData.filters.estado] || "Todos los productos"],
         ["Productos visibles", fmtNum(stockExportData.totalProductos)],
         ["Categorías visibles", fmtNum(stockExportData.totalCategorias)],
       ],
@@ -1438,8 +1452,8 @@ export default function Informes() {
   const [stockSearch, setStockSearch] = useState("");
   const [stockCategoriaFilter, setStockCategoriaFilter] = useState("");
   const [stockSubcategoriaFilter, setStockSubcategoriaFilter] = useState("");
-  const [stockOnlyLow, setStockOnlyLow] = useState(false);
-  const [stockOnlyInStock, setStockOnlyInStock] = useState(false);
+  // Filtro por estado de existencias: "" (todos), "con_stock", "bajo", "agotado".
+  const [stockEstadoFilter, setStockEstadoFilter] = useState("");
 
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
@@ -1695,23 +1709,26 @@ export default function Informes() {
       const matchesCategory = !stockCategoriaFilter || item.categoria === stockCategoriaFilter;
       const matchesSubcategory =
         !stockSubcategoriaFilter || item.subcategoria === stockSubcategoriaFilter;
-      const matchesLowStock = !stockOnlyLow || item.estado === "Bajo stock";
-      const matchesInStock = !stockOnlyInStock || Number(item.stockActual) > 0;
+      const stockActualNum = Number(item.stockActual);
+      const matchesEstado =
+        stockEstadoFilter === "con_stock" ? stockActualNum > 0 :
+        stockEstadoFilter === "bajo" ? (item.estado === "Bajo stock" && stockActualNum > 0) :
+        stockEstadoFilter === "agotado" ? stockActualNum <= 0 :
+        true;
       const matchesSearch =
         !term ||
         item.nombre.toLowerCase().includes(term) ||
         item.categoria.toLowerCase().includes(term) ||
         item.subcategoria.toLowerCase().includes(term);
 
-      return matchesCategory && matchesSubcategory && matchesLowStock && matchesInStock && matchesSearch;
+      return matchesCategory && matchesSubcategory && matchesEstado && matchesSearch;
     });
   }, [
     normalizedStockItems,
     stockSearch,
     stockCategoriaFilter,
     stockSubcategoriaFilter,
-    stockOnlyLow,
-    stockOnlyInStock,
+    stockEstadoFilter,
   ]);
 
   const stockGroupedByCategory = useMemo(() => {
@@ -1758,8 +1775,7 @@ export default function Informes() {
         categoria: stockCategoriaFilter,
         subcategoria: stockSubcategoriaFilter,
         search: stockSearch,
-        onlyLowStock: stockOnlyLow,
-        onlyInStock: stockOnlyInStock,
+        estado: stockEstadoFilter,
       },
       totalCategorias: stockSummary.totalCategorias,
       totalProductos: stockSummary.totalProductos,
@@ -1769,8 +1785,7 @@ export default function Informes() {
     stockCategoriaFilter,
     stockSubcategoriaFilter,
     stockSearch,
-    stockOnlyLow,
-    stockOnlyInStock,
+    stockEstadoFilter,
     stockSummary,
     stockGroupedByCategory,
   ]);
@@ -2124,8 +2139,7 @@ export default function Informes() {
     setStockSearch("");
     setStockCategoriaFilter("");
     setStockSubcategoriaFilter("");
-    setStockOnlyLow(false);
-    setStockOnlyInStock(false);
+    setStockEstadoFilter("");
   };
 
   const onBuscarExternos = async () => {
@@ -2781,47 +2795,18 @@ export default function Informes() {
                 </select>
               </div>
 
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  minHeight: 48,
-                  padding: "0 4px",
-                  fontWeight: 900,
-                  color: "#0f172a",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={stockOnlyLow}
-                  onChange={(e) => setStockOnlyLow(e.target.checked)}
-                  style={{ width: 18, height: 18 }}
-                />
-                Productos con bajo stock
-              </label>
-
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  minHeight: 48,
-                  padding: "0 4px",
-                  fontWeight: 900,
-                  color: "#0f172a",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={stockOnlyInStock}
-                  onChange={(e) => setStockOnlyInStock(e.target.checked)}
-                  style={{ width: 18, height: 18 }}
-                />
-                Solo productos en stock
-              </label>
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Estado de existencias</div>
+                <select
+                  value={stockEstadoFilter}
+                  onChange={(e) => setStockEstadoFilter(e.target.value)}
+                  style={softInputStyle()}
+                >
+                  {ESTADO_STOCK_OPTIONS.map((o) => (
+                    <option key={o.value || "todos"} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
 
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button onClick={onBuscarStock} disabled={loading} style={primaryBtnStyle(loading)}>
