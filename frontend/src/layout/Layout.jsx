@@ -66,8 +66,13 @@ function computeBadgeCounts(role, pedidos, seenMap, username) {
   const isOwn    = (p) => (p?.solicitante_username || "").trim().toLowerCase() === me;
 
   // --- Aprobaciones: pedidos que el manager debe decidir ---
+  // Al igual que /pedidos, respeta el "seen": al entrar en /aprobaciones se
+  // marcan como vistos los pedidos en RESERVA, de modo que el contador baja a
+  // 0 y solo reaparece cuando llega un pedido nuevo por decidir.
   if (r === "manager" || r === "admin") {
-    counts["/aprobaciones"] = pedidos.filter((p) => estadoOf(p) === "RESERVA").length;
+    counts["/aprobaciones"] = pedidos.filter(
+      (p) => estadoOf(p) === "RESERVA" && seenMap[String(p.id)] !== "RESERVA"
+    ).length;
   }
 
   // --- Pedidos: depende del rol ---
@@ -1529,6 +1534,26 @@ export default function Layout() {
         next[String(p.id)] = e;
       }
       return next;
+    });
+  }, [location.pathname, pedidosUsuario]);
+
+  // Al entrar en /aprobaciones (manager/admin), marca como vistos los pedidos
+  // en RESERVA — los que generan el badge de aprobaciones — para que el
+  // contador baje a 0. Solo toca los RESERVA, así no interfiere con las señales
+  // de /pedidos. El badge reaparece cuando llega un pedido nuevo por decidir.
+  useEffect(() => {
+    if (location.pathname !== "/aprobaciones") return;
+    if (!Array.isArray(pedidosUsuario) || pedidosUsuario.length === 0) return;
+    setSeenPedidos((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const p of pedidosUsuario) {
+        if (!p?.id) continue;
+        const e = String(p.estado || "").trim().toUpperCase();
+        if (e !== "RESERVA") continue;
+        if (next[String(p.id)] !== e) { next[String(p.id)] = e; changed = true; }
+      }
+      return changed ? next : prev;
     });
   }, [location.pathname, pedidosUsuario]);
 
