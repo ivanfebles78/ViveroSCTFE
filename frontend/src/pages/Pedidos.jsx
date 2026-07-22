@@ -1565,7 +1565,7 @@ function PedidoModal({
             <button
               onClick={onClose}
               disabled={saving}
-              style={actionBtn(!saving)}
+              style={{ padding: "11px 18px", borderRadius: 12, border: "2px solid #94a3b8", background: "#e2e8f0", color: "#334155", fontWeight: 900, cursor: saving ? "not-allowed" : "pointer" }}
             >
               Cerrar
             </button>

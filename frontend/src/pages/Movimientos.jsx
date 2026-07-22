@@ -2752,7 +2752,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
             ) : null}
 
             <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-              <button onClick={onClose} disabled={saving} style={{ padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cerrar</button>
+              <button onClick={onClose} disabled={saving} style={{ padding: "11px 18px", borderRadius: 10, border: "2px solid #94a3b8", background: "#e2e8f0", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cerrar</button>
               <button onClick={submit} disabled={!canSubmit} style={{ marginLeft: "auto", padding: "11px 22px", borderRadius: 10, border: "none", background: canSubmit ? meta.grad : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: canSubmit ? "pointer" : "not-allowed", minWidth: 180 }}>
                 {saving ? "Guardando…" : meta.cta}
               </button>
