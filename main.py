@@ -2896,7 +2896,7 @@ def _producto_display(prod: Producto | None, producto_id: int | None = None) -> 
 def reporte_trazabilidad(
     uuid_lote: str,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "gestor_vivero"])),
 ):
     lote = (
         db.query(Lote)
@@ -3010,7 +3010,7 @@ def reporte_trazabilidad(
 def reporte_distribucion(
     producto: str,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero"])),
 ):
     producto = (producto or "").strip()
     if not producto:
@@ -3072,7 +3072,7 @@ def reporte_distribucion(
 def reporte_stock_bajo(
     margen_pct: int = 20,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "gestor_vivero"])),
 ):
     productos = db.query(Producto).order_by(Producto.nombre_cientifico.asc()).all()
 
@@ -3136,7 +3136,7 @@ def reporte_movimientos_externos(
     categoria: str | None = None,
     subcategoria: str | None = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
     q = (
         db.query(Movimiento, Producto)

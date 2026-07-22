@@ -1401,18 +1401,22 @@ export default function Informes() {
   const role = me?.rol || me?.role;
   // Acceso restringido por rol a informes concretos:
   //   - empresa externa → solo "Movimientos externos".
-  //   - técnico → solo "Distribución".
+  //   - técnico → "Distribución", "Inventario vivero" y "Existencias".
+  //   - gestor_vivero, admin y manager → TODOS los informes.
   const isEmpresaExterna = role === "empresa_externa";
   const isTecnico = role === "tecnico";
-  const canAccess = role === "admin" || role === "manager" || isEmpresaExterna || isTecnico;
+  const isGestorVivero = role === "gestor_vivero";
+  const canAccess =
+    role === "admin" || role === "manager" || isGestorVivero || isEmpresaExterna || isTecnico;
 
   // Informes permitidos por rol (null = todos):
   //   - empresa externa → solo "Movimientos externos".
-  //   - técnico → "Distribución" e "Inventario vivero".
+  //   - técnico → "Distribución", "Inventario vivero" y "Existencias".
+  //   - gestor_vivero / admin / manager → todos (null).
   const allowedReportKeys = isEmpresaExterna
     ? ["externos"]
     : isTecnico
-    ? ["distribucion", "inventario"]
+    ? ["distribucion", "inventario", "stock"]
     : null;
 
   // Pestañas visibles según el rol.
