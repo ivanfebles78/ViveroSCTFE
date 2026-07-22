@@ -1682,6 +1682,12 @@ function MovimientoModal({
                 {selectedPedido && (
                   <div style={{ padding: 14, borderRadius: 14, background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)" }}>
                     <div style={{ fontWeight: 900, color: "#1e3a8a", marginBottom: 4, fontSize: 13 }}>Líneas del pedido #{selectedPedido.id}</div>
+                    {selectedPedido.nota ? (
+                      <div style={{ margin: "6px 0 10px", padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.28)" }}>
+                        <div style={{ fontSize: 11, fontWeight: 900, color: "#92400e", textTransform: "uppercase", letterSpacing: 0.3 }}>📝 Comentarios del solicitante</div>
+                        <div style={{ marginTop: 3, fontWeight: 700, color: "#0f172a", fontSize: 13, whiteSpace: "pre-wrap" }}>{selectedPedido.nota}</div>
+                      </div>
+                    ) : null}
                     <div style={{ color: "#475569", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>
                       Elige la zona de origen de cada línea y añádela. Cada línea se sirve a su destino (se guarda un movimiento por línea).
                     </div>

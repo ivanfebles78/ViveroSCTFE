@@ -735,6 +735,9 @@ function PedidoModal({
   // Destinos plegados en el modal (por _id de grupo).
   const [gruposColapsados, setGruposColapsados] = useState({});
   const toggleGrupoColapsado = (id) => setGruposColapsados((p) => ({ ...p, [id]: !p[id] }));
+  // Comentarios/anotaciones que la empresa externa adjunta al pedido; los ve
+  // quien aprueba y quien sirve, y salen en el PDF impreso.
+  const [nota, setNota] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -748,6 +751,7 @@ function PedidoModal({
       setGrupos([g]);
       setActiveGrupoId(g._id);
       setGruposColapsados({});
+      setNota("");
     }
   }, [open]);
 
@@ -1022,6 +1026,7 @@ function PedidoModal({
       distrito_destino: primero.distrito,
       barrio_destino: primero.barrio,
       direccion_destino: String(primero.direccion || "").trim(),
+      nota: String(nota || "").trim() || null,
     });
   };
 
@@ -1520,6 +1525,24 @@ function PedidoModal({
                 {grupos.length >= MAX_DESTINOS ? `Máximo ${MAX_DESTINOS} destinos` : "+ Añadir otro destino"}
               </button>
             )}
+          </div>
+
+          <div style={{ ...cardStyle(), marginTop: 14, padding: 14 }}>
+            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>Comentarios / anotaciones</div>
+            <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+              Opcional. Lo verá quien aprueba y quien sirve el pedido, y aparecerá en el PDF impreso.
+            </div>
+            <textarea
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder="Ej.: entregar en horario de mañana, avisar al llegar, plantas para reposición del parque…"
+              maxLength={1000}
+              style={{
+                marginTop: 10, width: "100%", boxSizing: "border-box", minHeight: 70, resize: "vertical",
+                padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)",
+                outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", fontFamily: "inherit",
+              }}
+            />
           </div>
 
           {localError ? (
