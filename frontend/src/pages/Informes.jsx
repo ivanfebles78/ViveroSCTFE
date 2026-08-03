@@ -233,6 +233,16 @@ function getProductoNombre(producto) {
   );
 }
 
+// Normaliza texto para búsquedas: sin acentos, minúsculas, sin espacios extra.
+// Así "lirio africano" encuentra "Lírio Africano" y viceversa.
+function normalizarBusqueda(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
 function getProductoCategoria(producto) {
   return String(producto?.categoria || "Sin categoría").trim() || "Sin categoría";
 }
@@ -1434,6 +1444,10 @@ export default function Informes() {
   const [zonasInvColapsadas, setZonasInvColapsadas] = useState({});
   const toggleZonaInv = (zona) =>
     setZonasInvColapsadas((prev) => ({ ...prev, [zona]: !prev[zona] }));
+  // Filtros del informe de inventario (por producto/categoría/subcategoría).
+  const [invSearch, setInvSearch] = useState("");
+  const [invCategoria, setInvCategoria] = useState("");
+  const [invSubcategoria, setInvSubcategoria] = useState("");
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -1606,6 +1620,8 @@ export default function Informes() {
       return {
         id: p.id ?? `${nombre}-${categoria}-${subcategoria}`,
         nombre,
+        nombreComun: p.nombre_natural || "",
+        nombreCientifico: p.nombre_cientifico || "",
         categoria,
         subcategoria,
         stockActual,
@@ -1706,8 +1722,49 @@ export default function Informes() {
     return zonas;
   }, [movimientos, productos]);
 
+  // Categorías/subcategorías presentes en el inventario (para los desplegables).
+  const invCategoriasDisponibles = useMemo(() => {
+    const s = new Set();
+    for (const z of inventarioVivero) for (const p of z.productos) { const c = String(p.categoria || "").trim(); if (c) s.add(c); }
+    return [...s].sort((a, b) => a.localeCompare(b, "es"));
+  }, [inventarioVivero]);
+  const invSubcategoriasDisponibles = useMemo(() => {
+    const s = new Set();
+    for (const z of inventarioVivero) for (const p of z.productos) {
+      if (invCategoria && String(p.categoria || "").trim() !== invCategoria) continue;
+      const sc = String(p.subcategoria || "").trim(); if (sc) s.add(sc);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "es"));
+  }, [inventarioVivero, invCategoria]);
+
+  // Inventario tras aplicar los filtros de producto/categoría/subcategoría.
+  // Filtra los productos dentro de cada zona, recalcula los tamaños presentes
+  // y descarta zonas que se quedan sin productos.
+  const inventarioFiltrado = useMemo(() => {
+    const term = normalizarBusqueda(invSearch);
+    const out = [];
+    for (const z of inventarioVivero) {
+      const productos = z.productos.filter((p) => {
+        if (invCategoria && String(p.categoria || "").trim() !== invCategoria) return false;
+        if (invSubcategoria && String(p.subcategoria || "").trim() !== invSubcategoria) return false;
+        if (!term) return true;
+        return (
+          normalizarBusqueda(p.nombre).includes(term) ||
+          normalizarBusqueda(p.nombreComun).includes(term) ||
+          normalizarBusqueda(p.categoria).includes(term) ||
+          normalizarBusqueda(p.subcategoria).includes(term)
+        );
+      });
+      if (productos.length === 0) continue;
+      const tamsSet = new Set();
+      for (const p of productos) for (const t of Object.keys(p.tamanos)) tamsSet.add(t);
+      out.push({ ...z, productos, tamanos: ordenarTamanos([...tamsSet]) });
+    }
+    return out;
+  }, [inventarioVivero, invSearch, invCategoria, invSubcategoria]);
+
   const stockFilteredItems = useMemo(() => {
-    const term = stockSearch.trim().toLowerCase();
+    const term = normalizarBusqueda(stockSearch);
 
     return normalizedStockItems.filter((item) => {
       const matchesCategory = !stockCategoriaFilter || item.categoria === stockCategoriaFilter;
@@ -1719,11 +1776,14 @@ export default function Informes() {
         stockEstadoFilter === "bajo" ? (item.estado === "Bajo stock" && stockActualNum > 0) :
         stockEstadoFilter === "agotado" ? stockActualNum <= 0 :
         true;
+      // Busca en nombre científico Y común (y categoría/subcategoría), sin acentos.
       const matchesSearch =
         !term ||
-        item.nombre.toLowerCase().includes(term) ||
-        item.categoria.toLowerCase().includes(term) ||
-        item.subcategoria.toLowerCase().includes(term);
+        normalizarBusqueda(item.nombreCientifico).includes(term) ||
+        normalizarBusqueda(item.nombreComun).includes(term) ||
+        normalizarBusqueda(item.nombre).includes(term) ||
+        normalizarBusqueda(item.categoria).includes(term) ||
+        normalizarBusqueda(item.subcategoria).includes(term);
 
       return matchesCategory && matchesSubcategory && matchesEstado && matchesSearch;
     });
@@ -2016,7 +2076,7 @@ export default function Informes() {
   const canExportCurrentReport = useMemo(() => {
     if (activeReport === "trazabilidad") return !!trazabilidadData;
     if (activeReport === "distribucion") return !!distribucionData;
-    if (activeReport === "inventario") return inventarioVivero.length > 0;
+    if (activeReport === "inventario") return inventarioFiltrado.length > 0;
     if (activeReport === "stock") return stockFilteredItems.length > 0;
     if (activeReport === "caducidad") return caducidadItems.length > 0;
     if (activeReport === "externos") return externosSearched;
@@ -2034,6 +2094,7 @@ export default function Informes() {
     prestamosItems,
     abastecimientoItems,
     bajasItems,
+    inventarioFiltrado,
   ]);
 
   const handleExportPdf = async () => {
@@ -2045,7 +2106,7 @@ export default function Informes() {
         me,
         trazabilidadData,
         distribucionData,
-        inventarioVivero,
+        inventarioVivero: inventarioFiltrado,
         stockExportData,
         caducidadExportData,
         externosData,
@@ -2218,7 +2279,7 @@ export default function Informes() {
   // Exporta el informe de Inventario vivero a CSV (matriz por zona con una
   // columna por tamaño; lo abre Excel).
   const exportarInventarioExcel = () => {
-    const zonas = Array.isArray(inventarioVivero) ? inventarioVivero : [];
+    const zonas = Array.isArray(inventarioFiltrado) ? inventarioFiltrado : [];
     if (zonas.length === 0) return;
     const esc = (v) => {
       const s = String(v ?? "");
@@ -2251,6 +2312,54 @@ export default function Informes() {
     a.download = "inventario_vivero.csv";
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const csvEsc = (v) => {
+    const s = String(v ?? "");
+    return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const descargarCsv = (nombre, filas) => {
+    const csv = filas.map((f) => f.map(csvEsc).join(";")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombre;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Exporta el informe de distribución a CSV (lo abre Excel).
+  const exportarDistribucionExcel = () => {
+    if (!distribucionData) return;
+    const filas = [
+      ["Producto", distribucionData.producto_nombre || `Producto #${distribucionData.producto_id || "—"}`],
+      ["Stock total", fmtNum(distribucionData.stock_total)],
+      ["Ubicaciones activas", fmtNum(distribucionData.distribucion?.length || 0)],
+      [],
+      ["Zona", "Tamaño", "Cantidad"],
+      ...(distribucionData.distribucion || []).map((r) => [r.zona || "", r.tamano || "", fmtNum(r.cantidad)]),
+    ];
+    descargarCsv("distribucion.csv", filas);
+  };
+
+  // Exporta el informe de existencias a CSV (lo abre Excel).
+  const exportarStockExcel = () => {
+    const items = Array.isArray(stockFilteredItems) ? stockFilteredItems : [];
+    if (items.length === 0) return;
+    const filas = [
+      ["Nombre científico", "Nombre común", "Categoría", "Subcategoría", "Stock", "Stock mínimo", "Estado"],
+      ...items.map((it) => [
+        it.nombreCientifico || it.nombre || "",
+        it.nombreComun || "",
+        it.categoria || "",
+        it.subcategoria || "",
+        fmtNum(it.stockActual),
+        fmtNum(it.stockMinimo),
+        it.estado || "",
+      ]),
+    ];
+    descargarCsv("existencias.csv", filas);
   };
 
   if (!canAccess) {
@@ -2361,12 +2470,14 @@ export default function Informes() {
                   >
                     📄 Exportar a PDF
                   </button>
-                  {(activeReport === "inventario" || activeReport === "externos") && (
+                  {(activeReport === "inventario" || activeReport === "externos" || activeReport === "distribucion" || activeReport === "stock") && (
                     <button
                       onClick={() => {
                         setExportMenuOpen(false);
                         if (activeReport === "inventario") exportarInventarioExcel();
                         else if (activeReport === "externos") exportarExternosExcel();
+                        else if (activeReport === "distribucion") exportarDistribucionExcel();
+                        else if (activeReport === "stock") exportarStockExcel();
                       }}
                       style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none", background: "#fff", cursor: "pointer", fontWeight: 800, color: "#0f172a", fontSize: 14 }}
                     >
@@ -2662,7 +2773,7 @@ export default function Informes() {
               <div style={{ color: "#64748b", fontWeight: 700 }}>
                 Inventario del vivero por zona. Pulsa cada zona para plegar/desplegar.
               </div>
-              {inventarioVivero.length > 0 && (
+              {inventarioFiltrado.length > 0 && (
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
@@ -2673,7 +2784,7 @@ export default function Informes() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setZonasInvColapsadas(Object.fromEntries(inventarioVivero.map((z) => [z.zona, true])))}
+                    onClick={() => setZonasInvColapsadas(Object.fromEntries(inventarioFiltrado.map((z) => [z.zona, true])))}
                     style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "#fff", color: "#475569", fontWeight: 800, cursor: "pointer", fontSize: 13 }}
                   >
                     Colapsar todo
@@ -2681,11 +2792,52 @@ export default function Informes() {
                 </div>
               )}
             </div>
+
+            {/* Filtros: producto (científico/común), categoría y subcategoría */}
+            {inventarioVivero.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1.4fr) minmax(200px, 1fr) minmax(200px, 1fr)", gap: 14, marginBottom: 18, alignItems: "end" }}>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Buscar producto</div>
+                  <input
+                    value={invSearch}
+                    onChange={(e) => setInvSearch(e.target.value)}
+                    placeholder="Nombre científico o común"
+                    style={softInputStyle()}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Categoría</div>
+                  <select
+                    value={invCategoria}
+                    onChange={(e) => { setInvCategoria(e.target.value); setInvSubcategoria(""); }}
+                    style={softInputStyle()}
+                  >
+                    <option value="">Todas</option>
+                    {invCategoriasDisponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Subcategoría</div>
+                  <select
+                    value={invSubcategoria}
+                    onChange={(e) => setInvSubcategoria(e.target.value)}
+                    disabled={invSubcategoriasDisponibles.length === 0}
+                    style={{ ...softInputStyle(), opacity: invSubcategoriasDisponibles.length === 0 ? 0.55 : 1 }}
+                  >
+                    <option value="">Todas</option>
+                    {invSubcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {inventarioVivero.length === 0 ? (
               <EmptyState text="No hay stock registrado en ninguna zona del vivero." />
+            ) : inventarioFiltrado.length === 0 ? (
+              <EmptyState text="Ningún producto coincide con los filtros aplicados." />
             ) : (
               <div style={{ display: "grid", gap: 22 }}>
-                {inventarioVivero.map((zona) => {
+                {inventarioFiltrado.map((zona) => {
                   const colapsada = !!zonasInvColapsadas[zona.zona];
                   return (
                   <div key={zona.zona} style={{ border: "1px solid rgba(15,23,42,0.10)", borderRadius: 14, overflow: "hidden" }}>
