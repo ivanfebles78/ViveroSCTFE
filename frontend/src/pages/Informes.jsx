@@ -243,6 +243,16 @@ function normalizarBusqueda(s) {
     .trim();
 }
 
+// Etiqueta de producto: "Nombre científico - Nombre común" cuando difieren; si
+// son iguales (o falta alguno), muestra solo el que haya.
+function nombreCientificoComun(cientifico, comun) {
+  const c = String(cientifico || "").trim();
+  const n = String(comun || "").trim();
+  if (!c) return n;
+  if (!n) return c;
+  return normalizarBusqueda(c) === normalizarBusqueda(n) ? c : `${c} - ${n}`;
+}
+
 function getProductoCategoria(producto) {
   return String(producto?.categoria || "Sin categoría").trim() || "Sin categoría";
 }
@@ -1132,7 +1142,7 @@ async function exportReportToPdf({
         theme: "grid",
         head: [[`Detalle · ${group.categoria}`, "Subcategoría", "Stock actual", "Stock mínimo", "Estado"]],
         body: (group.items || []).map((item) => [
-          item.nombre,
+          item.nombreDisplay || item.nombre,
           item.subcategoria,
           fmtNum(item.stockActual),
           fmtNum(item.stockMinimo),
@@ -1622,6 +1632,7 @@ export default function Informes() {
         nombre,
         nombreComun: p.nombre_natural || "",
         nombreCientifico: p.nombre_cientifico || "",
+        nombreDisplay: nombreCientificoComun(p.nombre_cientifico, p.nombre_natural) || nombre,
         categoria,
         subcategoria,
         stockActual,
@@ -3046,7 +3057,7 @@ export default function Informes() {
                         <tbody>
                           {group.items.map((item) => (
                             <tr key={item.id}>
-                              <td style={tdStyle()}>{item.nombre}</td>
+                              <td style={tdStyle()}>{item.nombreDisplay}</td>
                               <td style={tdStyle()}>{item.subcategoria}</td>
                               <td style={tdStyle()}>{fmtNum(item.stockActual)}</td>
                               <td style={tdStyle()}>{fmtNum(item.stockMinimo)}</td>
