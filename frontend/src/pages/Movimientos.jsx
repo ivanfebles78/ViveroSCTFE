@@ -2332,10 +2332,13 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
     }
   }, [esEntrada, esTraslado, selectedProduct, zonasDestinoPermitidas]);
 
-  // ENTRADA: tamaños posibles del producto (destino).
+  // ENTRADA: tamaños posibles del producto (destino). Se ofrecen TODOS los
+  // formatos/tamaños del producto (p. ej. M12/M20/M35 en plantas); la regla
+  // tamanoDisponiblePlanta solo aplica a lo que la UTE puede pedir, no a los
+  // movimientos físicos (una planta puede entrar o repotarse a cualquier tamaño).
   const tamanosEntrada = useMemo(() => {
     if (!esEntrada || !selectedProduct) return [];
-    return getFormatoOptions(formatoConfig).filter((t) => tamanoDisponiblePlanta(selectedProduct, t));
+    return getFormatoOptions(formatoConfig);
   }, [esEntrada, selectedProduct, formatoConfig]);
 
   // TRASLADO: tamaños con stock en la zona origen (descontando carrito).
@@ -2486,8 +2489,10 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   const totalUds = cart.reduce((s, c) => s + Number(c.cantidad || 0), 0);
   const barriosDisp = distrito ? (DISTRITO_BARRIOS[distrito] || []) : [];
   const DISTRITOS = Object.keys(DISTRITO_BARRIOS);
-  // Tamaños destino ofrecidos en traslado (según categoría del producto).
-  const tamanosDestinoTraslado = getFormatoOptions(formatoConfig).filter((t) => tamanoDisponiblePlanta(selectedProduct, t));
+  // Tamaños destino ofrecidos en traslado: TODOS los del producto (permite
+  // repotar M12→M20, etc.). La regla tamanoDisponiblePlanta solo limita lo que
+  // la UTE puede pedir, no los movimientos internos.
+  const tamanosDestinoTraslado = getFormatoOptions(formatoConfig);
 
   const tipoBtn = (val) => {
     const m = TIPO_META[val];
