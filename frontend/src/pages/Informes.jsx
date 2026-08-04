@@ -1053,6 +1053,7 @@ async function exportReportToPdf({
   prestamosExportData,
   abastecimientoExportData,
   bajasExportData,
+  estadisticasExportData,
 }) {
   const doc = new jsPDF("p", "mm", "a4");
   let y = await addDocHeader(
@@ -1073,6 +1074,8 @@ async function exportReportToPdf({
       ? "Reporte de abastecimiento"
       : activeReport === "bajas"
       ? "Reporte de Baja vivero"
+      : activeReport === "estadisticas"
+      ? "Estadísticas de reposición"
       : "Reporte de movimientos externos",
     me
   );
@@ -1404,6 +1407,63 @@ async function exportReportToPdf({
     });
   }
 
+  if (activeReport === "estadisticas" && estadisticasExportData) {
+    const d = estadisticasExportData;
+    autoTable(doc, {
+      startY: y,
+      theme: "grid",
+      head: [["Filtro / Resumen", "Valor"]],
+      body: [
+        ["Rango de fechas", `${d.filters?.desde || "—"} a ${d.filters?.hasta || "—"}`],
+        ["Producto", d.filters?.producto || "Todos"],
+        ["Categoría", d.filters?.categoria || "Todas"],
+        ["Subcategoría", d.filters?.subcategoria || "Todas"],
+        ["Coste total reposición", fmtEuro(d.totalCoste)],
+        ["Unidades recibidas", fmtNum(d.totalUds)],
+        ["Movimientos", fmtNum((d.rows || []).length)],
+        ...(d.simulado ? [["Origen de los datos", "SIMULADOS (no reales)"]] : []),
+      ],
+      styles: { fontSize: 10, cellPadding: 2.5 },
+      headStyles: { fillColor: [14, 165, 233] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      theme: "grid",
+      head: [["Mes", "Coste de reposición"]],
+      body: (d.costesMensuales || []).map((m) => [fmtMesLabel(m.mes), fmtEuro(m.total)]),
+      styles: { fontSize: 9.5, cellPadding: 2.2 },
+      headStyles: { fillColor: [14, 165, 233] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      theme: "grid",
+      head: [["Producto más solicitado", "Unidades"]],
+      body: (d.topProductos || []).map((p) => [p.nombre, fmtNum(p.cantidad)]),
+      styles: { fontSize: 9.5, cellPadding: 2.2 },
+      headStyles: { fillColor: [16, 185, 129] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      theme: "grid",
+      head: [["Fecha", "Producto", "Categoría", "Subcat.", "Tamaño", "Cant.", "Precio", "Coste"]],
+      body: (d.rows || []).map((r) => [
+        r.fecha ? fmtFecha(r.fecha) : "—",
+        r.nombreDisplay,
+        r.categoria,
+        r.subcategoria,
+        r.tamano,
+        fmtNum(r.cantidad),
+        r.precio == null ? "—" : fmtEuro(r.precio),
+        r.coste == null ? "—" : fmtEuro(r.coste),
+      ]),
+      styles: { fontSize: 8, cellPadding: 1.8, overflow: "linebreak" },
+      headStyles: { fillColor: [51, 65, 85] },
+    });
+  }
+
   const fileName = `${sanitizeFileName(
     activeReport === "trazabilidad"
       ? "reporte_trazabilidad"
@@ -1421,6 +1481,8 @@ async function exportReportToPdf({
       ? "reporte_prestamos"
       : activeReport === "bajas"
       ? "reporte_baja_vivero"
+      : activeReport === "estadisticas"
+      ? "estadisticas_reposicion"
       : "reporte_movimientos_externos"
   )}_${new Date().toISOString().slice(0, 10)}.pdf`;
 
@@ -2309,6 +2371,16 @@ export default function Informes() {
     return [...m.values()].sort((a, b) => b.cantidad - a.cantidad).slice(0, 10);
   }, [estadFiltrado]);
 
+  const estadExportData = useMemo(() => ({
+    simulado: estadSimular,
+    filters: { desde: estadDesde, hasta: estadHasta, producto: estadProducto, categoria: estadCategoria, subcategoria: estadSubcategoria },
+    rows: estadFiltrado,
+    totalCoste: estadTotalCoste,
+    totalUds: estadTotalUds,
+    costesMensuales: estadCostesMensuales,
+    topProductos: estadTopProductos,
+  }), [estadSimular, estadDesde, estadHasta, estadProducto, estadCategoria, estadSubcategoria, estadFiltrado, estadTotalCoste, estadTotalUds, estadCostesMensuales, estadTopProductos]);
+
   const exportarEstadisticasExcel = () => {
     const esc = (v) => {
       const s = String(v ?? "");
@@ -2380,6 +2452,7 @@ export default function Informes() {
     if (activeReport === "prestamos") return prestamosItems.length > 0;
     if (activeReport === "abastecimiento") return abastecimientoItems.length > 0;
     if (activeReport === "bajas") return bajasItems.length > 0;
+    if (activeReport === "estadisticas") return estadFiltrado.length > 0;
     return false;
   }, [
     activeReport,
@@ -2392,6 +2465,7 @@ export default function Informes() {
     abastecimientoItems,
     bajasItems,
     inventarioFiltrado,
+    estadFiltrado,
   ]);
 
   const handleExportPdf = async () => {
@@ -2410,6 +2484,7 @@ export default function Informes() {
         prestamosExportData,
         abastecimientoExportData,
         bajasExportData,
+        estadisticasExportData: estadExportData,
       });
       showTimedMessage("PDF exportado correctamente.", "success");
     } catch (e) {
@@ -2767,7 +2842,7 @@ export default function Informes() {
                   >
                     📄 Exportar a PDF
                   </button>
-                  {(activeReport === "inventario" || activeReport === "externos" || activeReport === "distribucion" || activeReport === "stock") && (
+                  {(activeReport === "inventario" || activeReport === "externos" || activeReport === "distribucion" || activeReport === "stock" || activeReport === "estadisticas") && (
                     <button
                       onClick={() => {
                         setExportMenuOpen(false);
@@ -2775,6 +2850,7 @@ export default function Informes() {
                         else if (activeReport === "externos") exportarExternosExcel();
                         else if (activeReport === "distribucion") exportarDistribucionExcel();
                         else if (activeReport === "stock") exportarStockExcel();
+                        else if (activeReport === "estadisticas") exportarEstadisticasExcel();
                       }}
                       style={{ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", border: "none", background: "#fff", cursor: "pointer", fontWeight: 800, color: "#0f172a", fontSize: 14 }}
                     >
@@ -4144,23 +4220,18 @@ Productos con fecha de caducidad
               </div>
             </div>
 
-            {/* Resumen + exportar */}
-            <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {[
-                  { l: "Coste total reposición", v: fmtEuro(estadTotalCoste), c: "#0e7490" },
-                  { l: "Unidades recibidas", v: fmtNum(estadTotalUds), c: "#065f46" },
-                  { l: "Movimientos", v: fmtNum(estadFiltrado.length), c: "#334155" },
-                ].map((s) => (
-                  <div key={s.l} style={{ ...cardStyle(), padding: "12px 16px", minWidth: 160 }}>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>{s.l}</div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: s.c, marginTop: 2 }}>{s.v}</div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={exportarEstadisticasExcel} disabled={estadFiltrado.length === 0} style={secondaryBtnStyle(estadFiltrado.length === 0)}>
-                ⬇ Exportar a Excel
-              </button>
+            {/* Resumen (el export a PDF/Excel está en el botón «Exportar ▾» de arriba) */}
+            <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {[
+                { l: "Coste total reposición", v: fmtEuro(estadTotalCoste), c: "#0e7490" },
+                { l: "Unidades recibidas", v: fmtNum(estadTotalUds), c: "#065f46" },
+                { l: "Movimientos", v: fmtNum(estadFiltrado.length), c: "#334155" },
+              ].map((s) => (
+                <div key={s.l} style={{ ...cardStyle(), padding: "12px 16px", minWidth: 160 }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>{s.l}</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: s.c, marginTop: 2 }}>{s.v}</div>
+                </div>
+              ))}
             </div>
 
             {estadSinPrecio && (
