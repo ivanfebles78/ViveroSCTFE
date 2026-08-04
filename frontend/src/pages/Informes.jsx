@@ -2142,7 +2142,19 @@ export default function Informes() {
   const [estadProducto, setEstadProducto] = useState("");
   const [estadCategoria, setEstadCategoria] = useState("");
   const [estadSubcategoria, setEstadSubcategoria] = useState("");
+  // Modo simulación: genera datos ficticios (precios + movimientos de reposición
+  // de los 3 últimos meses) SOLO en memoria, para previsualizar el informe. No
+  // se guarda nada en la base de datos.
+  const [estadSimular, setEstadSimular] = useState(false);
   useEffect(() => { setEstadSubcategoria(""); }, [estadCategoria]);
+  // Al activar la simulación ampliamos el rango a los 3 últimos meses (los datos
+  // simulados cubren ese periodo); al desactivarla volvemos al último mes.
+  useEffect(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - (estadSimular ? 3 : 1));
+    setEstadDesde(d.toISOString().slice(0, 10));
+    setEstadHasta(new Date().toISOString().slice(0, 10));
+  }, [estadSimular]);
 
   const productosById = useMemo(() => {
     const m = new Map();
@@ -2159,8 +2171,8 @@ export default function Informes() {
     return s;
   }, [pedidos]);
 
-  // Movimientos de ENTRADA asociados a un pedido de reposición, con coste.
-  const estadRowsAll = useMemo(() => {
+  // Movimientos REALES de ENTRADA asociados a un pedido de reposición, con coste.
+  const estadRowsReales = useMemo(() => {
     const rows = [];
     for (const m of Array.isArray(movimientos) ? movimientos : []) {
       if (m?.es_devolucion) continue;
@@ -2192,15 +2204,65 @@ export default function Informes() {
     return rows;
   }, [movimientos, reposicionPedidoIds, productosById]);
 
+  // Datos SIMULADOS: por cada producto del catálogo generamos entradas de
+  // reposición en los 3 últimos meses, con un precio ficticio y cantidades
+  // deterministas (dependen del id, para que no cambien en cada render). Solo
+  // en memoria — no toca la base de datos.
+  const estadRowsSimulados = useMemo(() => {
+    const lista = (Array.isArray(productos) ? productos : []).slice(0, 60);
+    if (lista.length === 0) return [];
+    const TAMS = ["M12", "M20", "M35"];
+    const now = new Date();
+    const rows = [];
+    lista.forEach((p, idx) => {
+      const pid = Number(p.id) || idx + 1;
+      // Precio ficticio si no tiene: entre ~4 y ~64 €.
+      const precio = p.precio != null ? Number(p.precio) : 4 + ((pid * 7) % 60) + ((pid % 4) * 0.25);
+      const nombreCientifico = p.nombre_cientifico || "";
+      const nombreComun = p.nombre_natural || "";
+      for (let mesAtras = 0; mesAtras < 3; mesAtras++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - mesAtras, ((pid * 3 + mesAtras) % 26) + 1);
+        // Algunas combinaciones no generan movimiento (para que el informe no sea uniforme).
+        if ((pid + mesAtras) % 5 === 0) continue;
+        const cantidad = ((pid * 13 + mesAtras * 29) % 40) + 1;
+        rows.push({
+          id: `sim-${pid}-${mesAtras}`,
+          fecha: d.toISOString(),
+          producto_id: pid,
+          nombreCientifico,
+          nombreComun,
+          nombreDisplay: nombreCientificoComun(nombreCientifico, nombreComun) || `Producto #${pid}`,
+          categoria: p.categoria || "",
+          subcategoria: p.subcategoria || "",
+          tamano: TAMS[(pid + mesAtras) % TAMS.length],
+          cantidad,
+          precio,
+          coste: precio * cantidad,
+          pedido_id: `sim-${pid}`,
+        });
+      }
+    });
+    return rows;
+  }, [productos]);
+
+  const estadRowsAll = estadSimular ? estadRowsSimulados : estadRowsReales;
+
+  // Categorías / subcategorías EXISTENTES en el catálogo (para poder filtrar
+  // aunque aún no haya movimientos reales de reposición).
   const estadCategorias = useMemo(
-    () => [...new Set(estadRowsAll.map((r) => r.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es")),
-    [estadRowsAll]
+    () => [...new Set((Array.isArray(productos) ? productos : []).map((p) => String(p?.categoria || "").trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es")),
+    [productos]
   );
   const estadSubcategorias = useMemo(() => {
     if (!estadCategoria) return [];
-    return [...new Set(estadRowsAll.filter((r) => r.categoria === estadCategoria).map((r) => r.subcategoria).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "es"));
-  }, [estadRowsAll, estadCategoria]);
+    return [...new Set(
+      (Array.isArray(productos) ? productos : [])
+        .filter((p) => String(p?.categoria || "").trim() === estadCategoria)
+        .map((p) => String(p?.subcategoria || "").trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, "es"));
+  }, [productos, estadCategoria]);
 
   const estadFiltrado = useMemo(() => {
     const term = normalizarBusqueda(estadProducto);
@@ -4036,8 +4098,24 @@ Productos con fecha de caducidad
 
         {activeReport === "estadisticas" && (
           <>
+            {/* Simular resultados */}
+            <label style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, cursor: "pointer", background: estadSimular ? "rgba(139,92,246,0.10)" : "rgba(148,163,184,0.08)", border: estadSimular ? "1px solid rgba(139,92,246,0.35)" : "1px solid rgba(15,23,42,0.10)" }}>
+              <input type="checkbox" checked={estadSimular} onChange={(e) => setEstadSimular(e.target.checked)} style={{ width: 18, height: 18 }} />
+              <div>
+                <div style={{ fontWeight: 900, color: "#0f172a" }}>Simular resultados</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b" }}>
+                  Genera datos de ejemplo (precios y reposiciones de los últimos 3 meses) solo para previsualizar el informe. No se guarda nada en la base de datos.
+                </div>
+              </div>
+            </label>
+            {estadSimular && (
+              <div style={{ marginTop: 12, padding: "8px 14px", borderRadius: 10, background: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.30)", color: "#5b21b6", fontWeight: 800, fontSize: 13 }}>
+                🧪 Mostrando datos SIMULADOS (no reales).
+              </div>
+            )}
+
             {/* Filtros */}
-            <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, alignItems: "end" }}>
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, alignItems: "end" }}>
               <div>
                 <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Desde</div>
                 <input type="date" value={estadDesde} onChange={(e) => setEstadDesde(e.target.value)} style={softInputStyle()} />
