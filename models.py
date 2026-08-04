@@ -40,6 +40,8 @@ class Producto(Base):
 
     stock_minimo = Column(Integer, default=0)
     es_interno = Column(Boolean, nullable=False, default=False)
+    # Precio unitario en euros (coste de referencia del producto). Opcional.
+    precio = Column(Numeric(10, 2), nullable=True)
 
 
 class CaducidadConfig(Base):

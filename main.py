@@ -58,6 +58,7 @@ def _ensure_schema() -> None:
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS distrito_destino VARCHAR(150)",
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS barrio_destino VARCHAR(150)",
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS direccion_destino VARCHAR(255)",
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio NUMERIC(10,2)",
     ]
     try:
         with engine.begin() as conn:
@@ -1341,6 +1342,8 @@ def get_productos(
         if rol_user != "empresa_externa":
             item["stock_minimo"] = p.stock_minimo
             item["es_interno"] = bool(getattr(p, "es_interno", False))
+            _precio = getattr(p, "precio", None)
+            item["precio"] = float(_precio) if _precio is not None else None
 
         out.append(item)
 
@@ -1386,6 +1389,7 @@ class ProductoCreate(BaseModel):
     subcategoria: str
     stock_minimo: int = 0
     es_interno: bool = False
+    precio: Optional[float] = None
 
 
 class ProductoUpdate(BaseModel):
@@ -1395,9 +1399,11 @@ class ProductoUpdate(BaseModel):
     subcategoria: Optional[str] = None
     stock_minimo: Optional[int] = None
     es_interno: Optional[bool] = None
+    precio: Optional[float] = None
 
 
 def _producto_dict(p: Producto) -> dict:
+    precio = getattr(p, "precio", None)
     return {
         "id": p.id,
         "nombre_cientifico": p.nombre_cientifico,
@@ -1406,6 +1412,7 @@ def _producto_dict(p: Producto) -> dict:
         "subcategoria": p.subcategoria,
         "stock_minimo": int(p.stock_minimo or 0),
         "es_interno": bool(getattr(p, "es_interno", False)),
+        "precio": float(precio) if precio is not None else None,
     }
 
 
@@ -1427,6 +1434,9 @@ def crear_producto(
     if existente:
         raise HTTPException(status_code=409, detail=f"Ya existe un producto con nombre científico '{nombre_c}'")
 
+    if payload.precio is not None and payload.precio < 0:
+        raise HTTPException(status_code=400, detail="El precio no puede ser negativo")
+
     p = Producto(
         nombre_cientifico=nombre_c,
         nombre_natural=(payload.nombre_natural or "").strip() or None,
@@ -1434,6 +1444,7 @@ def crear_producto(
         subcategoria=payload.subcategoria.strip(),
         stock_minimo=int(payload.stock_minimo or 0),
         es_interno=bool(payload.es_interno),
+        precio=payload.precio,
     )
     db.add(p)
     db.commit()
@@ -1483,6 +1494,10 @@ def actualizar_producto(
         producto.stock_minimo = int(payload.stock_minimo)
     if payload.es_interno is not None:
         producto.es_interno = bool(payload.es_interno)
+    if payload.precio is not None:
+        if payload.precio < 0:
+            raise HTTPException(status_code=400, detail="El precio no puede ser negativo")
+        producto.precio = payload.precio
 
     db.commit()
     db.refresh(producto)

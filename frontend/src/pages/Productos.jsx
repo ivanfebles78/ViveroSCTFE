@@ -658,6 +658,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
     subcategoria: "",
     stock_minimo: 0,
     es_interno: false,
+    precio: "",
   });
   const [nuevoCategoriaSel, setNuevoCategoriaSel] = useState("");
   const [nuevoSubcategoriaSel, setNuevoSubcategoriaSel] = useState("");
@@ -680,6 +681,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         subcategoria: "",
         stock_minimo: 0,
         es_interno: false,
+        precio: "",
       });
       setNuevoCategoriaSel("");
       setNuevoSubcategoriaSel("");
@@ -750,7 +752,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
       const s = String(v ?? "");
       return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const headers = ["Nombre científico", "Nombre común", "Categoría", "Subcategoría", "Stock", "Stock mínimo", "Interno"];
+    const headers = ["Nombre científico", "Nombre común", "Categoría", "Subcategoría", "Stock", "Stock mínimo", "Precio (€)", "Interno"];
     const lineas = lista.map((p) =>
       [
         p.nombre_cientifico || "",
@@ -759,6 +761,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         p.subcategoria || "",
         p.stock ?? "",
         p.stock_minimo === null || p.stock_minimo === undefined ? "" : p.stock_minimo,
+        p.precio === null || p.precio === undefined ? "" : Number(p.precio).toFixed(2).replace(".", ","),
         p.es_interno ? "Sí" : "No",
       ].map(esc).join(";")
     );
@@ -781,6 +784,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
       subcategoria: p.subcategoria || "",
       stock_minimo: p.stock_minimo ?? 0,
       es_interno: !!p.es_interno,
+      precio: p.precio ?? "",
     });
   };
 
@@ -792,7 +796,11 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
   const saveEdit = async () => {
     setSaving(true);
     try {
-      await updateProducto(editingId, editForm);
+      const payload = {
+        ...editForm,
+        precio: editForm.precio === "" || editForm.precio == null ? null : Number(editForm.precio),
+      };
+      await updateProducto(editingId, payload);
       showMsg("Producto actualizado.");
       cancelEdit();
       onChanged && (await onChanged());
@@ -833,6 +841,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         subcategoria: nuevo.subcategoria.trim(),
         stock_minimo: Number(nuevo.stock_minimo) || 0,
         es_interno: !!nuevo.es_interno,
+        precio: nuevo.precio === "" || nuevo.precio == null ? null : Number(nuevo.precio),
       });
       showMsg("Producto creado.");
       setNuevo({
@@ -842,6 +851,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
         subcategoria: "",
         stock_minimo: 0,
         es_interno: false,
+        precio: "",
       });
       setNuevoCategoriaSel("");
       setNuevoSubcategoriaSel("");
@@ -1035,12 +1045,13 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
               <div style={{ overflowX: "auto", border: "1px solid rgba(15,23,42,0.08)", borderRadius: 12 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", wordBreak: "break-word" }}>
                   <colgroup>
-                    <col style={{ width: "20%" }} />
                     <col style={{ width: "18%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "12%" }} />
                     <col style={{ width: "9%" }} />
                     <col style={{ width: "8%" }} />
+                    <col style={{ width: "7%" }} />
                     <col style={{ width: "19%" }} />
                   </colgroup>
                   <thead>
@@ -1049,6 +1060,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                       <th style={{ padding: 10, textAlign: "left", fontWeight: 900, fontSize: 12, color: "#334155" }}>Común</th>
                       <th style={{ padding: 10, textAlign: "left", fontWeight: 900, fontSize: 12, color: "#334155" }}>Categoría</th>
                       <th style={{ padding: 10, textAlign: "left", fontWeight: 900, fontSize: 12, color: "#334155" }}>Subcategoría</th>
+                      <th style={{ padding: 10, textAlign: "center", fontWeight: 900, fontSize: 12, color: "#334155" }}>Precio (€)</th>
                       <th style={{ padding: 10, textAlign: "center", fontWeight: 900, fontSize: 12, color: "#334155" }}>Stock min.</th>
                       <th style={{ padding: 10, textAlign: "center", fontWeight: 900, fontSize: 12, color: "#334155" }}>Interno</th>
                       <th style={{ padding: 10, textAlign: "center", fontWeight: 900, fontSize: 12, color: "#334155" }}>Acciones</th>
@@ -1057,7 +1069,7 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                   <tbody>
                     {productosFiltrados.length === 0 ? (
                       <tr>
-                        <td colSpan={7} style={{ padding: 16, textAlign: "center", color: "#64748b" }}>
+                        <td colSpan={8} style={{ padding: 16, textAlign: "center", color: "#64748b" }}>
                           No hay productos.
                         </td>
                       </tr>
@@ -1100,6 +1112,17 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                                   <input
                                     type="number"
                                     min={0}
+                                    step="0.01"
+                                    placeholder="—"
+                                    value={editForm.precio ?? ""}
+                                    onChange={(e) => setEditForm((f) => ({ ...f, precio: e.target.value }))}
+                                    style={{ ...inputS, textAlign: "center" }}
+                                  />
+                                </td>
+                                <td style={{ padding: 6 }}>
+                                  <input
+                                    type="number"
+                                    min={0}
                                     value={editForm.stock_minimo}
                                     onChange={(e) => setEditForm((f) => ({ ...f, stock_minimo: e.target.value }))}
                                     style={{ ...inputS, textAlign: "center" }}
@@ -1126,6 +1149,9 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
                                 <td style={{ padding: 10 }}>{p.nombre_natural || "—"}</td>
                                 <td style={{ padding: 10 }}>{p.categoria}</td>
                                 <td style={{ padding: 10 }}>{p.subcategoria}</td>
+                                <td style={{ padding: 10, textAlign: "center", fontWeight: 800 }}>
+                                  {p.precio === null || p.precio === undefined ? "—" : `${Number(p.precio).toFixed(2).replace(".", ",")} €`}
+                                </td>
                                 <td style={{ padding: 10, textAlign: "center", fontWeight: 800 }}>{p.stock_minimo ?? 0}</td>
                                 <td style={{ padding: 10, textAlign: "center" }}>
                                   <span style={{ padding: "2px 8px", borderRadius: 999, background: p.es_interno ? "rgba(245,158,11,0.15)" : "rgba(148,163,184,0.15)", color: p.es_interno ? "#92400e" : "#475569", fontWeight: 900, fontSize: 12 }}>
@@ -1245,6 +1271,10 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
               <div>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Stock mínimo</div>
                 <input type="number" min={0} value={nuevo.stock_minimo} onChange={(e) => setNuevo((n) => ({ ...n, stock_minimo: e.target.value }))} style={inputS} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Precio unitario (€)</div>
+                <input type="number" min={0} step="0.01" value={nuevo.precio} onChange={(e) => setNuevo((n) => ({ ...n, precio: e.target.value }))} style={inputS} placeholder="Ej: 12,50" />
               </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.10)", background: nuevo.es_interno ? "rgba(245,158,11,0.08)" : "white", fontWeight: 800, color: "#0f172a", cursor: "pointer", marginTop: 22 }}>
                 <input type="checkbox" checked={nuevo.es_interno} onChange={(e) => setNuevo((n) => ({ ...n, es_interno: e.target.checked }))} style={{ width: 18, height: 18 }} />
