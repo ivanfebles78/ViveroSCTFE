@@ -15,15 +15,16 @@ import {
 } from "../api/api";
 
 const REPORTS = [
-  { key: "trazabilidad", label: "Trazabilidad" },
-  { key: "distribucion", label: "Distribución" },
-  { key: "inventario", label: "Inventario vivero" },
-  { key: "stock", label: "Existencias" },
-  { key: "caducidad", label: "Caducidad" },
-  { key: "externos", label: "Movimientos externos" },
-  { key: "prestamos", label: "Préstamos" },
-  { key: "abastecimiento", label: "Abastecimiento" },
-  { key: "bajas", label: "Baja vivero" },
+  { key: "trazabilidad", label: "Trazabilidad", desc: "Sigue el recorrido completo de un lote (por su UUID): entradas, traslados, salidas y devoluciones, con fechas, zonas y cantidades." },
+  { key: "distribucion", label: "Distribución", desc: "Muestra en qué zonas del vivero está repartido un producto y en qué tamaños, con las cantidades disponibles en cada una." },
+  { key: "inventario", label: "Inventario vivero", desc: "Matriz de existencias por zona: una fila por producto (científico y común) y una columna por tamaño, con el total de cada zona." },
+  { key: "stock", label: "Existencias", desc: "Listado de productos agrupado por categoría con su stock actual y mínimo. Se puede filtrar por estado (con stock, bajo o agotado)." },
+  { key: "caducidad", label: "Caducidad", desc: "Lotes con fecha de caducidad: caducados, próximos a caducar y vigentes, con zona, tamaño y días restantes." },
+  { key: "externos", label: "Movimientos externos", desc: "Salidas del vivero hacia el exterior (UTE, organismos, colegios…) con su destino, fecha, producto y cantidad." },
+  { key: "prestamos", label: "Préstamos", desc: "Material entregado en préstamo y pendiente de devolución, con la cantidad prestada, devuelta y lo que queda por devolver." },
+  { key: "abastecimiento", label: "Abastecimiento", desc: "Necesidades de reposición: productos por debajo del stock mínimo y cuánto haría falta reponer." },
+  { key: "bajas", label: "Baja vivero", desc: "Productos dados de baja en el vivero (descartes), con fecha, producto y cantidad." },
+  { key: "estadisticas", label: "Estadísticas", desc: "Entradas de reposición (compras a proveedores) en un rango de fechas, con su coste asociado, coste mensual y productos más solicitados. Solo administrador." },
 ];
 
 function fmtCantInv(v) {
@@ -251,6 +252,79 @@ function nombreCientificoComun(cientifico, comun) {
   if (!c) return n;
   if (!n) return c;
   return normalizarBusqueda(c) === normalizarBusqueda(n) ? c : `${c} - ${n}`;
+}
+
+// Importe en euros con dos decimales y coma decimal (es-ES).
+function fmtEuro(v) {
+  const n = Number(v || 0);
+  return `${n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+}
+
+// Etiqueta de mes "YYYY-MM" → "mmm YYYY" (ej. "2025-08" → "ago 2025").
+const _MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function fmtMesLabel(key) {
+  const [y, m] = String(key || "").split("-");
+  const idx = Number(m) - 1;
+  return idx >= 0 && idx < 12 ? `${_MESES_CORTOS[idx]} ${y}` : key;
+}
+
+// Gráfica de barras verticales (coste mensual). data: [{ mes, total }].
+function BarrasVerticales({ data, color = "#0ea5e9", valueFmt = (v) => v }) {
+  if (!data || data.length === 0) return <EmptyState text="Sin datos para el rango seleccionado." />;
+  const W = Math.max(320, data.length * 74);
+  const H = 240;
+  const padB = 46, padT = 24, padL = 8, padR = 8;
+  const max = Math.max(...data.map((d) => Number(d.total) || 0), 1);
+  const bw = (W - padL - padR) / data.length;
+  const chartH = H - padB - padT;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg width={W} height={H} role="img" style={{ display: "block" }}>
+        {data.map((d, i) => {
+          const v = Number(d.total) || 0;
+          const h = max > 0 ? (v / max) * chartH : 0;
+          const x = padL + i * bw;
+          const y = padT + (chartH - h);
+          return (
+            <g key={d.mes}>
+              <rect x={x + bw * 0.16} y={y} width={bw * 0.68} height={h} rx={5} fill={color} />
+              <text x={x + bw / 2} y={y - 6} textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#0f172a">{valueFmt(v)}</text>
+              <text x={x + bw / 2} y={H - padB + 18} textAnchor="middle" fontSize="11" fontWeight="700" fill="#64748b">{fmtMesLabel(d.mes)}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// Gráfica de barras horizontales (top productos). data: [{ nombre, cantidad }].
+function BarrasHorizontales({ data, color = "#10b981", valueFmt = (v) => v }) {
+  if (!data || data.length === 0) return <EmptyState text="Sin datos para el rango seleccionado." />;
+  const rowH = 30;
+  const H = data.length * rowH + 12;
+  const labelW = 220;
+  const max = Math.max(...data.map((d) => Number(d.cantidad) || 0), 1);
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg width="100%" height={H} viewBox={`0 0 720 ${H}`} preserveAspectRatio="xMinYMin meet" style={{ display: "block", minWidth: 480 }}>
+        {data.map((d, i) => {
+          const v = Number(d.cantidad) || 0;
+          const barMax = 720 - labelW - 60;
+          const w = max > 0 ? (v / max) * barMax : 0;
+          const y = i * rowH + 6;
+          const nombre = String(d.nombre || "").length > 34 ? String(d.nombre).slice(0, 33) + "…" : d.nombre;
+          return (
+            <g key={i}>
+              <text x={0} y={y + rowH / 2} dominantBaseline="middle" fontSize="11.5" fontWeight="700" fill="#0f172a">{nombre}</text>
+              <rect x={labelW} y={y} width={Math.max(w, 2)} height={rowH - 12} rx={5} fill={color} />
+              <text x={labelW + Math.max(w, 2) + 6} y={y + (rowH - 12) / 2} dominantBaseline="middle" fontSize="11" fontWeight="800" fill="#0f172a">{valueFmt(v)}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
 
 function getProductoCategoria(producto) {
@@ -1426,6 +1500,7 @@ export default function Informes() {
   const isEmpresaExterna = role === "empresa_externa";
   const isTecnico = role === "tecnico";
   const isGestorVivero = role === "gestor_vivero";
+  const isAdmin = role === "admin";
   const canAccess =
     role === "admin" || role === "manager" || isGestorVivero || isEmpresaExterna || isTecnico;
 
@@ -1439,11 +1514,13 @@ export default function Informes() {
     ? ["distribucion", "inventario", "stock"]
     : null;
 
-  // Pestañas visibles según el rol.
-  const visibleReports = useMemo(
-    () => (allowedReportKeys ? REPORTS.filter((r) => allowedReportKeys.includes(r.key)) : REPORTS),
-    [role]
-  );
+  // Pestañas visibles según el rol. "estadisticas" es SOLO para administrador,
+  // aunque otros roles (manager/gestor) vean el resto de informes.
+  const visibleReports = useMemo(() => {
+    let list = allowedReportKeys ? REPORTS.filter((r) => allowedReportKeys.includes(r.key)) : REPORTS;
+    if (!isAdmin) list = list.filter((r) => r.key !== "estadisticas");
+    return list;
+  }, [role]);
 
   const [activeReport, setActiveReport] = useState(
     allowedReportKeys ? allowedReportKeys[0] : "trazabilidad"
@@ -2052,6 +2129,153 @@ export default function Informes() {
     };
   }, [bajasItems]);
 
+  // =========================================================
+  // INFORME DE ESTADÍSTICAS (solo administrador)
+  // Entradas de reposición (compras a proveedores) con su coste.
+  // =========================================================
+  const [estadDesde, setEstadDesde] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [estadHasta, setEstadHasta] = useState(() => new Date().toISOString().slice(0, 10));
+  const [estadProducto, setEstadProducto] = useState("");
+  const [estadCategoria, setEstadCategoria] = useState("");
+  const [estadSubcategoria, setEstadSubcategoria] = useState("");
+  useEffect(() => { setEstadSubcategoria(""); }, [estadCategoria]);
+
+  const productosById = useMemo(() => {
+    const m = new Map();
+    for (const p of Array.isArray(productos) ? productos : []) m.set(String(p.id), p);
+    return m;
+  }, [productos]);
+
+  // Ids de pedidos de tipo "reposición".
+  const reposicionPedidoIds = useMemo(() => {
+    const s = new Set();
+    for (const p of Array.isArray(pedidos) ? pedidos : []) {
+      if (String(p?.tipo || "").trim().toLowerCase() === "reposicion") s.add(String(p.id));
+    }
+    return s;
+  }, [pedidos]);
+
+  // Movimientos de ENTRADA asociados a un pedido de reposición, con coste.
+  const estadRowsAll = useMemo(() => {
+    const rows = [];
+    for (const m of Array.isArray(movimientos) ? movimientos : []) {
+      if (m?.es_devolucion) continue;
+      const pid = m?.pedido_id;
+      if (pid == null || !reposicionPedidoIds.has(String(pid))) continue;
+      const tipo = String(m?.tipo_movimiento || "").trim().toLowerCase();
+      if (tipo && tipo !== "entrada") continue;
+      const prod = productosById.get(String(m.producto_id));
+      const precio = prod?.precio != null ? Number(prod.precio) : null;
+      const cantidad = Number(m.cantidad || 0);
+      const nombreCientifico = m.producto_nombre_cientifico || prod?.nombre_cientifico || "";
+      const nombreComun = m.producto_nombre_natural || prod?.nombre_natural || "";
+      rows.push({
+        id: m.id,
+        fecha: m.fecha_movimiento,
+        producto_id: m.producto_id,
+        nombreCientifico,
+        nombreComun,
+        nombreDisplay: nombreCientificoComun(nombreCientifico, nombreComun),
+        categoria: m.producto_categoria || prod?.categoria || "",
+        subcategoria: m.producto_subcategoria || prod?.subcategoria || "",
+        tamano: m.tamano_destino || m.tamano_origen || "—",
+        cantidad,
+        precio,
+        coste: precio != null ? precio * cantidad : null,
+        pedido_id: pid,
+      });
+    }
+    return rows;
+  }, [movimientos, reposicionPedidoIds, productosById]);
+
+  const estadCategorias = useMemo(
+    () => [...new Set(estadRowsAll.map((r) => r.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es")),
+    [estadRowsAll]
+  );
+  const estadSubcategorias = useMemo(() => {
+    if (!estadCategoria) return [];
+    return [...new Set(estadRowsAll.filter((r) => r.categoria === estadCategoria).map((r) => r.subcategoria).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es"));
+  }, [estadRowsAll, estadCategoria]);
+
+  const estadFiltrado = useMemo(() => {
+    const term = normalizarBusqueda(estadProducto);
+    const desde = estadDesde ? new Date(`${estadDesde}T00:00:00`) : null;
+    const hasta = estadHasta ? new Date(`${estadHasta}T23:59:59`) : null;
+    return estadRowsAll
+      .filter((r) => {
+        const f = r.fecha ? new Date(r.fecha) : null;
+        if (desde && (!f || f < desde)) return false;
+        if (hasta && (!f || f > hasta)) return false;
+        if (estadCategoria && r.categoria !== estadCategoria) return false;
+        if (estadSubcategoria && r.subcategoria !== estadSubcategoria) return false;
+        if (term && !(normalizarBusqueda(r.nombreCientifico).includes(term) || normalizarBusqueda(r.nombreComun).includes(term))) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+  }, [estadRowsAll, estadProducto, estadCategoria, estadSubcategoria, estadDesde, estadHasta]);
+
+  const estadTotalCoste = useMemo(() => estadFiltrado.reduce((s, r) => s + (r.coste || 0), 0), [estadFiltrado]);
+  const estadTotalUds = useMemo(() => estadFiltrado.reduce((s, r) => s + Number(r.cantidad || 0), 0), [estadFiltrado]);
+  const estadSinPrecio = useMemo(() => estadFiltrado.some((r) => r.coste == null), [estadFiltrado]);
+
+  // Coste mensual de reposición (para la gráfica de barras).
+  const estadCostesMensuales = useMemo(() => {
+    const m = new Map();
+    for (const r of estadFiltrado) {
+      if (!r.fecha) continue;
+      const d = new Date(r.fecha);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      m.set(key, (m.get(key) || 0) + (r.coste || 0));
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([mes, total]) => ({ mes, total }));
+  }, [estadFiltrado]);
+
+  // Productos más solicitados (por unidades recibidas en reposición).
+  const estadTopProductos = useMemo(() => {
+    const m = new Map();
+    for (const r of estadFiltrado) {
+      const key = String(r.producto_id);
+      const cur = m.get(key) || { nombre: r.nombreDisplay || r.nombreCientifico, cantidad: 0 };
+      cur.cantidad += Number(r.cantidad || 0);
+      m.set(key, cur);
+    }
+    return [...m.values()].sort((a, b) => b.cantidad - a.cantidad).slice(0, 10);
+  }, [estadFiltrado]);
+
+  const exportarEstadisticasExcel = () => {
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ["Fecha", "Producto", "Categoría", "Subcategoría", "Tamaño", "Cantidad", "Precio unit. (€)", "Coste (€)"];
+    const lineas = estadFiltrado.map((r) =>
+      [
+        r.fecha ? formatFechaCanaria(r.fecha) : "",
+        r.nombreDisplay,
+        r.categoria,
+        r.subcategoria,
+        r.tamano,
+        r.cantidad,
+        r.precio == null ? "" : Number(r.precio).toFixed(2).replace(".", ","),
+        r.coste == null ? "" : Number(r.coste).toFixed(2).replace(".", ","),
+      ].map(esc).join(";")
+    );
+    const total = ["", "TOTAL", "", "", "", estadTotalUds, "", Number(estadTotalCoste).toFixed(2).replace(".", ",")];
+    const csv = [headers.map(esc).join(";"), ...lineas, total.map(esc).join(";")].join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `estadisticas_reposicion_${estadDesde}_a_${estadHasta}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const bajasExportData = useMemo(() => ({
     items: bajasItems,
     filtros: {
@@ -2500,6 +2724,16 @@ export default function Informes() {
             )}
           </div>
         </div>
+
+        {(() => {
+          const meta = REPORTS.find((r) => r.key === activeReport);
+          return meta?.desc ? (
+            <div style={{ marginTop: 16, padding: "12px 16px", borderRadius: 12, background: "rgba(6,182,212,0.06)", border: "1px solid rgba(6,182,212,0.16)", color: "#334155", fontWeight: 600, fontSize: 13.5, display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 16, lineHeight: "20px" }}>ℹ️</span>
+              <span style={{ lineHeight: "20px" }}>{meta.desc}</span>
+            </div>
+          ) : null;
+        })()}
 
         {activeReport === "trazabilidad" && (
           <>
@@ -3792,6 +4026,121 @@ Productos con fecha de caducidad
                           <td style={tdStyle()}>{row.created_by || "—"}</td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeReport === "estadisticas" && (
+          <>
+            {/* Filtros */}
+            <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, alignItems: "end" }}>
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Desde</div>
+                <input type="date" value={estadDesde} onChange={(e) => setEstadDesde(e.target.value)} style={softInputStyle()} />
+              </div>
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Hasta</div>
+                <input type="date" value={estadHasta} onChange={(e) => setEstadHasta(e.target.value)} style={softInputStyle()} />
+              </div>
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Producto</div>
+                <input value={estadProducto} onChange={(e) => setEstadProducto(e.target.value)} placeholder="Científico o común" style={softInputStyle()} />
+              </div>
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Categoría</div>
+                <select value={estadCategoria} onChange={(e) => setEstadCategoria(e.target.value)} style={softInputStyle()}>
+                  <option value="">Todas</option>
+                  {estadCategorias.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Subcategoría</div>
+                <select value={estadSubcategoria} onChange={(e) => setEstadSubcategoria(e.target.value)} disabled={!estadCategoria} style={{ ...softInputStyle(), opacity: estadCategoria ? 1 : 0.55 }}>
+                  <option value="">Todas</option>
+                  {estadSubcategorias.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Resumen + exportar */}
+            <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                {[
+                  { l: "Coste total reposición", v: fmtEuro(estadTotalCoste), c: "#0e7490" },
+                  { l: "Unidades recibidas", v: fmtNum(estadTotalUds), c: "#065f46" },
+                  { l: "Movimientos", v: fmtNum(estadFiltrado.length), c: "#334155" },
+                ].map((s) => (
+                  <div key={s.l} style={{ ...cardStyle(), padding: "12px 16px", minWidth: 160 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>{s.l}</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: s.c, marginTop: 2 }}>{s.v}</div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={exportarEstadisticasExcel} disabled={estadFiltrado.length === 0} style={secondaryBtnStyle(estadFiltrado.length === 0)}>
+                ⬇ Exportar a Excel
+              </button>
+            </div>
+
+            {estadSinPrecio && (
+              <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.28)", color: "#92400e", fontWeight: 700, fontSize: 13 }}>
+                ⚠️ Algunos productos no tienen precio unitario definido; su coste no se contabiliza. Añade el precio en «Gestionar productos».
+              </div>
+            )}
+
+            {/* Gráficas */}
+            <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 18 }}>
+              <div style={{ ...cardStyle(), padding: 18 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>Coste mensual de reposición</div>
+                <BarrasVerticales data={estadCostesMensuales} color="#0ea5e9" valueFmt={(v) => fmtEuro(v)} />
+              </div>
+              <div style={{ ...cardStyle(), padding: 18 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>Productos más solicitados (uds)</div>
+                <BarrasHorizontales data={estadTopProductos} color="#10b981" valueFmt={(v) => fmtNum(v)} />
+              </div>
+            </div>
+
+            {/* Tabla */}
+            {estadFiltrado.length === 0 ? (
+              <EmptyState text="No hay entradas de reposición en el rango de fechas / filtros seleccionados." />
+            ) : (
+              <div style={{ ...cardStyle(), marginTop: 18, padding: 0, overflow: "hidden" }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle()}>Fecha</th>
+                        <th style={thStyle()}>Producto</th>
+                        <th style={thStyle()}>Categoría</th>
+                        <th style={thStyle()}>Subcategoría</th>
+                        <th style={thStyle()}>Tamaño</th>
+                        <th style={{ ...thStyle(), textAlign: "right" }}>Cantidad</th>
+                        <th style={{ ...thStyle(), textAlign: "right" }}>Precio unit.</th>
+                        <th style={{ ...thStyle(), textAlign: "right" }}>Coste</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {estadFiltrado.map((r) => (
+                        <tr key={r.id}>
+                          <td style={tdStyle()}>{r.fecha ? formatFechaCanaria(r.fecha) : "—"}</td>
+                          <td style={tdStyle()}>{r.nombreDisplay}</td>
+                          <td style={tdStyle()}>{r.categoria || "—"}</td>
+                          <td style={tdStyle()}>{r.subcategoria || "—"}</td>
+                          <td style={tdStyle()}>{r.tamano}</td>
+                          <td style={{ ...tdStyle(), textAlign: "right", fontWeight: 800 }}>{fmtNum(r.cantidad)}</td>
+                          <td style={{ ...tdStyle(), textAlign: "right" }}>{r.precio == null ? "—" : fmtEuro(r.precio)}</td>
+                          <td style={{ ...tdStyle(), textAlign: "right", fontWeight: 800 }}>{r.coste == null ? "—" : fmtEuro(r.coste)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: "rgba(6,182,212,0.06)" }}>
+                        <td style={{ ...tdStyle(), fontWeight: 900 }} colSpan={5}>TOTAL</td>
+                        <td style={{ ...tdStyle(), textAlign: "right", fontWeight: 900 }}>{fmtNum(estadTotalUds)}</td>
+                        <td style={tdStyle()}></td>
+                        <td style={{ ...tdStyle(), textAlign: "right", fontWeight: 900, color: "#0e7490" }}>{fmtEuro(estadTotalCoste)}</td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
