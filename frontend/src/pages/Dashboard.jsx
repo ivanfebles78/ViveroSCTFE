@@ -580,7 +580,10 @@ export default function Dashboard() {
 
     return {
       totalProductos,
-      stockTotal,
+      // Redondeado a entero: la suma de cantidades con decimales (kg, m³, l…)
+      // acumula error de coma flotante (p. ej. 41480.999…). El total es un
+      // indicador general, así que se muestra sin decimales.
+      stockTotal: Math.round(stockTotal),
       bajoMinimo,
       reserva: peds.filter((p) => pedidoGroupLabel(p?.estado) === "RESERVA").length,
       aprobados: peds.filter((p) => pedidoGroupLabel(p?.estado) === "APROBADO").length,
