@@ -2176,7 +2176,13 @@ function MovimientoModal({
         pedido={selectedPedido}
         productos={productos}
         onClose={() => setShowModModal(false)}
-        onDone={async () => { setShowModModal(false); if (onReload) await onReload(); }}
+        onDone={async () => {
+          setShowModModal(false);
+          if (onReload) await onReload();
+          // El pedido queda congelado y desaparece de la lista: cerramos el
+          // asistente de servir para evitar confusión.
+          onClose();
+        }}
       />
 
       {showPrestamoModal && (
@@ -3143,11 +3149,25 @@ export default function Movimientos() {
     }
   };
 
+  // Al abrir el asistente de servir/modificar, refrescamos los pedidos para no
+  // operar con datos obsoletos: una modificación puede haber sido aprobada o
+  // denegada por el responsable desde otra sesión mientras el técnico esperaba.
+  useEffect(() => {
+    if (!showModal) return;
+    getPedidos().then((peds) => setPedidos(safeArray(peds))).catch(() => {});
+  }, [showModal]);
+
   const pedidosAprobados = useMemo(() => {
     // Pedidos with at least one approved item that the proveedor can act on.
     // APROBADO_PARCIAL belongs here too — its approved items are serviceable.
     const SERVICEABLE = new Set(["APROBADO", "APROBADO_PARCIAL"]);
-    return safeArray(pedidos).filter((p) => SERVICEABLE.has(String(p?.estado || "").toUpperCase()));
+    return safeArray(pedidos).filter(
+      (p) =>
+        SERVICEABLE.has(String(p?.estado || "").toUpperCase()) &&
+        // Pedido congelado por una modificación pendiente: desaparece de la
+        // lista del técnico hasta que el responsable la apruebe o deniegue.
+        !p?.modificacion_pendiente
+    );
   }, [pedidos]);
 
   const movimientosFiltrados = useMemo(() => {
