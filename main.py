@@ -2035,6 +2035,31 @@ def cancelar_pedido_endpoint(
     return _pedido_to_dict(pedido)
 
 
+@app.delete("/pedidos/{pedido_id}")
+def eliminar_pedido(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Elimina por completo un pedido y todas sus dependencias (líneas,
+    movimientos y sus detalles por lote, y solicitudes de modificación).
+    Solo administrador — pensado para limpiar pedidos de prueba."""
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    # 1) Movimientos del pedido (su detalle por lote se borra en cascada).
+    movs = db.query(Movimiento).filter(Movimiento.pedido_id == pedido_id).all()
+    for mov in movs:
+        db.query(MovimientoLoteDetalle).filter(MovimientoLoteDetalle.movimiento_id == mov.id).delete(synchronize_session=False)
+    db.query(Movimiento).filter(Movimiento.pedido_id == pedido_id).delete(synchronize_session=False)
+
+    # 2) El pedido (líneas y modificaciones se borran en cascada por la relación).
+    db.delete(pedido)
+    db.commit()
+    return {"ok": True, "deleted": pedido_id}
+
+
 def _select_items_for_action(pedido: Pedido, item_ids):
     """
     Resolve which items the action targets.

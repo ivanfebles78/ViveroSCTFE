@@ -194,6 +194,12 @@ export const cancelarPedido = async (id) => {
   return data;
 };
 
+// Elimina por completo un pedido y sus dependencias. Solo administrador.
+export const eliminarPedido = async (id) => {
+  const { data } = await api.delete(`/pedidos/${id}`);
+  return data;
+};
+
 export const aprobarPedido = async (id, payload = {}) => {
   const { data } = await api.post(`/pedidos/${id}/aprobar`, payload);
   return data;

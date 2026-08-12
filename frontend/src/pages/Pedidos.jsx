@@ -14,6 +14,7 @@ import {
   createPedido,
   updatePedido,
   cancelarPedido,
+  eliminarPedido,
   descargarPedidoPdf,
 } from "../api/api";
 
@@ -2584,6 +2585,21 @@ export default function Pedidos() {
     }
   };
 
+  // Eliminación total (solo admin): borra el pedido y sus dependencias.
+  const onEliminar = async (p) => {
+    if (!window.confirm(`¿Eliminar DEFINITIVAMENTE el pedido #${p.id}? Se borrarán sus líneas, movimientos y solicitudes de modificación. Esta acción no se puede deshacer.`)) return;
+    try {
+      await eliminarPedido(p.id);
+      await refrescar();
+      showTimedMessage(`Pedido #${p.id} eliminado.`, "success");
+    } catch (e) {
+      showTimedMessage(
+        e?.response?.data?.detail || e?.message || "Error eliminando pedido",
+        "error"
+      );
+    }
+  };
+
   const startEdit = (p) => {
     const items = safeArray(p.items);
     const map = {};
@@ -3058,6 +3074,16 @@ export default function Pedidos() {
                                 </button>
                               )}
                             </>
+                          ) : null}
+
+                          {isAdmin && editingId !== p.id ? (
+                            <button
+                              onClick={() => onEliminar(p)}
+                              title="Eliminar el pedido y todas sus dependencias (solo admin)"
+                              style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(220,38,38,0.55)", background: "#dc2626", color: "#fff", fontWeight: 900, cursor: "pointer" }}
+                            >
+                              Eliminar
+                            </button>
                           ) : null}
 
                           {canEditCancel && editingId === p.id ? (
