@@ -2423,6 +2423,11 @@ def solicitar_modificacion_pedido(
     )
     mod.items = cambios_orm
     db.add(mod)
+    # El pedido vuelve a RESERVA (pendiente de decidir): así desaparece de la
+    # lista del técnico (que solo ve APROBADO/APROBADO_PARCIAL) y reaparece en
+    # Aprobaciones. Las líneas conservan su estado_item; al resolver la
+    # modificación, recompute_pedido_estado restaura el estado real.
+    pedido.estado = "RESERVA"
     db.commit()
     db.refresh(pedido)
     return _pedido_to_dict(pedido)
@@ -2528,6 +2533,8 @@ def cancelar_modificacion_pedido(
     mod.estado = "CANCELADA"
     mod.resolved_by = current_user.username
     mod.resolved_at = datetime.utcnow()
+    # Restaura el estado real del pedido (deshace el paso a RESERVA al congelarlo).
+    recompute_pedido_estado(mod.pedido)
     db.commit()
     db.refresh(mod.pedido)
     return _pedido_to_dict(mod.pedido)
