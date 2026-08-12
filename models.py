@@ -147,6 +147,12 @@ class Pedido(Base):
         back_populates="pedido",
     )
 
+    modificaciones = relationship(
+        "PedidoModificacion",
+        back_populates="pedido",
+        cascade="all, delete-orphan",
+    )
+
 
 class PedidoItem(Base):
     __tablename__ = "pedido_items"
@@ -183,6 +189,54 @@ class PedidoItem(Base):
         "Movimiento",
         back_populates="pedido_item",
     )
+
+
+# =========================
+# MODIFICACIONES DE PEDIDO
+# =========================
+# Una solicitud de modificación de un pedido ya aprobado que el técnico (o
+# gestor/admin) eleva al responsable. Mientras haya una PENDIENTE, el pedido
+# queda "congelado" (no servible) hasta que se decide. Cada cambio se aprueba o
+# deniega por separado (aprobación total o parcial).
+class PedidoModificacion(Base):
+    __tablename__ = "pedido_modificaciones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False, index=True)
+    estado = Column(String(20), nullable=False, default="PENDIENTE", index=True)  # PENDIENTE | RESUELTA | CANCELADA
+    nota = Column(Text, nullable=True)
+    created_by = Column(String(150), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_by = Column(String(150), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+
+    pedido = relationship("Pedido", back_populates="modificaciones")
+    items = relationship(
+        "PedidoModificacionItem",
+        back_populates="modificacion",
+        cascade="all, delete-orphan",
+    )
+
+
+class PedidoModificacionItem(Base):
+    __tablename__ = "pedido_modificacion_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    modificacion_id = Column(Integer, ForeignKey("pedido_modificaciones.id", ondelete="CASCADE"), nullable=False, index=True)
+    # tipo de cambio: 'add' (producto nuevo), 'update' (cambia cantidad),
+    # 'remove' (quitar la línea).
+    tipo = Column(String(10), nullable=False)
+    # Línea del pedido afectada (update/remove). NULL para 'add'.
+    pedido_item_id = Column(Integer, ForeignKey("pedido_items.id", ondelete="SET NULL"), nullable=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    tamano = Column(String(30), nullable=True)
+    cantidad_actual = Column(Numeric(12, 3), nullable=False, default=0)     # cantidad antes del cambio
+    cantidad_propuesta = Column(Numeric(12, 3), nullable=False, default=0)  # cantidad deseada (0 = quitar)
+    estado = Column(String(20), nullable=False, default="RESERVA")         # RESERVA | APROBADO | DENEGADO
+
+    modificacion = relationship("PedidoModificacion", back_populates="items")
+    producto = relationship("Producto")
+
 
 # =========================
 # MOVIMIENTOS
