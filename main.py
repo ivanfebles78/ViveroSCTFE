@@ -2469,8 +2469,9 @@ def decidir_modificacion_pedido(
         tipo = (ci.tipo or "").lower()
         propuesta = float(ci.cantidad_propuesta or 0)
         if tipo == "add":
-            db.add(PedidoItem(
-                pedido_id=pedido.id, producto_id=ci.producto_id, tamano=ci.tamano,
+            # Se añade a la relación para que recompute_pedido_estado lo vea.
+            pedido.items.append(PedidoItem(
+                producto_id=ci.producto_id, tamano=ci.tamano,
                 cantidad=propuesta, cantidad_servida=0, estado_item="APROBADO",
             ))
         elif tipo == "update":
@@ -2503,6 +2504,8 @@ def decidir_modificacion_pedido(
     if hubo_aprobado and (pedido.estado or "").upper() == "SERVIDO":
         pedido.estado = "APROBADO"
 
+    # Sincroniza altas/bajas de líneas en memoria antes de recalcular el estado.
+    db.flush()
     recompute_pedido_estado(pedido)
     db.commit()
     db.refresh(pedido)

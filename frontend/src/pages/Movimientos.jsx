@@ -4,6 +4,8 @@ import {
   getProductos,
   getPedidos,
   createMovimiento,
+  solicitarModificacionPedido,
+  cancelarModificacionPedido,
 } from "../api/api";
 import { loadZonasFromServer } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
@@ -819,11 +821,15 @@ function MovimientoModal({
   movimientos,
   pedidosAprobados,
   onSubmit,
+  onReload,
   saving,
   zonas = DEFAULT_ZONAS,
 }) {
   const ZONAS = zonas;
   const [step, setStep] = useState(1);
+  // Modal de "Solicitar modificación" del pedido seleccionado.
+  const [showModModal, setShowModModal] = useState(false);
+  const [cancelandoMod, setCancelandoMod] = useState(false);
   const [form, setForm] = useState({
     pedido_id: "", pedido_item_id: "", producto_id: "", cantidad: "",
     origen_tipo: "", destino_tipo: "", zona_origen: "", zona_destino: "",
@@ -1688,6 +1694,46 @@ function MovimientoModal({
                         <div style={{ marginTop: 3, fontWeight: 700, color: "#0f172a", fontSize: 13, whiteSpace: "pre-wrap" }}>{selectedPedido.nota}</div>
                       </div>
                     ) : null}
+
+                    {selectedPedido.modificacion_pendiente ? (
+                      <div style={{ margin: "6px 0 4px", padding: "12px 14px", borderRadius: 10, background: "rgba(139,92,246,0.10)", border: "1px solid rgba(139,92,246,0.32)" }}>
+                        <div style={{ fontWeight: 900, color: "#5b21b6", fontSize: 13 }}>⏳ Pedido congelado</div>
+                        <div style={{ marginTop: 3, color: "#4c1d95", fontWeight: 700, fontSize: 12.5 }}>
+                          Hay una solicitud de modificación pendiente de aprobación. No se puede servir hasta que el responsable la decida.
+                        </div>
+                        <button
+                          type="button"
+                          disabled={cancelandoMod}
+                          onClick={async () => {
+                            const mod = selectedPedido.modificacion_pendiente;
+                            if (!mod?.id) return;
+                            if (!window.confirm("¿Cancelar la solicitud de modificación? El pedido volverá a estar disponible para servir.")) return;
+                            setCancelandoMod(true);
+                            try {
+                              await cancelarModificacionPedido(mod.id);
+                              if (onReload) await onReload();
+                            } catch (e) {
+                              alert(e?.response?.data?.detail || "No se pudo cancelar la modificación.");
+                            } finally {
+                              setCancelandoMod(false);
+                            }
+                          }}
+                          style={{ marginTop: 10, padding: "8px 14px", borderRadius: 10, border: "1px solid rgba(139,92,246,0.4)", background: "#fff", color: "#5b21b6", fontWeight: 900, cursor: cancelandoMod ? "not-allowed" : "pointer", fontSize: 12.5 }}
+                        >
+                          {cancelandoMod ? "Cancelando…" : "Cancelar solicitud"}
+                        </button>
+                      </div>
+                    ) : (
+                    <>
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowModModal(true)}
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(139,92,246,0.08)", color: "#5b21b6", fontWeight: 900, cursor: "pointer", fontSize: 12.5 }}
+                      >
+                        ✎ Solicitar modificación
+                      </button>
+                    </div>
                     <div style={{ color: "#475569", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>
                       Elige la zona de origen de cada línea y añádela. Cada línea se sirve a su destino (se guarda un movimiento por línea).
                     </div>
@@ -1791,6 +1837,8 @@ function MovimientoModal({
                       <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e", fontWeight: 800, fontSize: 12 }}>
                         Este pedido no tiene líneas pendientes de mover (ya movidas, denegadas o pendientes de aprobar). Pulsa «Atrás» para quitarlo o elegir otro pedido.
                       </div>
+                    )}
+                    </>
                     )}
                   </div>
                 )}
@@ -2122,6 +2170,15 @@ function MovimientoModal({
       </div>
 
       <PedidoSelectorModal open={showPedidoModal} pedidos={pedidosAprobados} onClose={() => setShowPedidoModal(false)} onSelect={handleSeleccionPedido} />
+
+      <SolicitarModificacionModal
+        open={showModModal}
+        pedido={selectedPedido}
+        productos={productos}
+        onClose={() => setShowModModal(false)}
+        onDone={async () => { setShowModModal(false); if (onReload) await onReload(); }}
+      />
+
       {showPrestamoModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.45)", backdropFilter: "blur(3px)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setShowPrestamoModal(false)}>
           <div style={{ width: "min(680px, 95vw)", background: "white", borderRadius: 20, padding: 24, boxShadow: "0 30px 80px rgba(2,6,23,0.35)", maxHeight: "85vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
@@ -2763,6 +2820,199 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modal para que el técnico/gestor solicite una modificación del pedido que va
+// a servir: cambiar cantidades, quitar líneas o añadir productos nuevos. La
+// solicitud va al responsable (Aprobaciones); el pedido queda congelado.
+function SolicitarModificacionModal({ open, pedido, productos, onClose, onDone }) {
+  const prodById = useMemo(() => {
+    const m = new Map();
+    for (const p of safeArray(productos)) m.set(String(p.id), p);
+    return m;
+  }, [productos]);
+
+  const [qty, setQty] = useState({});       // pedido_item_id -> nueva cantidad (string)
+  const [quitar, setQuitar] = useState({}); // pedido_item_id -> bool
+  const [nota, setNota] = useState("");
+  const [addLines, setAddLines] = useState([]); // [{ key, producto_id, tamano, cantidad }]
+  const [addProdId, setAddProdId] = useState("");
+  const [addSearch, setAddSearch] = useState("");
+  const [addTam, setAddTam] = useState("");
+  const [addCant, setAddCant] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const items = useMemo(
+    () => safeArray(pedido?.items).filter((it) => String(it.estado_item || "").toUpperCase() !== "DENEGADO"),
+    [pedido]
+  );
+
+  useEffect(() => {
+    if (open && pedido) {
+      const q = {};
+      for (const it of safeArray(pedido.items)) q[it.id] = String(Number(it.cantidad || 0));
+      setQty(q); setQuitar({}); setNota(""); setAddLines([]);
+      setAddProdId(""); setAddSearch(""); setAddTam(""); setAddCant(""); setError("");
+    }
+  }, [open, pedido]);
+
+  if (!open || !pedido) return null;
+
+  const dispDe = (productoId, tam) => {
+    const p = prodById.get(String(productoId));
+    return Number(p?.disponible_by_size?.[tam] ?? 0);
+  };
+  const nombreItem = (it) =>
+    it.producto_nombre_cientifico || it.producto_nombre || (prodById.get(String(it.producto_id)) ? getProductDisplayName(prodById.get(String(it.producto_id))) : `Producto #${it.producto_id}`);
+
+  const inp = { padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(15,23,42,0.14)", fontWeight: 700, color: "#0f172a", background: "#fff", outline: "none" };
+
+  const addProd = prodById.get(String(addProdId)) || null;
+  const addProdSizes = addProd
+    ? getFormatoOptions(getProductFormatoConfig(addProd)).filter((t) => tamanoDisponiblePlanta(addProd, t) && dispDe(addProd.id, t) > 0)
+    : [];
+  const productosFiltradosAdd = safeArray(productos)
+    .filter((p) => {
+      const t = addSearch.trim().toLowerCase();
+      if (!t) return true;
+      return getProductDisplayName(p).toLowerCase().includes(t) || String(p.categoria || "").toLowerCase().includes(t);
+    })
+    .sort((a, b) => getProductDisplayName(a).localeCompare(getProductDisplayName(b), "es"))
+    .slice(0, 60);
+
+  const addToList = () => {
+    setError("");
+    if (!addProdId || !addTam) { setError("Elige producto y tamaño para añadir."); return; }
+    const c = Math.round(Number(addCant || 0));
+    if (!(c > 0)) { setError("Indica una cantidad mayor que 0 para el producto a añadir."); return; }
+    const disp = dispDe(addProdId, addTam);
+    if (c > disp) { setError(`Solo hay ${disp} disponibles de ese producto en ${addTam}.`); return; }
+    setAddLines((prev) => [...prev, { key: `${addProdId}-${addTam}-${prev.length}`, producto_id: addProdId, tamano: addTam, cantidad: c, nombre: getProductDisplayName(addProd) }]);
+    setAddProdId(""); setAddSearch(""); setAddTam(""); setAddCant("");
+  };
+
+  const submit = async () => {
+    setError("");
+    const cambios = [];
+    for (const it of items) {
+      if (quitar[it.id]) {
+        cambios.push({ tipo: "remove", pedido_item_id: it.id, producto_id: it.producto_id, tamano: it.tamano, cantidad_propuesta: 0 });
+        continue;
+      }
+      const nueva = Math.round(Number(qty[it.id]));
+      const actual = Number(it.cantidad || 0);
+      const servida = Number(it.cantidad_servida || 0);
+      if (!Number.isFinite(nueva)) continue;
+      if (nueva === actual) continue;
+      if (nueva < servida) { setError(`No puedes dejar "${nombreItem(it)}" por debajo de lo ya servido (${servida}).`); return; }
+      if (nueva > actual) {
+        const maxAdd = dispDe(it.producto_id, it.tamano);
+        if (nueva - actual > maxAdd) { setError(`No hay stock suficiente para subir "${nombreItem(it)}" (disponible para añadir: ${maxAdd}).`); return; }
+      }
+      cambios.push({ tipo: "update", pedido_item_id: it.id, producto_id: it.producto_id, tamano: it.tamano, cantidad_propuesta: nueva });
+    }
+    for (const al of addLines) {
+      cambios.push({ tipo: "add", producto_id: Number(al.producto_id), tamano: al.tamano || null, cantidad_propuesta: Number(al.cantidad) });
+    }
+    if (cambios.length === 0) { setError("No has indicado ningún cambio."); return; }
+    setSaving(true);
+    try {
+      await solicitarModificacionPedido(pedido.id, { nota: nota.trim() || null, cambios });
+      if (onDone) await onDone();
+    } catch (e) {
+      setError(e?.response?.data?.detail || "No se pudo enviar la solicitud.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(4px)", zIndex: 1500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div style={{ width: "min(760px, 96vw)", maxHeight: "92vh", overflow: "auto", background: "#fff", borderRadius: 20, padding: 22, boxShadow: "0 30px 80px rgba(2,6,23,0.4)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>Solicitar modificación · Pedido #{pedido.id}</div>
+        <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 13 }}>
+          Ajusta cantidades, quita líneas o añade productos. La solicitud irá al responsable para su aprobación; el pedido quedará congelado hasta que se decida.
+        </div>
+
+        {/* Líneas actuales */}
+        <div style={{ marginTop: 16, fontWeight: 900, color: "#0f172a", fontSize: 14 }}>Productos del pedido</div>
+        <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+          {items.length === 0 ? (
+            <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>El pedido no tiene líneas.</div>
+          ) : items.map((it) => {
+            const removed = !!quitar[it.id];
+            const disp = dispDe(it.producto_id, it.tamano);
+            return (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: removed ? "rgba(239,68,68,0.06)" : "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.07)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, textDecoration: removed ? "line-through" : "none" }}>{nombreItem(it)}</div>
+                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                    Tamaño: {it.tamano || "—"} · Actual: {formatCantidad(it.cantidad)}
+                    {Number(it.cantidad_servida || 0) > 0 ? ` · Servido: ${formatCantidad(it.cantidad_servida)}` : ""} · Disp. para añadir: {formatCantidad(disp)}
+                  </div>
+                </div>
+                {!removed && (
+                  <input type="number" min={Number(it.cantidad_servida || 0)} value={qty[it.id] ?? ""} onChange={(e) => setQty((p) => ({ ...p, [it.id]: e.target.value.replace(/[^\d]/g, "") }))} style={{ ...inp, width: 80, textAlign: "right" }} />
+                )}
+                <button type="button" onClick={() => setQuitar((p) => ({ ...p, [it.id]: !p[it.id] }))} style={{ padding: "7px 11px", borderRadius: 9, border: removed ? "1px solid rgba(16,185,129,0.35)" : "1px solid rgba(239,68,68,0.3)", background: removed ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.06)", color: removed ? "#065f46" : "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 12 }}>
+                  {removed ? "Restaurar" : "Quitar"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Añadir producto nuevo */}
+        <div style={{ marginTop: 16, fontWeight: 900, color: "#0f172a", fontSize: 14 }}>Añadir un producto</div>
+        {addLines.length > 0 && (
+          <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+            {addLines.map((al) => (
+              <div key={al.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 9, background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.22)" }}>
+                <div style={{ flex: 1, fontWeight: 800, color: "#065f46", fontSize: 13 }}>+ {al.nombre} · {al.tamano} · {formatCantidad(al.cantidad)} uds</div>
+                <button type="button" onClick={() => setAddLines((prev) => prev.filter((x) => x.key !== al.key))} style={{ border: "none", background: "transparent", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1.6fr 1fr 0.8fr auto", gap: 8, alignItems: "end" }}>
+          <div>
+            <input placeholder="Buscar producto…" value={addSearch} onChange={(e) => { setAddSearch(e.target.value); setAddProdId(""); setAddTam(""); }} style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
+            {addSearch.trim() && !addProdId && (
+              <div style={{ marginTop: 4, maxHeight: 150, overflow: "auto", border: "1px solid rgba(15,23,42,0.1)", borderRadius: 9 }}>
+                {productosFiltradosAdd.map((p) => (
+                  <button key={p.id} type="button" onClick={() => { setAddProdId(String(p.id)); setAddSearch(getProductDisplayName(p)); setAddTam(""); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", border: "none", borderBottom: "1px solid rgba(15,23,42,0.05)", background: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 12.5, color: "#0f172a" }}>
+                    {getProductDisplayName(p)}
+                  </button>
+                ))}
+                {productosFiltradosAdd.length === 0 && <div style={{ padding: 8, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Sin resultados.</div>}
+              </div>
+            )}
+          </div>
+          <select value={addTam} onChange={(e) => setAddTam(e.target.value)} disabled={!addProd} style={{ ...inp, opacity: addProd ? 1 : 0.5 }}>
+            <option value="">Tamaño</option>
+            {addProdSizes.map((t) => <option key={t} value={t}>{t} (disp. {formatCantidad(dispDe(addProdId, t))})</option>)}
+          </select>
+          <input type="number" min={1} placeholder="Uds" value={addCant} onChange={(e) => setAddCant(e.target.value.replace(/[^\d]/g, ""))} disabled={!addTam} style={{ ...inp, width: "100%", boxSizing: "border-box", textAlign: "right", opacity: addTam ? 1 : 0.5 }} />
+          <button type="button" onClick={addToList} disabled={!addProdId || !addTam} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: (addProdId && addTam) ? "linear-gradient(90deg,#10b981,#06b6d4)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: (addProdId && addTam) ? "pointer" : "not-allowed", fontSize: 12.5, whiteSpace: "nowrap" }}>+ Añadir</button>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Nota para el responsable (opcional)</div>
+          <textarea value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Explica el motivo de la modificación…" maxLength={1000} style={{ ...inp, width: "100%", boxSizing: "border-box", minHeight: 60, resize: "vertical", fontFamily: "inherit" }} />
+        </div>
+
+        {error && <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.22)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{error}</div>}
+
+        <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={saving} style={{ padding: "11px 18px", borderRadius: 12, border: "2px solid #94a3b8", background: "#e2e8f0", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cerrar</button>
+          <button onClick={submit} disabled={saving} style={{ marginLeft: "auto", padding: "11px 22px", borderRadius: 12, border: "none", background: saving ? "#cbd5e1" : "linear-gradient(90deg,#8b5cf6,#6366f1)", color: "#fff", fontWeight: 900, cursor: saving ? "not-allowed" : "pointer", minWidth: 200 }}>
+            {saving ? "Enviando…" : "Enviar solicitud"}
+          </button>
         </div>
       </div>
     </div>
@@ -3461,6 +3711,7 @@ export default function Movimientos() {
         movimientos={movimientos}
         pedidosAprobados={pedidosAprobados}
         onSubmit={handleCreateMovimiento}
+        onReload={load}
         saving={saving}
         zonas={zonasDisponibles}
       />

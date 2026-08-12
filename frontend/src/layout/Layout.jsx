@@ -70,9 +70,16 @@ function computeBadgeCounts(role, pedidos, seenMap, username) {
   // marcan como vistos los pedidos en RESERVA, de modo que el contador baja a
   // 0 y solo reaparece cuando llega un pedido nuevo por decidir.
   if (r === "manager" || r === "admin") {
-    counts["/aprobaciones"] = pedidos.filter(
+    const porDecidir = pedidos.filter(
       (p) => estadoOf(p) === "RESERVA" && seenMap[String(p.id)] !== "RESERVA"
     ).length;
+    // Solicitudes de modificación pendientes (se marcan como vistas con la
+    // clave mod:<id> al entrar en /aprobaciones).
+    const modsPendientes = pedidos.filter(
+      (p) => p?.modificacion_pendiente?.id && seenMap[`mod:${p.modificacion_pendiente.id}`] !== "SEEN"
+    ).length;
+    const total = porDecidir + modsPendientes;
+    if (total > 0) counts["/aprobaciones"] = total;
   }
 
   // --- Pedidos: depende del rol ---
@@ -1550,8 +1557,10 @@ export default function Layout() {
       for (const p of pedidosUsuario) {
         if (!p?.id) continue;
         const e = String(p.estado || "").trim().toUpperCase();
-        if (e !== "RESERVA") continue;
-        if (next[String(p.id)] !== e) { next[String(p.id)] = e; changed = true; }
+        if (e === "RESERVA" && next[String(p.id)] !== e) { next[String(p.id)] = e; changed = true; }
+        // Marca como vista la solicitud de modificación pendiente.
+        const modId = p?.modificacion_pendiente?.id;
+        if (modId && next[`mod:${modId}`] !== "SEEN") { next[`mod:${modId}`] = "SEEN"; changed = true; }
       }
       return changed ? next : prev;
     });

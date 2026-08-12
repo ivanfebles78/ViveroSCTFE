@@ -212,6 +212,27 @@ export const decidirPedido = async (id, payload) => {
   return data;
 };
 
+// ---------------- MODIFICACIONES DE PEDIDO ----------------
+
+// Solicita una modificación de un pedido aprobado. payload = { nota?, cambios: [
+//   { tipo: "add"|"update"|"remove", pedido_item_id?, producto_id, tamano, cantidad_propuesta } ] }
+export const solicitarModificacionPedido = async (pedidoId, payload) => {
+  const { data } = await api.post(`/pedidos/${pedidoId}/modificaciones`, payload);
+  return data;
+};
+
+// Decide una modificación (por cambio). payload = { approved_item_ids, denied_item_ids }.
+export const decidirModificacionPedido = async (modId, payload) => {
+  const { data } = await api.post(`/pedidos/modificaciones/${modId}/decidir`, payload);
+  return data;
+};
+
+// Cancela una modificación pendiente (la retira quien la pidió o un responsable).
+export const cancelarModificacionPedido = async (modId) => {
+  const { data } = await api.post(`/pedidos/modificaciones/${modId}/cancelar`);
+  return data;
+};
+
 // Descarga el PDF imprimible del pedido (solo disponible si está APROBADO
 // o SERVIDO). Disparamos la descarga creando un blob y un enlace temporal.
 export const descargarPedidoPdf = async (id) => {

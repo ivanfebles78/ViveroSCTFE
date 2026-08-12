@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getPedidos, aprobarPedido, denegarPedido, decidirPedido, descargarPedidoPdf } from "../api/api";
+import { getPedidos, aprobarPedido, denegarPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf } from "../api/api";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
 
@@ -202,11 +202,15 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
   // Destinos colapsados (por texto de destino) para poder plegar/desplegar.
   const [colapsados, setColapsados] = useState({});
   const toggleColapsado = (dst) => setColapsados((p) => ({ ...p, [dst]: !p[dst] }));
+  // Decisiones sobre los cambios de una solicitud de modificación pendiente.
+  const [modDecisions, setModDecisions] = useState({}); // { [cambio.id]: "aprobar" | "denegar" }
+  const [modSubmitting, setModSubmitting] = useState(false);
 
   // Reset local state whenever a different pedido is opened.
   useEffect(() => {
     setPendingDecisions({});
     setMotivo("");
+    setModDecisions({});
   }, [pedido?.id]);
 
   if (!pedido) return null;
@@ -280,6 +284,40 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ── Solicitud de modificación pendiente (si la hay) ──
+  const mod = pedido.modificacion_pendiente || null;
+  const modCambios = safeArray(mod?.cambios);
+  const modAllDecided = modCambios.length > 0 && modCambios.every((c) => modDecisions[c.id]);
+  const setModDecision = (cid, d) => setModDecisions((p) => ({ ...p, [cid]: d }));
+  const modLabel = (c) => {
+    const nombre = c.producto_nombre_cientifico || c.producto_nombre_natural || `Producto #${c.producto_id}`;
+    const tam = c.tamano ? ` · ${c.tamano}` : "";
+    if (c.tipo === "add") return { txt: `Añadir: ${nombre}${tam} · ${formatCantidad(c.cantidad_propuesta)} uds`, color: "#065f46" };
+    if (c.tipo === "remove") return { txt: `Quitar: ${nombre}${tam} (tenía ${formatCantidad(c.cantidad_actual)})`, color: "#991b1b" };
+    const dir = Number(c.cantidad_propuesta) >= Number(c.cantidad_actual) ? "▲" : "▼";
+    return { txt: `${dir} ${nombre}${tam}: ${formatCantidad(c.cantidad_actual)} → ${formatCantidad(c.cantidad_propuesta)} uds`, color: "#1e3a8a" };
+  };
+  const submitModDecisions = async () => {
+    if (!mod || !modAllDecided || modSubmitting) return;
+    const approved_item_ids = [];
+    const denied_item_ids = [];
+    for (const c of modCambios) {
+      if (modDecisions[c.id] === "aprobar") approved_item_ids.push(c.id);
+      else if (modDecisions[c.id] === "denegar") denied_item_ids.push(c.id);
+    }
+    setModSubmitting(true);
+    try {
+      const updated = await decidirModificacionPedido(mod.id, { approved_item_ids, denied_item_ids });
+      if (onPedidoUpdated) onPedidoUpdated(updated);
+      if (onMessage) onMessage(`Modificación del pedido #${pedido.id} resuelta: ${approved_item_ids.length} aprobado(s) · ${denied_item_ids.length} denegado(s).`);
+      setModDecisions({});
+    } catch (e) {
+      if (onMessage) onMessage(e?.response?.data?.detail || e?.message || "Error decidiendo la modificación");
+    } finally {
+      setModSubmitting(false);
     }
   };
 
@@ -426,6 +464,44 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
               </div>
             ) : null}
           </div>
+
+          {mod && (
+            <div style={{ marginBottom: 14, padding: 14, borderRadius: 14, background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.30)" }}>
+              <div style={{ fontSize: 15, fontWeight: 900, color: "#5b21b6" }}>✎ Solicitud de modificación pendiente</div>
+              <div style={{ fontSize: 12.5, color: "#6d28d9", fontWeight: 700, marginTop: 2 }}>
+                Pedida por {formatUsername(mod.created_by) || "—"}. El pedido está congelado hasta que se decida.
+              </div>
+              {mod.nota ? (
+                <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 9, background: "#fff", border: "1px solid rgba(139,92,246,0.2)", fontWeight: 700, color: "#0f172a", fontSize: 13 }}>“{mod.nota}”</div>
+              ) : null}
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                {modCambios.map((c) => {
+                  const lab = modLabel(c);
+                  const dec = modDecisions[c.id];
+                  return (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, background: "#fff", border: "1px solid rgba(15,23,42,0.08)" }}>
+                      <div style={{ flex: 1, minWidth: 0, fontWeight: 800, color: lab.color, fontSize: 13 }}>{lab.txt}</div>
+                      {canApprove ? (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => setModDecision(c.id, "aprobar")} style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(16,185,129,0.4)", background: dec === "aprobar" ? "#10b981" : "#ecfdf5", color: dec === "aprobar" ? "#fff" : "#065f46", fontWeight: 900, cursor: "pointer", fontSize: 12 }}>Aprobar</button>
+                          <button onClick={() => setModDecision(c.id, "denegar")} style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(239,68,68,0.4)", background: dec === "denegar" ? "#ef4444" : "#fef2f2", color: dec === "denegar" ? "#fff" : "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 12 }}>Denegar</button>
+                        </div>
+                      ) : (
+                        <span style={{ fontFamily: "monospace", fontSize: 11, color: "#64748b", fontWeight: 700 }}>{c.estado}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {canApprove && (
+                <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+                  <button onClick={submitModDecisions} disabled={!modAllDecided || modSubmitting} style={{ padding: "10px 18px", borderRadius: 11, border: "none", background: (modAllDecided && !modSubmitting) ? "linear-gradient(90deg,#8b5cf6,#6366f1)" : "#cbd5e1", color: "#fff", fontWeight: 900, cursor: (modAllDecided && !modSubmitting) ? "pointer" : "not-allowed" }}>
+                    {modSubmitting ? "Aplicando…" : "Aplicar decisión de la modificación"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 8 }}>
             Productos del pedido ({items.length})
@@ -829,7 +905,7 @@ export default function Aprobaciones() {
           estadoFiltro === "TODOS"
             ? true
             : estadoFiltro === "PENDIENTES"
-            ? DECIDABLE_FRONTEND.has(estadoNorm)
+            ? (DECIDABLE_FRONTEND.has(estadoNorm) || !!p.modificacion_pendiente)
             : estadoNorm === estadoFiltro;
         const fechaOk = !fechaFiltro || dateInputValue(p?.created_at) === fechaFiltro;
 
