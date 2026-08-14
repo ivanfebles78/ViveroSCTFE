@@ -1568,12 +1568,12 @@ export default function Informes() {
 
   // Informes permitidos por rol (null = todos):
   //   - empresa externa → solo "Movimientos externos".
-  //   - técnico → "Distribución", "Inventario vivero" y "Existencias".
+  //   - técnico → "Distribución", "Inventario vivero", "Existencias" y "Movimientos externos".
   //   - gestor_vivero / admin / manager → todos (null).
   const allowedReportKeys = isEmpresaExterna
     ? ["externos"]
     : isTecnico
-    ? ["distribucion", "inventario", "stock"]
+    ? ["distribucion", "inventario", "stock", "externos"]
     : null;
 
   // Pestañas visibles según el rol. "estadisticas" es SOLO para administrador,
@@ -1631,6 +1631,19 @@ export default function Informes() {
   const [externosSearched, setExternosSearched] = useState(false);
   const [externosCategoria, setExternosCategoria] = useState("");
   const [externosSubcategoria, setExternosSubcategoria] = useState("");
+  const [externosProducto, setExternosProducto] = useState("");
+
+  // Filas del informe externos filtradas además por nombre de producto (cliente).
+  const externosVisibles = useMemo(() => {
+    const term = normalizarBusqueda(externosProducto);
+    const base = Array.isArray(externosData) ? externosData : [];
+    if (!term) return base;
+    return base.filter((r) =>
+      normalizarBusqueda(r?.producto_nombre).includes(term) ||
+      normalizarBusqueda(r?.producto_categoria).includes(term) ||
+      normalizarBusqueda(r?.producto_subcategoria).includes(term)
+    );
+  }, [externosData, externosProducto]);
 
   // Categorías/subcategorías para los filtros del informe de movimientos externos.
   const externosCategorias = useMemo(() => {
@@ -1653,8 +1666,8 @@ export default function Informes() {
   }, [productos, externosCategoria]);
   // Total de elementos (suma de cantidades) del informe externos.
   const externosTotal = useMemo(
-    () => (Array.isArray(externosData) ? externosData : []).reduce((s, r) => s + Number(r?.cantidad || 0), 0),
-    [externosData]
+    () => externosVisibles.reduce((s, r) => s + Number(r?.cantidad || 0), 0),
+    [externosVisibles]
   );
 
   const [prestamoProductoFilter, setPrestamoProductoFilter] = useState("");
@@ -2480,7 +2493,7 @@ export default function Informes() {
         inventarioVivero: inventarioFiltrado,
         stockExportData,
         caducidadExportData,
-        externosData,
+        externosData: externosVisibles,
         prestamosExportData,
         abastecimientoExportData,
         bajasExportData,
@@ -2614,13 +2627,14 @@ export default function Informes() {
     setDireccion("");
     setExternosCategoria("");
     setExternosSubcategoria("");
+    setExternosProducto("");
     setExternosData([]);
     setExternosSearched(false);
   };
 
   // Exporta el informe de movimientos externos a CSV (lo abre Excel).
   const exportarExternosExcel = () => {
-    const rows = Array.isArray(externosData) ? externosData : [];
+    const rows = externosVisibles;
     const headers = ["Fecha", "Producto", "Categoría", "Subcategoría", "Cantidad", "Origen", "Destino", "Ubicación destino", "Registrado por"];
     const esc = (v) => {
       const s = String(v ?? "");
@@ -4075,6 +4089,16 @@ Productos con fecha de caducidad
               </div>
 
               <div>
+                <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Producto</div>
+                <input
+                  value={externosProducto}
+                  onChange={(e) => setExternosProducto(e.target.value)}
+                  placeholder="Nombre, categoría o subcategoría"
+                  style={softInputStyle()}
+                />
+              </div>
+
+              <div>
                 <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Categoría</div>
                 <select
                   value={externosCategoria}
@@ -4111,7 +4135,7 @@ Productos con fecha de caducidad
               </div>
             </div>
 
-            {externosSearched && externosData.length === 0 ? (
+            {externosSearched && externosVisibles.length === 0 ? (
               <EmptyState text="No se encontraron coincidencias." />
             ) : !externosSearched ? (
               <EmptyState text="Define los filtros y genera el informe de movimientos externos." />
@@ -4121,7 +4145,7 @@ Productos con fecha de caducidad
                   <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
                     Movimientos externos
                     <span style={{ marginLeft: 12, fontSize: 14, fontWeight: 800, color: "#0f6e56" }}>
-                      Total elementos: {fmtNum(externosTotal)} · {externosData.length} {externosData.length === 1 ? "movimiento" : "movimientos"}
+                      Total elementos: {fmtNum(externosTotal)} · {externosVisibles.length} {externosVisibles.length === 1 ? "movimiento" : "movimientos"}
                     </span>
                   </div>
                   <button onClick={exportarExternosExcel} style={secondaryBtnStyle()}>
@@ -4145,7 +4169,7 @@ Productos con fecha de caducidad
                       </tr>
                     </thead>
                     <tbody>
-                      {externosData.map((row, idx) => (
+                      {externosVisibles.map((row, idx) => (
                         <tr key={idx}>
                           <td style={tdStyle()}>{fmtFecha(row.fecha_movimiento)}</td>
                           <td style={tdStyle()}>{row.producto_nombre}</td>
