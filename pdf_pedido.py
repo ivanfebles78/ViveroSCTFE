@@ -109,7 +109,8 @@ def _unidad_para_categoria(categoria: Optional[str], tamano: Optional[str]) -> s
     if cat in ("fitosanitario", "fitosanitarios", "fertilizante", "fertilizantes"):
         return "lt" if "liquido" in t or "líquido" in t else "kg"
     if cat in ("arido", "aridos", "árido", "áridos", "material vegetal", "materiales vegetales"):
-        return "m³"
+        # Los que van embolsados (turba, etc.) se registran con formato "unidades".
+        return "ud" if t == "unidades" else "m³"
     if cat == "ferreteria" or cat == "ferretería":
         return "m" if t == "metros" else "ud"
     return "ud"

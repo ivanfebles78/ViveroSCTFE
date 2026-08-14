@@ -48,6 +48,14 @@ const FERRETERIA_EN_METROS_NEEDLES = [
   "cinturon 3.5",
 ];
 
+// Productos de Árido / Material vegetal que se cuentan por UNIDADES (sacos,
+// bolsas), no por m³. P. ej. la turba embolsada ("Turba 250L", "Turba 750L").
+// Match por substring case+accent-insensitive sobre el nombre. Añade más
+// entradas aquí si surgen nuevos casos.
+const ARIDO_MATVEG_EN_UNIDADES_NEEDLES = [
+  "turba",
+];
+
 function normalize(s) {
   return (s || "")
     .toString()
@@ -142,6 +150,18 @@ export function getProductFormatoConfig(product) {
   }
 
   if (categoryIs(cat, "arido", "material vegetal")) {
+    // Excepción: los que van embolsados (turba, etc.) se cuentan por unidades.
+    if (nameMatchesAny(nombre, ARIDO_MATVEG_EN_UNIDADES_NEEDLES)) {
+      return {
+        kind: "formato_fijo",
+        label: "Formato",
+        value: "unidades",
+        showCantidad: true,
+        cantidadLabel: "Cantidad (unidades)",
+        observacionesRequired: false,
+        observacionesHint: null,
+      };
+    }
     return {
       kind: "formato_fijo",
       label: "Formato",
@@ -213,7 +233,15 @@ export function getUnidadProducto(producto) {
 
   if (categoryIs(cat, "fitosanitario", "fertilizante")) return "kg/lt";
 
-  if (categoryIs(cat, "arido", "material vegetal")) return "m³";
+  if (categoryIs(cat, "arido", "material vegetal")) {
+    const nombre =
+      producto.nombre_cientifico ||
+      producto.nombre_natural ||
+      producto.nombre ||
+      "";
+    if (nameMatchesAny(nombre, ARIDO_MATVEG_EN_UNIDADES_NEEDLES)) return "ud";
+    return "m³";
+  }
 
   if (categoryIs(cat, "ferreteria")) {
     const nombre =
@@ -251,6 +279,8 @@ export function getUnidadMovimiento(mov) {
   }
 
   if (categoryIs(cat, "arido", "material vegetal")) {
+    const nombre = mov.producto_nombre_cientifico || mov.producto_nombre_natural || mov.producto_nombre || "";
+    if (tamano === "unidades" || nameMatchesAny(nombre, ARIDO_MATVEG_EN_UNIDADES_NEEDLES)) return "ud";
     return "m³";
   }
 
