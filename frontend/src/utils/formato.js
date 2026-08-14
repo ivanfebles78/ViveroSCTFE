@@ -65,6 +65,17 @@ function normalize(s) {
     .trim();
 }
 
+// Formato/tamaño A MOSTRAR, corrigiendo el histórico: la turba se guardó como
+// "metros cúbicos" cuando iba en m³, pero se cuenta por unidades. Si el producto
+// es turba (u otro de la lista de excepciones), mostramos "unidades".
+export function displayFormato(nombre, tamano) {
+  const t = normalize(tamano);
+  if (t === "metros cubicos" && nameMatchesAny(nombre || "", ARIDO_MATVEG_EN_UNIDADES_NEEDLES)) {
+    return "unidades";
+  }
+  return tamano;
+}
+
 function categoryIs(cat, ...candidates) {
   const c = normalize(cat);
   return candidates.some((cand) => {

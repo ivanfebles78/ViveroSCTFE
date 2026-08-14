@@ -5,6 +5,18 @@ import autoTable from "jspdf-autotable";
 import logoViverApp from "../assets/logo.png";
 import { formatFechaCanaria, formatFechaHoraCanaria } from "../utils/fecha";
 import { getZonaLabel } from "../utils/zonas";
+import { displayFormato } from "../utils/formato";
+
+// Nombre de producto de una fila/movimiento (para corregir el formato mostrado).
+const _nombreProd = (o) =>
+  o?.producto_nombre_cientifico || o?.producto_nombre_natural || o?.producto_nombre || "";
+
+// Corrige el tamaño/formato mostrado de un movimiento (turba: m³ → unidades).
+const fixMovTamano = (m) => ({
+  ...m,
+  tamano_origen: displayFormato(_nombreProd(m), m?.tamano_origen),
+  tamano_destino: displayFormato(_nombreProd(m), m?.tamano_destino),
+});
 import {
   getDistribucionReporte,
   getMovimientosExternosReporte,
@@ -1717,7 +1729,7 @@ export default function Informes() {
         getPedidos(),
       ]);
       setProductos(Array.isArray(dataProductos) ? dataProductos : []);
-      setMovimientos(Array.isArray(dataMovimientos) ? dataMovimientos : []);
+      setMovimientos(Array.isArray(dataMovimientos) ? dataMovimientos.map(fixMovTamano) : []);
       setPedidos(Array.isArray(dataPedidos) ? dataPedidos : []);
       if (showSuccessMessage) {
         showTimedMessage("Informe actualizado.", "success");
@@ -2559,7 +2571,11 @@ export default function Informes() {
     setLoading(true);
     try {
       const data = await getDistribucionReporte(searchValue);
-      setDistribucionData(data);
+      // Corrige el formato mostrado (turba: m³ → unidades) en cada ubicación.
+      const dataFix = data && Array.isArray(data.distribucion)
+        ? { ...data, distribucion: data.distribucion.map((r) => ({ ...r, tamano: displayFormato(data.producto_nombre, r?.tamano) })) }
+        : data;
+      setDistribucionData(dataFix);
       showTimedMessage("Informe de distribución generado.", "success");
     } catch (e) {
       setDistribucionData(null);
@@ -2606,7 +2622,7 @@ export default function Informes() {
         categoria: externosCategoria || undefined,
         subcategoria: externosSubcategoria || undefined,
       });
-      setExternosData(Array.isArray(data) ? data : []);
+      setExternosData(Array.isArray(data) ? data.map(fixMovTamano) : []);
       setExternosSearched(true);
       showTimedMessage("Informe de movimientos externos generado.", "success");
     } catch (e) {

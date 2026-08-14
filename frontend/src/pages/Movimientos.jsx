@@ -14,6 +14,7 @@ import {
   getFormatoOptions,
   getUnidadMovimiento,
   tamanoDisponiblePlanta,
+  displayFormato,
 } from "../utils/formato";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 import {
@@ -415,16 +416,21 @@ function tdStyle() {
   };
 }
 
+// Nombre del producto de un movimiento (para corregir el formato mostrado).
+const _nombreMov = (m) => m?.producto_nombre_cientifico || m?.producto_nombre_natural || m?.producto_nombre || "";
+
 function buildLabelOrigen(m) {
   if (m?.origen_tipo === "Vivero") {
-    return `Vivero${m?.zona_origen ? ` · ${getZonaLabel(m.zona_origen)}` : ""}${m?.tamano_origen ? ` · ${m.tamano_origen}` : ""}`;
+    const tam = displayFormato(_nombreMov(m), m?.tamano_origen);
+    return `Vivero${m?.zona_origen ? ` · ${getZonaLabel(m.zona_origen)}` : ""}${tam ? ` · ${tam}` : ""}`;
   }
   return m?.origen_tipo || "—";
 }
 
 function buildLabelDestino(m) {
   if (m?.destino_tipo === "Vivero") {
-    return `Vivero${m?.zona_destino ? ` · ${getZonaLabel(m.zona_destino)}` : ""}${m?.tamano_destino ? ` · ${m.tamano_destino}` : ""}`;
+    const tam = displayFormato(_nombreMov(m), m?.tamano_destino);
+    return `Vivero${m?.zona_destino ? ` · ${getZonaLabel(m.zona_destino)}` : ""}${tam ? ` · ${tam}` : ""}`;
   }
 
   if (isExternalDestination(m?.destino_tipo)) {
@@ -3860,8 +3866,8 @@ function MovimientoDetalleModal({ movimiento, onClose }) {
           <Row label="Producto" value={m.producto_nombre_cientifico || m.nombre_cientifico || `Producto #${m.producto_id}`} />
           <Row label="Cantidad" value={formatCantidadConUnidad(m.cantidad, getUnidadMovimiento(m))} />
 
-          <Row label="Origen" value={`${m.origen_tipo || "—"}${m.zona_origen ? " · Zona " + m.zona_origen : ""}${m.tamano_origen ? " · " + m.tamano_origen : ""}`} />
-          <Row label="Destino" value={`${m.destino_tipo || "—"}${m.zona_destino ? " · Zona " + m.zona_destino : ""}${m.tamano_destino ? " · " + m.tamano_destino : ""}`} />
+          <Row label="Origen" value={`${m.origen_tipo || "—"}${m.zona_origen ? " · Zona " + m.zona_origen : ""}${m.tamano_origen ? " · " + displayFormato(_nombreMov(m), m.tamano_origen) : ""}`} />
+          <Row label="Destino" value={`${m.destino_tipo || "—"}${m.zona_destino ? " · Zona " + m.zona_destino : ""}${m.tamano_destino ? " · " + displayFormato(_nombreMov(m), m.tamano_destino) : ""}`} />
 
           {direccion && <Row label="Dirección destino" value={direccion} />}
 
