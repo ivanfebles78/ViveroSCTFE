@@ -644,7 +644,7 @@ function CartModal({ open, cart, onClose, onRemove, onUpdate, onFinalizar, onAdd
 }
 
 
-function GestionProductosModal({ open, productos, onClose, onChanged }) {
+function GestionProductosModal({ open, productos, esAdmin = false, onClose, onChanged }) {
   const [tab, setTab] = useState("listado");
   const [search, setSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -821,6 +821,29 @@ function GestionProductosModal({ open, productos, onClose, onChanged }) {
       showMsg("Producto eliminado.");
       onChanged && (await onChanged());
     } catch (e) {
+      const status = e?.response?.status;
+      // Bloqueado por stock/historial (400). Si es admin, ofrecemos borrado
+      // forzado que elimina el producto y TODO su historial (movimientos,
+      // lotes, inventario, líneas de pedido, cambios de modificación).
+      if (status === 400 && esAdmin) {
+        const ok = window.confirm(
+          `"${p.nombre_cientifico}" tiene stock o historial (movimientos/pedidos).\n\n` +
+          `¿Eliminarlo DE TODAS FORMAS junto con TODO su historial? ` +
+          `Se borrarán sus movimientos, lotes, inventario y líneas de pedido. Esta acción es IRREVERSIBLE.`
+        );
+        if (ok) {
+          try {
+            await deleteProducto(p.id, { force: true });
+            showMsg("Producto y su historial eliminados.");
+            onChanged && (await onChanged());
+          } catch (e2) {
+            showErr(fmtErr(e2));
+          } finally {
+            setSaving(false);
+          }
+          return;
+        }
+      }
       showErr(fmtErr(e));
     } finally {
       setSaving(false);
@@ -1841,6 +1864,7 @@ export default function Productos() {
       <GestionProductosModal
         open={gestionOpen}
         productos={productos}
+        esAdmin={(me?.rol || me?.role) === "admin"}
         onClose={() => setGestionOpen(false)}
         onChanged={load}
       />

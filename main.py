@@ -1549,12 +1549,35 @@ def actualizar_producto(
 @app.delete("/productos/{producto_id}")
 def eliminar_producto(
     producto_id: int,
+    force: bool = False,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico"])),
 ):
     producto = db.query(Producto).filter(Producto.id == producto_id).first()
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    # ── Borrado FORZADO (solo admin): elimina el producto y TODO su historial ──
+    if force:
+        role = (current_user.rol or "").strip().lower()
+        if role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Solo un administrador puede forzar el borrado de un producto con historial.",
+            )
+        # Cascada manual respetando las claves foráneas.
+        movs = db.query(Movimiento).filter(Movimiento.producto_id == producto_id).all()
+        for mov in movs:
+            db.query(MovimientoLoteDetalle).filter(MovimientoLoteDetalle.movimiento_id == mov.id).delete(synchronize_session=False)
+        db.query(MovimientoLoteDetalle).filter(MovimientoLoteDetalle.producto_id == producto_id).delete(synchronize_session=False)
+        db.query(Movimiento).filter(Movimiento.producto_id == producto_id).delete(synchronize_session=False)
+        db.query(PedidoModificacionItem).filter(PedidoModificacionItem.producto_id == producto_id).delete(synchronize_session=False)
+        db.query(PedidoItem).filter(PedidoItem.producto_id == producto_id).delete(synchronize_session=False)
+        db.query(InventarioLote).filter(InventarioLote.producto_id == producto_id).delete(synchronize_session=False)
+        db.query(Lote).filter(Lote.producto_id == producto_id).delete(synchronize_session=False)
+        db.delete(producto)
+        db.commit()
+        return {"ok": True, "id": producto_id, "forced": True}
 
     # No se puede eliminar si hay inventario vivo
     inv_con_stock = (

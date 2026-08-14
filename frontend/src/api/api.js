@@ -116,8 +116,8 @@ export const updateProducto = async (productoId, payload) => {
   return data;
 };
 
-export const deleteProducto = async (productoId) => {
-  const { data } = await api.delete(`/productos/${productoId}`);
+export const deleteProducto = async (productoId, { force = false } = {}) => {
+  const { data } = await api.delete(`/productos/${productoId}${force ? "?force=true" : ""}`);
   return data;
 };
 
