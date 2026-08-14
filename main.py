@@ -3493,6 +3493,8 @@ def reporte_movimientos_externos(
             "fecha_movimiento": mov.fecha_movimiento,
             "producto_id": mov.producto_id,
             "producto_nombre": _producto_display(prod, mov.producto_id),
+            "producto_nombre_cientifico": getattr(prod, "nombre_cientifico", None),
+            "producto_nombre_natural": getattr(prod, "nombre_natural", None),
             "producto_categoria": getattr(prod, "categoria", None),
             "producto_subcategoria": getattr(prod, "subcategoria", None),
             "cantidad": mov.cantidad,

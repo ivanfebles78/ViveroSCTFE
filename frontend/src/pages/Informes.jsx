@@ -1640,6 +1640,8 @@ export default function Informes() {
     if (!term) return base;
     return base.filter((r) =>
       normalizarBusqueda(r?.producto_nombre).includes(term) ||
+      normalizarBusqueda(r?.producto_nombre_cientifico).includes(term) ||
+      normalizarBusqueda(r?.producto_nombre_natural).includes(term) ||
       normalizarBusqueda(r?.producto_categoria).includes(term) ||
       normalizarBusqueda(r?.producto_subcategoria).includes(term)
     );
