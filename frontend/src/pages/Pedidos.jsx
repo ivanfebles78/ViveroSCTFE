@@ -2872,6 +2872,15 @@ export default function Pedidos() {
           </button>
         </div>
 
+        {!loading && (
+          <div style={{ margin: "0 0 12px", fontWeight: 800, color: "#334155", fontSize: 13 }}>
+            {pedidosFiltrados.length} {pedidosFiltrados.length === 1 ? "pedido" : "pedidos"}
+            {pedidosFiltrados.length !== (Array.isArray(pedidos) ? pedidos.length : 0) && (
+              <span style={{ color: "#64748b", fontWeight: 700 }}> · de {Array.isArray(pedidos) ? pedidos.length : 0} en total</span>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div style={{ color: "#64748b", fontWeight: 800 }}>Cargando…</div>
         ) : pedidosFiltrados.length === 0 ? (
