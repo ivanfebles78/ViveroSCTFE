@@ -18,8 +18,10 @@ const COLORS = ["#f59e0b", "#10b981", "#3b82f6", "#ef4444", "#64748b", "#8b5cf6"
 const pedidoGroupColor = {
   RESERVA: "#f59e0b",
   APROBADO: "#10b981",
+  "APROBADO PARCIAL": "#84cc16",
   SERVIDO: "#3b82f6",
   DENEGADO: "#ef4444",
+  CADUCADO: "#f97316",
   CANCELADO: "#64748b",
   OTROS: "#8b5cf6",
 };
@@ -161,6 +163,21 @@ function pedidoGroupLabel(value) {
   if (e === "SERVIDO") return "SERVIDO";
   if (e === "DENEGADO") return "DENEGADO";
   if (e === "CANCELADO" || e === "CADUCADO") return "CANCELADO";
+  return "OTROS";
+}
+
+// Etiqueta para el gráfico de Pedidos: separa "Aprobado parcial" y "Caducado"
+// como segmentos propios (a diferencia de pedidoGroupLabel, que los funde en
+// APROBADO/CANCELADO para los KPI de "pedidos activos").
+function pedidoChartLabel(value) {
+  const e = estadoNormalizado(value);
+  if (e === "RESERVA" || e === "PENDIENTE") return "RESERVA";
+  if (e === "APROBADO_PARCIAL") return "APROBADO PARCIAL";
+  if (e === "APROBADO") return "APROBADO";
+  if (e === "SERVIDO") return "SERVIDO";
+  if (e === "DENEGADO") return "DENEGADO";
+  if (e === "CADUCADO") return "CADUCADO";
+  if (e === "CANCELADO") return "CANCELADO";
   return "OTROS";
 }
 
@@ -609,10 +626,10 @@ export default function Dashboard() {
   const pedidosChart = useMemo(() => {
     const groups = new Map();
     for (const p of pedidos || []) {
-      const label = pedidoGroupLabel(p?.estado);
+      const label = pedidoChartLabel(p?.estado);
       groups.set(label, (groups.get(label) || 0) + 1);
     }
-    return ["RESERVA", "APROBADO", "SERVIDO", "DENEGADO", "CANCELADO", "OTROS"]
+    return ["RESERVA", "APROBADO", "APROBADO PARCIAL", "SERVIDO", "DENEGADO", "CADUCADO", "CANCELADO", "OTROS"]
       .map((label) => ({ label, value: groups.get(label) || 0, color: pedidoGroupColor[label] }))
       .filter((x) => x.value > 0);
   }, [pedidos]);
