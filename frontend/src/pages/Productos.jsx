@@ -90,6 +90,15 @@ const ProductoRow = memo(function ProductoRow({
           {Number(p.reservado || 0) > 0 ? formatCantidadConUnidad(p.reservado, unidad) : "—"}
         </td>
       )}
+      {!esEmpresaExterna && (() => {
+        const disp = stock - Number(p.reservado || 0);
+        return (
+          <td style={{ textAlign: "center", fontWeight: 800, color: disp > 0 ? "#065f46" : "#991b1b" }}
+              title="Disponible = stock − reservado">
+            {formatCantidadConUnidad(disp, unidad) || "0"}
+          </td>
+        );
+      })()}
       {!esEmpresaExterna && (
         <td style={{ textAlign: "center" }}>
           {p.stock_minimo === null || p.stock_minimo === undefined
@@ -758,7 +767,7 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
       const s = String(v ?? "");
       return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const headers = ["Nombre científico", "Nombre común", "Categoría", "Subcategoría", "Stock", "Reservado", "Stock mínimo", "Precio (€)", "Interno"];
+    const headers = ["Nombre científico", "Nombre común", "Categoría", "Subcategoría", "Stock", "Reservado", "Disponible", "Stock mínimo", "Precio (€)", "Interno"];
     const lineas = lista.map((p) =>
       [
         p.nombre_cientifico || "",
@@ -767,6 +776,7 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
         p.subcategoria || "",
         p.stock ?? "",
         p.reservado ?? 0,
+        Number(p.stock ?? 0) - Number(p.reservado ?? 0),
         p.stock_minimo === null || p.stock_minimo === undefined ? "" : p.stock_minimo,
         p.precio === null || p.precio === undefined ? "" : Number(p.precio).toFixed(2).replace(".", ","),
         p.es_interno ? "Sí" : "No",
@@ -1806,6 +1816,7 @@ export default function Productos() {
                 <th>Subcategoría</th>
                 <th style={{ textAlign: "center" }}>Stock</th>
                 {!esEmpresaExterna && <th style={{ textAlign: "center" }}>Reservado</th>}
+                {!esEmpresaExterna && <th style={{ textAlign: "center" }}>Disponible</th>}
                 {!esEmpresaExterna && <th style={{ textAlign: "center" }}>Stock mínimo</th>}
                 {puedeMarcarInterno && <th style={{ textAlign: "center" }}>Interno</th>}
                 {puedePedirMas && <th style={{ textAlign: "center" }}>Acciones</th>}
@@ -1816,7 +1827,7 @@ export default function Productos() {
                 <tr>
                   <td
                     colSpan={
-                      5 + (!esEmpresaExterna ? 2 : 0) + (puedeMarcarInterno ? 1 : 0) + (puedePedirMas ? 1 : 0)
+                      5 + (!esEmpresaExterna ? 3 : 0) + (puedeMarcarInterno ? 1 : 0) + (puedePedirMas ? 1 : 0)
                     }
                     style={{ textAlign: "center" }}
                   >
