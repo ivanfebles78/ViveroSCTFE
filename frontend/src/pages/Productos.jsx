@@ -91,10 +91,12 @@ const ProductoRow = memo(function ProductoRow({
         </td>
       )}
       {!esEmpresaExterna && (() => {
-        const disp = stock - Number(p.reservado || 0);
+        // Disponible real = stock − reservado − semillero − stock con fecha
+        // futura (y tamaños no válidos por tipo de planta). Lo calcula el backend.
+        const disp = Number(p.disponible ?? 0);
         return (
           <td style={{ textAlign: "center", fontWeight: 800, color: disp > 0 ? "#065f46" : "#991b1b" }}
-              title="Disponible = stock − reservado">
+              title="Disponible = stock − reservado − semillero − stock con fecha de disponibilidad futura">
             {formatCantidadConUnidad(disp, unidad) || "0"}
           </td>
         );
@@ -776,7 +778,7 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
         p.subcategoria || "",
         p.stock ?? "",
         p.reservado ?? 0,
-        Number(p.stock ?? 0) - Number(p.reservado ?? 0),
+        p.disponible ?? 0,
         p.stock_minimo === null || p.stock_minimo === undefined ? "" : p.stock_minimo,
         p.precio === null || p.precio === undefined ? "" : Number(p.precio).toFixed(2).replace(".", ","),
         p.es_interno ? "Sí" : "No",
