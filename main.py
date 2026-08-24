@@ -2784,8 +2784,11 @@ def crear_movimiento(
     # Regla de disponibilidad por tamaño: no se puede SACAR del vivero (salida a
     # destino externo) plantas en tamaño no disponible (semillero, o menor al
     # mínimo de su tipo). Entradas y traslados internos SÍ admiten cualquier
-    # tamaño (registrar semilleros, reubicar, trasplantar…).
-    if origen == "vivero" and not es_traslado_interno:
+    # tamaño (registrar semilleros, reubicar, trasplantar…). La BAJA DE VIVERO
+    # (descarte) también admite cualquier tamaño: se elimina stock físico real,
+    # no se entrega a nadie.
+    es_baja_vivero = destino == "baja vivero"
+    if origen == "vivero" and not es_traslado_interno and not es_baja_vivero:
         if not _tamano_disponible_planta(
             getattr(producto, "categoria", None),
             getattr(producto, "subcategoria", None),
