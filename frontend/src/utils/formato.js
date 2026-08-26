@@ -92,6 +92,27 @@ export function fechaDisponibilidadPorDefecto(producto, { tipo, tamanoOrigen, ta
   return "";
 }
 
+/**
+ * ¿Aplica la fecha de disponibilidad futura a este movimiento? (para habilitar
+ * o deshabilitar el campo). Solo arbustos en M20 y árboles/palmeras en M35:
+ *   - Entrada: el tamaño de destino es el tamaño listo del tipo.
+ *   - Traslado: sube de tamaño hasta ese tamaño listo.
+ */
+export function aplicaFechaDisponibilidad(producto, { tipo, tamanoOrigen, tamanoDestino } = {}) {
+  const dias = diasMaduracion(producto);
+  if (!dias) return false;
+  const sub = _normTxt(producto?.subcategoria);
+  const umbral = sub === "arbusto" ? "m20" : "m35";
+  const destEsListo = _tamIdx(tamanoDestino) === _tamIdx(umbral) && _tamIdx(umbral) >= 0;
+  const t = _normTxt(tipo);
+  if (t === "entrada") return destEsListo;
+  if (t === "traslado" || t === "traslado_interno") {
+    const sube = _tamIdx(tamanoOrigen) >= 0 && _tamIdx(tamanoOrigen) < _tamIdx(umbral);
+    return destEsListo && sube;
+  }
+  return false;
+}
+
 export const FORMATOS_FITOSANITARIO = [
   "Polvo Seco",
   "Polvo Dispersable",

@@ -17,6 +17,7 @@ import {
   displayFormato,
   fechaDisponibilidadPorDefecto,
   tamanoListoPlanta,
+  aplicaFechaDisponibilidad,
 } from "../utils/formato";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 import {
@@ -1498,6 +1499,10 @@ function MovimientoModal({
     setForm((p) => (p.fecha_disponibilidad === def ? p : { ...p, fecha_disponibilidad: def }));
   }, [form.tipo_elegido, form.origen_tipo, form.producto_id, form.tamano_origen, form.tamano_destino, form.destino_tipo, selectedProducto]);
 
+  // ¿Se puede editar la fecha de disponibilidad? Solo arbustos en M20 y
+  // árboles/palmeras en M35 (entrada a ese tamaño, o traslado que sube a él).
+  const aplicaFechaWizard = form.destino_tipo === "Vivero" && aplicaFechaDisponibilidad(selectedProducto, { tipo: form.tipo_elegido, tamanoOrigen: form.tamano_origen, tamanoDestino: form.tamano_destino });
+
   // Campo de formato/tamaño relevante para este movimiento. Para salidas y
   // traslados el material sale del vivero (tamaño origen); para entradas y
   // devoluciones llega al vivero (tamaño destino). El formato se elige en el
@@ -2064,9 +2069,11 @@ function MovimientoModal({
                       {form.destino_tipo === "Vivero" && (
                         <div style={{ gridColumn: "span 2" }}>
                           <SLabel>Disponible a partir de (opcional)</SLabel>
-                          <input type="date" value={form.fecha_disponibilidad || ""} onChange={(e) => setForm((p) => ({ ...p, fecha_disponibilidad: e.target.value }))} style={iStyle()} />
+                          <input type="date" value={form.fecha_disponibilidad || ""} onChange={(e) => setForm((p) => ({ ...p, fecha_disponibilidad: e.target.value }))} disabled={!aplicaFechaWizard} style={{ ...iStyle(), opacity: aplicaFechaWizard ? 1 : 0.5, cursor: aplicaFechaWizard ? "auto" : "not-allowed" }} />
                           <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
-                            Vacío = disponible al instante. Por defecto se aplica a arbustos en M20 (+30 días) y árboles/palmeras en M35 (+90 días).
+                            {aplicaFechaWizard
+                              ? "Vacío = disponible al instante. Puedes cambiarla o borrarla."
+                              : "Solo aplica a arbustos en M20 (+30 d) y árboles/palmeras en M35 (+90 d)."}
                           </div>
                         </div>
                       )}
@@ -2421,16 +2428,24 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
     }
   }, [esEntrada, esTraslado, selectedProduct, zonasDestinoPermitidas]);
 
-  // Fecha de disponibilidad por defecto (maduración de arbustos/árboles). Se
-  // recalcula al cambiar producto, origen (entrada) o tamaño destino (traslado);
-  // el usuario puede cambiarla o borrarla después.
+  // Tamaño "listo" del producto (arbusto M20, árbol/palmera M35) y si aplica la
+  // fecha de disponibilidad futura a la configuración actual.
+  const listoTam = tamanoListoPlanta(selectedProduct);
+  const fechaAplica = esEntrada
+    ? !!(listoTam && Number(sizeQty[listoTam] || 0) > 0) // entrada: solo si se registran uds del tamaño listo
+    : esTraslado
+      ? aplicaFechaDisponibilidad(selectedProduct, { tipo: "traslado_interno", tamanoOrigen: "Semillero", tamanoDestino: lineTamanoDestino })
+      : false;
+
+  // Fecha por defecto (hoy + días). Solo cuando aplica; el campo está
+  // deshabilitado si no. El usuario puede cambiarla o borrarla.
   useEffect(() => {
-    if (!selectedProduct || esSalida) { setLineFechaDisp(""); return; }
+    if (!fechaAplica) { setLineFechaDisp(""); return; }
     const def = esEntrada
-      ? fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "entrada", tamanoDestino: tamanoListoPlanta(selectedProduct) })
+      ? fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "entrada", tamanoDestino: listoTam })
       : fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "traslado_interno", tamanoOrigen: "Semillero", tamanoDestino: lineTamanoDestino });
     setLineFechaDisp(def);
-  }, [selectedProduct, esEntrada, esTraslado, esSalida, lineTamanoDestino]);
+  }, [fechaAplica, selectedProduct, esEntrada, esTraslado, lineTamanoDestino, listoTam]);
 
   // ENTRADA: tamaños posibles del producto (destino). Se ofrecen TODOS los
   // formatos/tamaños del producto (p. ej. M12/M20/M35 en plantas); la regla
@@ -2730,9 +2745,11 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                   </div>
                   <div style={{ marginTop: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
-                    <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} style={sInput} />
+                    <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} disabled={!fechaAplica} style={{ ...sInput, opacity: fechaAplica ? 1 : 0.5, cursor: fechaAplica ? "auto" : "not-allowed" }} />
                     <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
-                      Vacío = disponible al instante. Por defecto se aplica a arbustos en M20 (+30 días) y árboles/palmeras en M35 (+90 días).
+                      {fechaAplica
+                        ? "Vacío = disponible al instante. Aplica a la línea del tamaño listo (M20 arbustos / M35 árboles)."
+                        : "Solo aplica a arbustos en M20 (+30 d) y árboles/palmeras en M35 (+90 d). Añade unidades de ese tamaño para habilitarla."}
                     </div>
                   </div>
                 </>
@@ -2774,9 +2791,11 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                     </div>
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
-                      <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} style={sInput} />
+                      <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} disabled={!fechaAplica} style={{ ...sInput, opacity: fechaAplica ? 1 : 0.5, cursor: fechaAplica ? "auto" : "not-allowed" }} />
                       <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
-                        Se rellena por defecto al subir de tamaño hasta M20 (arbustos, +30 d) o M35 (árboles/palmeras, +90 d). Solo aplica a las líneas que suben de tamaño.
+                        {fechaAplica
+                          ? "Se aplica a las líneas que suben de tamaño hasta el destino. Puedes cambiarla o borrarla."
+                          : "Solo al subir de tamaño hasta M20 (arbustos, +30 d) o M35 (árboles/palmeras, +90 d). Elige ese tamaño destino para habilitarla."}
                       </div>
                     </div>
                   </div>
