@@ -2844,8 +2844,8 @@ def crear_movimiento(
     if fecha_disp is not None:
         if destino != "vivero":
             raise HTTPException(status_code=400, detail="La fecha de disponibilidad solo aplica a movimientos con destino Vivero")
-        if (payload.tamano_destino or "").strip().upper() != "M35":
-            raise HTTPException(status_code=400, detail="La fecha de disponibilidad solo aplica al tamaño M35")
+        # La fecha de disponibilidad futura vale para cualquier tamaño de destino
+        # (maduración de arbustos a M20, árboles/palmeras a M35, etc.).
         hoy = fecha_base_movimiento.date()
         if fecha_disp <= hoy:
             raise HTTPException(status_code=400, detail="La fecha de disponibilidad debe ser futura")

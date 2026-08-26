@@ -26,6 +26,62 @@ export function tamanoDisponiblePlanta(producto, tamano) {
   return t === "m12" || t === "m20" || t === "m35";
 }
 
+// Días de maduración por defecto (fecha de disponibilidad futura) según el tipo
+// de planta: arbustos 30, árboles/palmeras 90. Otros/no plantas: 0 (no aplica).
+export function diasMaduracion(producto) {
+  const cat = _normTxt(producto?.categoria);
+  if (cat !== "planta" && cat !== "plantas") return 0;
+  const sub = _normTxt(producto?.subcategoria);
+  if (sub === "arbusto") return 30;
+  if (sub === "arbol" || sub === "palmera") return 90;
+  return 0;
+}
+
+const _TAM_ORDER = { semillero: 0, m12: 1, m20: 2, m35: 3 };
+function _tamIdx(t) {
+  let k = _normTxt(t);
+  if (k === "m30") k = "m35";
+  return k in _TAM_ORDER ? _TAM_ORDER[k] : -1;
+}
+
+function _hoyMasDias(dias) {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Fecha de disponibilidad futura POR DEFECTO (YYYY-MM-DD) o "" si no aplica.
+ * Reglas:
+ *   - Entrada de PRODUCCIÓN PROPIA de arbusto (+30) o árbol/palmera (+90).
+ *   - Traslado con SUBIDA de tamaño hasta el tamaño "listo" del tipo:
+ *       arbusto → M20 (+30 desde Semillero/M12),
+ *       árbol/palmera → M35 (+90 desde Semillero/M12/M20).
+ * El valor devuelto es solo un valor por defecto: el usuario puede cambiarlo o
+ * borrarlo al hacer el movimiento.
+ */
+export function fechaDisponibilidadPorDefecto(producto, { tipo, origen, tamanoOrigen, tamanoDestino } = {}) {
+  const dias = diasMaduracion(producto);
+  if (!dias) return "";
+  const t = _normTxt(tipo);
+  const sub = _normTxt(producto?.subcategoria);
+  const umbral = sub === "arbusto" ? "m20" : "m35";
+
+  if (t === "entrada") {
+    if (_normTxt(origen) !== "produccion propia") return "";
+    return _hoyMasDias(dias);
+  }
+  if (t === "traslado" || t === "traslado_interno") {
+    const destOk = _tamIdx(tamanoDestino) === _tamIdx(umbral) && _tamIdx(umbral) >= 0;
+    const sube = _tamIdx(tamanoOrigen) >= 0 && _tamIdx(tamanoOrigen) < _tamIdx(umbral);
+    return destOk && sube ? _hoyMasDias(dias) : "";
+  }
+  return "";
+}
+
 export const FORMATOS_FITOSANITARIO = [
   "Polvo Seco",
   "Polvo Dispersable",

@@ -15,6 +15,7 @@ import {
   getUnidadMovimiento,
   tamanoDisponiblePlanta,
   displayFormato,
+  fechaDisponibilidadPorDefecto,
 } from "../utils/formato";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 import {
@@ -531,8 +532,8 @@ function getFormErrors(form, formatoConfig = null) {
   }
 
   if (form.fecha_disponibilidad) {
-    if (form.destino_tipo !== "Vivero" || form.tamano_destino !== "M35") {
-      errs.push("La fecha de disponibilidad solo aplica a movimientos a Vivero con tamaño M35.");
+    if (form.destino_tipo !== "Vivero") {
+      errs.push("La fecha de disponibilidad solo aplica a movimientos con destino Vivero (entradas y traslados).");
     } else {
       const hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
@@ -1304,7 +1305,7 @@ function MovimientoModal({
       es_prestamo: form.origen_tipo === "Vivero" && isExternalDestination(form.destino_tipo) ? !!form.prestamo : false,
       es_devolucion: esDevolucion,
       prestamo_referencia_id: esDevolucion && form.prestamo_referencia_id ? Number(form.prestamo_referencia_id) : null,
-      fecha_disponibilidad: form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && form.fecha_disponibilidad ? form.fecha_disponibilidad : null,
+      fecha_disponibilidad: form.destino_tipo === "Vivero" && form.fecha_disponibilidad ? form.fecha_disponibilidad : null,
       // Fecha/hora personalizada (registro a posteriori). Si no se marca, va null
       // y el backend usa el momento actual.
       fecha_movimiento: form.usar_fecha_personalizada && form.fecha_movimiento ? form.fecha_movimiento : null,
@@ -1481,6 +1482,20 @@ function MovimientoModal({
   const esEntrada = form.tipo_elegido === "entrada";
   const esTrasladoTipo = form.tipo_elegido === "traslado_interno";
   const esDevolucionTipo = form.tipo_elegido === "devolucion";
+
+  // Fecha de disponibilidad futura por defecto (maduración de arbustos/árboles):
+  // entrada de producción propia y traslados que suben de tamaño. Se recalcula al
+  // cambiar los campos relevantes; el usuario puede cambiarla o borrarla.
+  useEffect(() => {
+    if (form.destino_tipo !== "Vivero" || !selectedProducto) return;
+    let def = "";
+    if (form.tipo_elegido === "entrada") {
+      def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "entrada", origen: form.origen_tipo });
+    } else if (form.tipo_elegido === "traslado_interno") {
+      def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "traslado_interno", tamanoOrigen: form.tamano_origen, tamanoDestino: form.tamano_destino });
+    }
+    setForm((p) => (p.fecha_disponibilidad === def ? p : { ...p, fecha_disponibilidad: def }));
+  }, [form.tipo_elegido, form.origen_tipo, form.producto_id, form.tamano_origen, form.tamano_destino, form.destino_tipo, selectedProducto]);
 
   // Campo de formato/tamaño relevante para este movimiento. Para salidas y
   // traslados el material sale del vivero (tamaño origen); para entradas y
@@ -2045,10 +2060,13 @@ function MovimientoModal({
                           </select>
                         </div>
                       )}
-                      {form.destino_tipo === "Vivero" && form.tamano_destino === "M35" && (
+                      {form.destino_tipo === "Vivero" && (
                         <div style={{ gridColumn: "span 2" }}>
-                          <SLabel>Fecha disponibilidad (opcional, solo M35)</SLabel>
+                          <SLabel>Disponible a partir de (opcional)</SLabel>
                           <input type="date" value={form.fecha_disponibilidad || ""} onChange={(e) => setForm((p) => ({ ...p, fecha_disponibilidad: e.target.value }))} style={iStyle()} />
+                          <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
+                            Vacío = disponible al instante. Por defecto: arbustos +30 días, árboles/palmeras +90 (producción propia / al subir de tamaño).
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2265,6 +2283,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   const [zonaQty, setZonaQty] = useState({});              // salida: { `${zonaLower}__${tam}`: cantidad }
   const [lineZonaDestino, setLineZonaDestino] = useState(""); // entrada/traslado: zona destino de la línea
   const [lineTamanoDestino, setLineTamanoDestino] = useState(""); // traslado: tamaño destino ("" = mismo)
+  const [lineFechaDisp, setLineFechaDisp] = useState(""); // entrada/traslado: disponible a partir de (fecha futura)
   // Compartido de entrada / salida.
   const [entradaOrigen, setEntradaOrigen] = useState("");
   const [entradaOtros, setEntradaOtros] = useState("");
@@ -2280,7 +2299,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   const esSalida = tipo === "salida";
   const esTraslado = tipo === "traslado_interno";
 
-  const resetSeleccion = () => { setSelectedProductId(""); setSizeQty({}); setZonaQty({}); setLineZonaDestino(""); setLineTamanoDestino(""); };
+  const resetSeleccion = () => { setSelectedProductId(""); setSizeQty({}); setZonaQty({}); setLineZonaDestino(""); setLineTamanoDestino(""); setLineFechaDisp(""); };
 
   useEffect(() => {
     if (!open) {
@@ -2401,6 +2420,17 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
     }
   }, [esEntrada, esTraslado, selectedProduct, zonasDestinoPermitidas]);
 
+  // Fecha de disponibilidad por defecto (maduración de arbustos/árboles). Se
+  // recalcula al cambiar producto, origen (entrada) o tamaño destino (traslado);
+  // el usuario puede cambiarla o borrarla después.
+  useEffect(() => {
+    if (!selectedProduct || esSalida) { setLineFechaDisp(""); return; }
+    const def = esEntrada
+      ? fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "entrada", origen: entradaOrigen })
+      : fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "traslado_interno", tamanoOrigen: "Semillero", tamanoDestino: lineTamanoDestino });
+    setLineFechaDisp(def);
+  }, [selectedProduct, esEntrada, esTraslado, esSalida, entradaOrigen, lineTamanoDestino]);
+
   // ENTRADA: tamaños posibles del producto (destino). Se ofrecen TODOS los
   // formatos/tamaños del producto (p. ej. M12/M20/M35 en plantas); la regla
   // tamanoDisponiblePlanta solo aplica a lo que la UTE puede pedir, no a los
@@ -2486,7 +2516,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
         let q = Number(sizeQty[tam] || 0);
         if (!allowDecimals) q = Math.round(q);
         if (q <= 0) continue;
-        nuevos.push({ key: `${selectedProduct.id}-${tam}-${cart.length}-${nuevos.length}`, tipo: "entrada", producto_id: selectedProduct.id, nombre, tamano_destino: tam, zona_destino: lineZonaDestino, cantidad: q });
+        nuevos.push({ key: `${selectedProduct.id}-${tam}-${cart.length}-${nuevos.length}`, tipo: "entrada", producto_id: selectedProduct.id, nombre, tamano_destino: tam, zona_destino: lineZonaDestino, cantidad: q, fecha_disponibilidad: lineFechaDisp || null });
       }
       if (nuevos.length === 0) { setLocalError("Indica cuántas unidades entran de al menos un tamaño."); return; }
     } else if (esTraslado) {
@@ -2496,7 +2526,10 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
         if (!allowDecimals) q = Math.round(q);
         if (q <= 0) continue;
         if (q > r.disponible) { setLocalError(`En ${getZonaLabel(sourceZone)} · ${r.tamano} solo hay ${r.disponible} disponibles.`); return; }
-        nuevos.push({ key: `${selectedProduct.id}-${r.tamano}-${cart.length}-${nuevos.length}`, tipo: "traslado_interno", producto_id: selectedProduct.id, nombre, zona_origen: sourceZone, tamano_origen: r.tamano, zona_destino: lineZonaDestino, tamano_destino: lineTamanoDestino || r.tamano, cantidad: q });
+        const destTam = lineTamanoDestino || r.tamano;
+        const oi = TAMANOS.indexOf(r.tamano), di = TAMANOS.indexOf(destTam);
+        const esSubida = oi >= 0 && di >= 0 && di > oi; // solo la subida de tamaño madura
+        nuevos.push({ key: `${selectedProduct.id}-${r.tamano}-${cart.length}-${nuevos.length}`, tipo: "traslado_interno", producto_id: selectedProduct.id, nombre, zona_origen: sourceZone, tamano_origen: r.tamano, zona_destino: lineZonaDestino, tamano_destino: destTam, cantidad: q, fecha_disponibilidad: esSubida ? (lineFechaDisp || null) : null });
       }
       if (nuevos.length === 0) { setLocalError("Indica cuántas unidades trasladar de al menos un tamaño."); return; }
     } else {
@@ -2543,10 +2576,10 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
 
     const payloads = cart.map((c) => {
       if (c.tipo === "entrada") {
-        return { ...base(), producto_id: Number(c.producto_id), origen_tipo: origenEntradaFinal, destino_tipo: "Vivero", tamano_origen: null, tamano_destino: c.tamano_destino || null, zona_origen: null, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad };
+        return { ...base(), producto_id: Number(c.producto_id), origen_tipo: origenEntradaFinal, destino_tipo: "Vivero", tamano_origen: null, tamano_destino: c.tamano_destino || null, zona_origen: null, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad, fecha_disponibilidad: c.fecha_disponibilidad || null };
       }
       if (c.tipo === "traslado_interno") {
-        return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: "Vivero", tamano_origen: c.tamano_origen || null, tamano_destino: c.tamano_destino || c.tamano_origen || null, zona_origen: c.zona_origen, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad };
+        return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: "Vivero", tamano_origen: c.tamano_origen || null, tamano_destino: c.tamano_destino || c.tamano_origen || null, zona_origen: c.zona_origen, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad, fecha_disponibilidad: c.fecha_disponibilidad || null };
       }
       return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: destinoTipo, tamano_origen: c.tamano_origen || null, tamano_destino: null, zona_origen: c.zona_origen, zona_destino: null, distrito_destino: esExterno ? (distrito || null) : null, barrio_destino: esExterno ? (barrio || null) : null, direccion_destino: esExterno ? (String(direccion).trim() || null) : null, cantidad: c.cantidad };
     });
@@ -2693,6 +2726,13 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                       {zonasDestinoPermitidas.map((z) => <option key={z} value={z}>{getZonaLabel(z)}</option>)}
                     </select>
                   </div>
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
+                    <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} style={sInput} />
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
+                      Vacío = disponible al instante. Por defecto: arbustos +30 días, árboles/palmeras +90 (producción propia).
+                    </div>
+                  </div>
                 </>
               )
             ) : ( // traslado
@@ -2729,6 +2769,13 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                         <option value="">Mismo tamaño que el origen</option>
                         {tamanosDestinoTraslado.map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
+                      <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} style={sInput} />
+                      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
+                        Se rellena por defecto al subir de tamaño hasta M20 (arbustos, +30 d) o M35 (árboles/palmeras, +90 d). Solo aplica a las líneas que suben de tamaño.
+                      </div>
                     </div>
                   </div>
                 </>
@@ -2815,6 +2862,9 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                       {c.tipo === "salida" && `${getZonaLabel(c.zona_origen)} · ${c.tamano_origen} · ${formatCantidad(c.cantidad)} uds`}
                       {c.tipo === "traslado_interno" && `${getZonaLabel(c.zona_origen)} (${c.tamano_origen}) → ${getZonaLabel(c.zona_destino)} (${c.tamano_destino}) · ${formatCantidad(c.cantidad)} uds`}
                     </div>
+                    {c.fecha_disponibilidad ? (
+                      <div style={{ fontSize: 11, color: "#92400e", fontWeight: 800, marginTop: 2 }}>🗓 Disponible desde {c.fecha_disponibilidad}</div>
+                    ) : null}
                   </div>
                   <button type="button" onClick={() => removeCart(c.key)} style={{ border: "none", background: "transparent", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 14 }}>✕</button>
                 </div>
