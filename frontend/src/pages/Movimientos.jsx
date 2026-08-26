@@ -1474,20 +1474,10 @@ function MovimientoModal({
     await onSubmit(finalPayloads);
   };
 
-  if (!open) return null;
-
-  const iStyle = () => ({ width: "100%", padding: "9px 11px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.10)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" });
-  const accentMap = { entrada: "#10b981", salida: "#ef4444", traslado_interno: "#3b82f6", devolucion: "#f59e0b" };
-  const accent = accentMap[form.tipo_elegido] || "#06b6d4";
-
-  const esSalida = form.tipo_elegido === "salida";
-  const esEntrada = form.tipo_elegido === "entrada";
-  const esTrasladoTipo = form.tipo_elegido === "traslado_interno";
-  const esDevolucionTipo = form.tipo_elegido === "devolucion";
-
   // Fecha de disponibilidad futura por defecto (maduración de arbustos/árboles):
-  // entrada de producción propia y traslados que suben de tamaño. Se recalcula al
-  // cambiar los campos relevantes; el usuario puede cambiarla o borrarla.
+  // entrada/traslado al tamaño listo. Se recalcula al cambiar los campos
+  // relevantes; el usuario puede cambiarla o borrarla. (Debe ir ANTES del
+  // return condicional para no romper el orden de los hooks.)
   useEffect(() => {
     if (form.destino_tipo !== "Vivero" || !selectedProducto) return;
     let def = "";
@@ -1498,6 +1488,17 @@ function MovimientoModal({
     }
     setForm((p) => (p.fecha_disponibilidad === def ? p : { ...p, fecha_disponibilidad: def }));
   }, [form.tipo_elegido, form.origen_tipo, form.producto_id, form.tamano_origen, form.tamano_destino, form.destino_tipo, selectedProducto]);
+
+  if (!open) return null;
+
+  const iStyle = () => ({ width: "100%", padding: "9px 11px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.10)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" });
+  const accentMap = { entrada: "#10b981", salida: "#ef4444", traslado_interno: "#3b82f6", devolucion: "#f59e0b" };
+  const accent = accentMap[form.tipo_elegido] || "#06b6d4";
+
+  const esSalida = form.tipo_elegido === "salida";
+  const esEntrada = form.tipo_elegido === "entrada";
+  const esTrasladoTipo = form.tipo_elegido === "traslado_interno";
+  const esDevolucionTipo = form.tipo_elegido === "devolucion";
 
   // ¿Se puede editar la fecha de disponibilidad? Solo arbustos en M20 y
   // árboles/palmeras en M35 (entrada a ese tamaño, o traslado que sube a él).
