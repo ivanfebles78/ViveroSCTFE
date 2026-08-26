@@ -16,6 +16,7 @@ import {
   tamanoDisponiblePlanta,
   displayFormato,
   fechaDisponibilidadPorDefecto,
+  tamanoListoPlanta,
 } from "../utils/formato";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 import {
@@ -1490,7 +1491,7 @@ function MovimientoModal({
     if (form.destino_tipo !== "Vivero" || !selectedProducto) return;
     let def = "";
     if (form.tipo_elegido === "entrada") {
-      def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "entrada", origen: form.origen_tipo });
+      def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "entrada", tamanoDestino: form.tamano_destino });
     } else if (form.tipo_elegido === "traslado_interno") {
       def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "traslado_interno", tamanoOrigen: form.tamano_origen, tamanoDestino: form.tamano_destino });
     }
@@ -2065,7 +2066,7 @@ function MovimientoModal({
                           <SLabel>Disponible a partir de (opcional)</SLabel>
                           <input type="date" value={form.fecha_disponibilidad || ""} onChange={(e) => setForm((p) => ({ ...p, fecha_disponibilidad: e.target.value }))} style={iStyle()} />
                           <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
-                            Vacío = disponible al instante. Por defecto: arbustos +30 días, árboles/palmeras +90 (producción propia / al subir de tamaño).
+                            Vacío = disponible al instante. Por defecto se aplica a arbustos en M20 (+30 días) y árboles/palmeras en M35 (+90 días).
                           </div>
                         </div>
                       )}
@@ -2426,10 +2427,10 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   useEffect(() => {
     if (!selectedProduct || esSalida) { setLineFechaDisp(""); return; }
     const def = esEntrada
-      ? fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "entrada", origen: entradaOrigen })
+      ? fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "entrada", tamanoDestino: tamanoListoPlanta(selectedProduct) })
       : fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "traslado_interno", tamanoOrigen: "Semillero", tamanoDestino: lineTamanoDestino });
     setLineFechaDisp(def);
-  }, [selectedProduct, esEntrada, esTraslado, esSalida, entradaOrigen, lineTamanoDestino]);
+  }, [selectedProduct, esEntrada, esTraslado, esSalida, lineTamanoDestino]);
 
   // ENTRADA: tamaños posibles del producto (destino). Se ofrecen TODOS los
   // formatos/tamaños del producto (p. ej. M12/M20/M35 en plantas); la regla
@@ -2512,11 +2513,12 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
 
     if (esEntrada) {
       if (!lineZonaDestino) { setLocalError("Elige la zona destino de este producto."); return; }
+      const listoTam = tamanoListoPlanta(selectedProduct); // solo el tamaño "listo" madura
       for (const tam of tamanosEntrada) {
         let q = Number(sizeQty[tam] || 0);
         if (!allowDecimals) q = Math.round(q);
         if (q <= 0) continue;
-        nuevos.push({ key: `${selectedProduct.id}-${tam}-${cart.length}-${nuevos.length}`, tipo: "entrada", producto_id: selectedProduct.id, nombre, tamano_destino: tam, zona_destino: lineZonaDestino, cantidad: q, fecha_disponibilidad: lineFechaDisp || null });
+        nuevos.push({ key: `${selectedProduct.id}-${tam}-${cart.length}-${nuevos.length}`, tipo: "entrada", producto_id: selectedProduct.id, nombre, tamano_destino: tam, zona_destino: lineZonaDestino, cantidad: q, fecha_disponibilidad: (tam === listoTam) ? (lineFechaDisp || null) : null });
       }
       if (nuevos.length === 0) { setLocalError("Indica cuántas unidades entran de al menos un tamaño."); return; }
     } else if (esTraslado) {
@@ -2730,7 +2732,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                     <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
                     <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} style={sInput} />
                     <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
-                      Vacío = disponible al instante. Por defecto: arbustos +30 días, árboles/palmeras +90 (producción propia).
+                      Vacío = disponible al instante. Por defecto se aplica a arbustos en M20 (+30 días) y árboles/palmeras en M35 (+90 días).
                     </div>
                   </div>
                 </>

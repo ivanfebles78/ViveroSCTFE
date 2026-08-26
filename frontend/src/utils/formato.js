@@ -44,6 +44,17 @@ function _tamIdx(t) {
   return k in _TAM_ORDER ? _TAM_ORDER[k] : -1;
 }
 
+// Tamaño "listo/servible" de una planta según su tipo: arbustos M20,
+// árboles/palmeras M35. null si no aplica (otras plantas o no plantas).
+export function tamanoListoPlanta(producto) {
+  const cat = _normTxt(producto?.categoria);
+  if (cat !== "planta" && cat !== "plantas") return null;
+  const sub = _normTxt(producto?.subcategoria);
+  if (sub === "arbusto") return "M20";
+  if (sub === "arbol" || sub === "palmera") return "M35";
+  return null;
+}
+
 function _hoyMasDias(dias) {
   const d = new Date();
   d.setDate(d.getDate() + dias);
@@ -55,29 +66,28 @@ function _hoyMasDias(dias) {
 
 /**
  * Fecha de disponibilidad futura POR DEFECTO (YYYY-MM-DD) o "" si no aplica.
- * Reglas:
- *   - Entrada de PRODUCCIÓN PROPIA de arbusto (+30) o árbol/palmera (+90).
- *   - Traslado con SUBIDA de tamaño hasta el tamaño "listo" del tipo:
- *       arbusto → M20 (+30 desde Semillero/M12),
- *       árbol/palmera → M35 (+90 desde Semillero/M12/M20).
+ * Reglas (el tamaño "listo" es M20 para arbustos y M35 para árboles/palmeras):
+ *   - CUALQUIER entrada al tamaño listo (arbusto en M20 → +30; árbol/palmera en
+ *     M35 → +90), sin importar el origen.
+ *   - Traslado con SUBIDA de tamaño hasta ese tamaño listo (desde uno menor).
  * El valor devuelto es solo un valor por defecto: el usuario puede cambiarlo o
  * borrarlo al hacer el movimiento.
  */
-export function fechaDisponibilidadPorDefecto(producto, { tipo, origen, tamanoOrigen, tamanoDestino } = {}) {
+export function fechaDisponibilidadPorDefecto(producto, { tipo, tamanoOrigen, tamanoDestino } = {}) {
   const dias = diasMaduracion(producto);
   if (!dias) return "";
   const t = _normTxt(tipo);
   const sub = _normTxt(producto?.subcategoria);
   const umbral = sub === "arbusto" ? "m20" : "m35";
+  const destEsListo = _tamIdx(tamanoDestino) === _tamIdx(umbral) && _tamIdx(umbral) >= 0;
 
   if (t === "entrada") {
-    if (_normTxt(origen) !== "produccion propia") return "";
-    return _hoyMasDias(dias);
+    // Entrada AL tamaño listo (arbusto M20, árbol/palmera M35), cualquier origen.
+    return destEsListo ? _hoyMasDias(dias) : "";
   }
   if (t === "traslado" || t === "traslado_interno") {
-    const destOk = _tamIdx(tamanoDestino) === _tamIdx(umbral) && _tamIdx(umbral) >= 0;
     const sube = _tamIdx(tamanoOrigen) >= 0 && _tamIdx(tamanoOrigen) < _tamIdx(umbral);
-    return destOk && sube ? _hoyMasDias(dias) : "";
+    return destEsListo && sube ? _hoyMasDias(dias) : "";
   }
   return "";
 }
