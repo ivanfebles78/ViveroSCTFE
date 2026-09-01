@@ -3165,6 +3165,7 @@ export default function Movimientos() {
   const [filtroOrigen, setFiltroOrigen] = useState("");
   const [filtroDestino, setFiltroDestino] = useState("");
   const [filtroFecha, setFiltroFecha] = useState("");
+  const [filtroPedido, setFiltroPedido] = useState("");
   const [copiedUuid, setCopiedUuid] = useState("");
 
   const clearMsgTimer = () => {
@@ -3192,6 +3193,7 @@ export default function Movimientos() {
     setFiltroOrigen("");
     setFiltroDestino("");
     setFiltroFecha("");
+    setFiltroPedido("");
   };
 
   useEffect(() => {
@@ -3269,10 +3271,12 @@ export default function Movimientos() {
       const origenMatch = !filtroOrigen || origenReal === String(filtroOrigen).toLowerCase();
       const destinoMatch = !filtroDestino || destinoReal === String(filtroDestino).toLowerCase();
       const fechaMatch = !filtroFecha || dateInputValue(m?.fecha_movimiento) === filtroFecha;
+      const pedidoTxt = filtroPedido.trim();
+      const pedidoMatch = !pedidoTxt || String(m?.pedido_id ?? "").includes(pedidoTxt);
 
-      return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && fechaMatch;
+      return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && fechaMatch && pedidoMatch;
     });
-  }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroFecha]);
+  }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroFecha, filtroPedido]);
 
   const handleCreateMovimiento = async (payloadOrList) => {
     const payloads = Array.isArray(payloadOrList) ? payloadOrList : [payloadOrList];
@@ -3449,6 +3453,17 @@ export default function Movimientos() {
               value={filtroUuid}
               onChange={(e) => setFiltroUuid(e.target.value)}
               placeholder="Buscar UUID"
+              style={inputStyle()}
+            />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6 }}>Nº pedido</div>
+            <input
+              value={filtroPedido}
+              onChange={(e) => setFiltroPedido(e.target.value)}
+              placeholder="Buscar nº pedido"
+              inputMode="numeric"
               style={inputStyle()}
             />
           </div>
