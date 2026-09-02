@@ -92,6 +92,13 @@ export const getMe = async () => {
   return data;
 };
 
+// Agregados para los gadgets del panel de control (productos más demandados,
+// destinos más frecuentes y tiempo medio de aprobación).
+export const getDashboardEstadisticas = async () => {
+  const { data } = await api.get("/dashboard/estadisticas");
+  return data;
+};
+
 // ---------------- PRODUCTOS ----------------
 
 export const getProductos = async () => {

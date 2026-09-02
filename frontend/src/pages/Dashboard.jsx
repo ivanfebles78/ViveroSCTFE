@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getMe, getPedidos, getProductos } from "../api/api";
+import { getMe, getPedidos, getProductos, getDashboardEstadisticas } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
 
 const MAP_DEBUG = false;
@@ -549,6 +549,98 @@ function DonutSection({ categoriasChart, pedidosChart, caducidadChart, metrics }
   );
 }
 
+// Lista rankeada con barra proporcional (productos más demandados / destinos).
+function RankList({ items, color, emptyText }) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length === 0) {
+    return <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>{emptyText}</div>;
+  }
+  const maxPct = Math.max(...list.map((x) => Number(x.percent) || 0), 1);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {list.map((it, idx) => {
+        const pct = Number(it.percent) || 0;
+        const width = Math.max((pct / maxPct) * 100, 4);
+        return (
+          <div key={idx}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+              <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.nombre}>
+                <span style={{ color: "#94a3b8", fontWeight: 900, marginRight: 6 }}>{idx + 1}.</span>
+                {it.nombre}
+                {it.distrito && it.distrito !== it.nombre ? (
+                  <span style={{ color: "#94a3b8", fontWeight: 700 }}> · {it.distrito}</span>
+                ) : null}
+              </div>
+              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, whiteSpace: "nowrap" }}>
+                {pct.toLocaleString("es-ES", { maximumFractionDigits: 1 })}%
+                <span style={{ color: "#94a3b8", fontWeight: 700, marginLeft: 6 }}>({it.count})</span>
+              </div>
+            </div>
+            <div style={{ height: 8, borderRadius: 6, background: "rgba(15,23,42,0.06)", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${width}%`, background: color, borderRadius: 6 }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Sección con los tres gadgets: productos más demandados, destinos más
+// frecuentes y tiempo medio de aprobación.
+function EstadisticasSection({ estadisticas }) {
+  const productos = estadisticas?.productos_demandados || [];
+  const destinos = estadisticas?.destinos_frecuentes || [];
+  const tma = estadisticas?.tiempo_medio_aprobacion || null;
+
+  // Formato legible del tiempo medio: usa días si ≥ 1 día, si no horas (y si
+  // es menos de 1 hora, minutos) para que el número sea siempre significativo.
+  let tmaValor = "—";
+  let tmaUnidad = "sin datos aún";
+  if (tma && tma.horas != null) {
+    if (tma.dias >= 1) {
+      tmaValor = tma.dias.toLocaleString("es-ES", { maximumFractionDigits: 1 });
+      tmaUnidad = tma.dias === 1 ? "día de media" : "días de media";
+    } else if (tma.horas >= 1) {
+      tmaValor = tma.horas.toLocaleString("es-ES", { maximumFractionDigits: 1 });
+      tmaUnidad = "horas de media";
+    } else {
+      tmaValor = Math.round(tma.horas * 60).toString();
+      tmaUnidad = "minutos de media";
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+      <div style={cardStyle}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 2 }}>Productos más demandados</div>
+        <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>% de aparición en movimientos</div>
+        <RankList items={productos} color="#10b981" emptyText="Aún no hay movimientos registrados." />
+      </div>
+
+      <div style={cardStyle}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 2 }}>Destinos más frecuentes</div>
+        <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>Barrio o distrito de destino en salidas</div>
+        <RankList items={destinos} color="#3b82f6" emptyText="Aún no hay salidas con destino externo." />
+      </div>
+
+      <div style={cardStyle}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 2 }}>Tiempo medio de aprobación</div>
+        <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>De la creación del pedido a la decisión del manager</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
+          <div style={{ fontSize: 52, fontWeight: 950, color: "#8b5cf6", lineHeight: 1 }}>{tmaValor}</div>
+          <div style={{ color: "#64748b", fontWeight: 800, fontSize: 14, marginTop: 6 }}>{tmaUnidad}</div>
+          {tma && tma.muestra > 0 ? (
+            <div style={{ color: "#94a3b8", fontWeight: 700, fontSize: 12, marginTop: 8 }}>
+              sobre {tma.muestra} {tma.muestra === 1 ? "pedido decidido" : "pedidos decididos"}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [me, setMe] = useState(null);
@@ -556,12 +648,13 @@ export default function Dashboard() {
   const [pedidos, setPedidos] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [mapOpen, setMapOpen] = useState(false);
+  const [estadisticas, setEstadisticas] = useState(null);
 
   useEffect(() => {
     (async () => {
-      const results = await Promise.allSettled([getMe(), getProductos(), getPedidos()]);
+      const results = await Promise.allSettled([getMe(), getProductos(), getPedidos(), getDashboardEstadisticas()]);
       const nextWarnings = [];
-      const [meRes, productosRes, pedidosRes] = results;
+      const [meRes, productosRes, pedidosRes, estadRes] = results;
 
       if (meRes.status === "fulfilled") setMe(meRes.value);
       else nextWarnings.push(`Usuario: ${getErrorMessage(meRes.reason)}`);
@@ -577,6 +670,9 @@ export default function Dashboard() {
         nextWarnings.push(`Pedidos: ${getErrorMessage(pedidosRes.reason)}`);
         setPedidos([]);
       }
+
+      if (estadRes.status === "fulfilled") setEstadisticas(estadRes.value || null);
+      else setEstadisticas(null);
 
       setWarnings(nextWarnings);
     })();
@@ -721,6 +817,7 @@ export default function Dashboard() {
       </div>
 
       <DonutSection categoriasChart={categoriasChart} pedidosChart={pedidosChart} caducidadChart={caducidadChart} metrics={metrics} />
+      <EstadisticasSection estadisticas={estadisticas} />
       <ZonaMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
     </div>
   );

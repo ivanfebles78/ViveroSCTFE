@@ -3140,6 +3140,111 @@ def listar_movimientos(
 
 
 # =============================
+# DASHBOARD - ESTADÍSTICAS
+# =============================
+@app.get("/dashboard/estadisticas")
+def dashboard_estadisticas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "gestor_vivero", "tecnico"])),
+):
+    """Agregados para los gadgets del panel de control:
+      1) Top 5 productos más demandados (los que más aparecen en movimientos).
+      2) Destinos externos más frecuentes (barrio o distrito de destino).
+      3) Tiempo medio de aprobación (creación del pedido → decisión del manager).
+    """
+    # --- 1) Productos más demandados (más presentes en movimientos) ---
+    total_mov = db.query(func.count(Movimiento.id)).scalar() or 0
+    prod_rows = (
+        db.query(
+            Movimiento.producto_id,
+            Producto.nombre_cientifico,
+            Producto.nombre_natural,
+            func.count(Movimiento.id).label("n"),
+        )
+        .join(Producto, Producto.id == Movimiento.producto_id)
+        .group_by(Movimiento.producto_id, Producto.nombre_cientifico, Producto.nombre_natural)
+        .order_by(func.count(Movimiento.id).desc())
+        .limit(5)
+        .all()
+    )
+    productos_demandados = [
+        {
+            "producto_id": pid,
+            "nombre": (nc or nn or f"Producto #{pid}"),
+            "count": int(n),
+            "percent": round((int(n) / total_mov) * 100, 1) if total_mov else 0.0,
+        }
+        for pid, nc, nn, n in prod_rows
+    ]
+
+    # --- 2) Destinos externos más frecuentes (barrio o distrito) ---
+    dest_rows = (
+        db.query(Movimiento.barrio_destino, Movimiento.distrito_destino)
+        .filter(
+            or_(
+                and_(Movimiento.barrio_destino.isnot(None), Movimiento.barrio_destino != ""),
+                and_(Movimiento.distrito_destino.isnot(None), Movimiento.distrito_destino != ""),
+            )
+        )
+        .all()
+    )
+    dest_count: dict[str, int] = {}
+    dest_distrito: dict[str, str] = {}
+    for barrio, distrito in dest_rows:
+        b = (barrio or "").strip()
+        d = (distrito or "").strip()
+        label = b or d
+        if not label:
+            continue
+        dest_count[label] = dest_count.get(label, 0) + 1
+        if d and label not in dest_distrito:
+            dest_distrito[label] = d
+    total_dest = sum(dest_count.values())
+    destinos_frecuentes = [
+        {
+            "nombre": label,
+            "distrito": dest_distrito.get(label),
+            "count": cnt,
+            "percent": round((cnt / total_dest) * 100, 1) if total_dest else 0.0,
+        }
+        for label, cnt in sorted(dest_count.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    ]
+
+    # --- 3) Tiempo medio de aprobación (creación → decisión) ---
+    ped_rows = (
+        db.query(Pedido.created_at, Pedido.aprobado_at, Pedido.denegado_at)
+        .filter(or_(Pedido.aprobado_at.isnot(None), Pedido.denegado_at.isnot(None)))
+        .all()
+    )
+    deltas = []
+    for created, aprob, deneg in ped_rows:
+        if not created:
+            continue
+        candidatos = [t for t in (aprob, deneg) if t is not None]
+        if not candidatos:
+            continue
+        decidido = min(candidatos)
+        secs = (decidido - created).total_seconds()
+        if secs >= 0:
+            deltas.append(secs)
+    if deltas:
+        avg_secs = sum(deltas) / len(deltas)
+        tiempo_medio_aprobacion = {
+            "horas": round(avg_secs / 3600, 1),
+            "dias": round(avg_secs / 86400, 1),
+            "muestra": len(deltas),
+        }
+    else:
+        tiempo_medio_aprobacion = {"horas": None, "dias": None, "muestra": 0}
+
+    return {
+        "productos_demandados": productos_demandados,
+        "destinos_frecuentes": destinos_frecuentes,
+        "tiempo_medio_aprobacion": tiempo_medio_aprobacion,
+    }
+
+
+# =============================
 # TRAZABILIDAD POR UUID
 # =============================
 @app.get("/lotes/{uuid_lote}")
