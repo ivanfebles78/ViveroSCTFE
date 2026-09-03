@@ -586,29 +586,64 @@ function RankList({ items, color, emptyText }) {
   );
 }
 
+// Gráfico de barras verticales con la media de pedidos por día (L-V).
+// Resalta el día de mayor y menor media para leer de un vistazo el pico/valle.
+function PedidosPorDiaChart({ items }) {
+  const list = Array.isArray(items) ? items : [];
+  const hayDatos = list.some((d) => Number(d.total) > 0);
+  if (!hayDatos) {
+    return <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13, padding: "18px 0" }}>Aún no hay pedidos suficientes.</div>;
+  }
+  const medias = list.map((d) => Number(d.media) || 0);
+  const maxMedia = Math.max(...medias, 0.0001);
+  const maxIdx = medias.indexOf(Math.max(...medias));
+  const minIdx = medias.indexOf(Math.min(...medias));
+  const abrev = { "Lunes": "L", "Martes": "M", "Miércoles": "X", "Jueves": "J", "Viernes": "V" };
+  const CHART_H = 150;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", gap: 8, height: CHART_H }}>
+        {list.map((d, i) => {
+          const media = Number(d.media) || 0;
+          const h = Math.max((media / maxMedia) * (CHART_H - 24), 3);
+          const esMax = i === maxIdx && media > 0;
+          const esMin = i === minIdx && media > 0 && minIdx !== maxIdx;
+          const color = esMax ? "#10b981" : esMin ? "#f59e0b" : "#3b82f6";
+          return (
+            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>
+                {media.toLocaleString("es-ES", { maximumFractionDigits: 2 })}
+              </div>
+              <div
+                title={`${d.dia}: ${media} pedidos de media (${d.total} en ${d.ocurrencias} ${d.ocurrencias === 1 ? "día" : "días"})`}
+                style={{ width: "72%", height: h, background: color, borderRadius: "8px 8px 0 0", transition: "height .3s ease" }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-around", gap: 8, marginTop: 6 }}>
+        {list.map((d, i) => (
+          <div key={i} style={{ flex: 1, textAlign: "center", fontWeight: 900, fontSize: 13, color: i === maxIdx ? "#10b981" : i === minIdx ? "#b45309" : "#64748b" }} title={d.dia}>
+            {abrev[d.dia] || d.dia?.slice(0, 3)}
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, color: "#94a3b8", fontWeight: 700, fontSize: 12, textAlign: "center" }}>
+        Más pedidos: <span style={{ color: "#059669", fontWeight: 900 }}>{list[maxIdx]?.dia}</span>
+        {minIdx !== maxIdx ? <> · Menos: <span style={{ color: "#b45309", fontWeight: 900 }}>{list[minIdx]?.dia}</span></> : null}
+      </div>
+    </div>
+  );
+}
+
 // Sección con los tres gadgets: productos más demandados, destinos más
-// frecuentes y tiempo medio de aprobación.
+// frecuentes y media de pedidos por día de la semana.
 function EstadisticasSection({ estadisticas }) {
   const productos = estadisticas?.productos_demandados || [];
   const destinos = estadisticas?.destinos_frecuentes || [];
-  const tma = estadisticas?.tiempo_medio_aprobacion || null;
-
-  // Formato legible del tiempo medio: usa días si ≥ 1 día, si no horas (y si
-  // es menos de 1 hora, minutos) para que el número sea siempre significativo.
-  let tmaValor = "—";
-  let tmaUnidad = "sin datos aún";
-  if (tma && tma.horas != null) {
-    if (tma.dias >= 1) {
-      tmaValor = tma.dias.toLocaleString("es-ES", { maximumFractionDigits: 1 });
-      tmaUnidad = tma.dias === 1 ? "día de media" : "días de media";
-    } else if (tma.horas >= 1) {
-      tmaValor = tma.horas.toLocaleString("es-ES", { maximumFractionDigits: 1 });
-      tmaUnidad = "horas de media";
-    } else {
-      tmaValor = Math.round(tma.horas * 60).toString();
-      tmaUnidad = "minutos de media";
-    }
-  }
+  const pedidosPorDia = estadisticas?.pedidos_por_dia || [];
 
   return (
     <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
@@ -625,17 +660,9 @@ function EstadisticasSection({ estadisticas }) {
       </div>
 
       <div style={cardStyle}>
-        <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 2 }}>Tiempo medio de aprobación</div>
-        <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>De la creación del pedido a la decisión del manager</div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
-          <div style={{ fontSize: 52, fontWeight: 950, color: "#8b5cf6", lineHeight: 1 }}>{tmaValor}</div>
-          <div style={{ color: "#64748b", fontWeight: 800, fontSize: 14, marginTop: 6 }}>{tmaUnidad}</div>
-          {tma && tma.muestra > 0 ? (
-            <div style={{ color: "#94a3b8", fontWeight: 700, fontSize: 12, marginTop: 8 }}>
-              sobre {tma.muestra} {tma.muestra === 1 ? "pedido decidido" : "pedidos decididos"}
-            </div>
-          ) : null}
-        </div>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 2 }}>Pedidos por día de la semana</div>
+        <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>Media de pedidos recibidos (lunes a viernes)</div>
+        <PedidosPorDiaChart items={pedidosPorDia} />
       </div>
     </div>
   );

@@ -3210,37 +3210,50 @@ def dashboard_estadisticas(
         for label, cnt in sorted(dest_count.items(), key=lambda kv: kv[1], reverse=True)[:5]
     ]
 
-    # --- 3) Tiempo medio de aprobación (creación → decisión) ---
-    ped_rows = (
-        db.query(Pedido.created_at, Pedido.aprobado_at, Pedido.denegado_at)
-        .filter(or_(Pedido.aprobado_at.isnot(None), Pedido.denegado_at.isnot(None)))
-        .all()
-    )
-    deltas = []
-    for created, aprob, deneg in ped_rows:
-        if not created:
-            continue
-        candidatos = [t for t in (aprob, deneg) if t is not None]
-        if not candidatos:
-            continue
-        decidido = min(candidatos)
-        secs = (decidido - created).total_seconds()
-        if secs >= 0:
-            deltas.append(secs)
-    if deltas:
-        avg_secs = sum(deltas) / len(deltas)
-        tiempo_medio_aprobacion = {
-            "horas": round(avg_secs / 3600, 1),
-            "dias": round(avg_secs / 86400, 1),
-            "muestra": len(deltas),
-        }
-    else:
-        tiempo_medio_aprobacion = {"horas": None, "dias": None, "muestra": 0}
+    # --- 3) Media de pedidos por día de la semana (lunes a viernes) ---
+    # Para cada día laborable calculamos: total de pedidos creados ese día de la
+    # semana / número de veces que ese día ha ocurrido en el periodo observado
+    # (desde el primer pedido hasta hoy). Así "media" = pedidos esperados por,
+    # p. ej., un lunes cualquiera. Los fines de semana no se contabilizan.
+    fechas = [c for (c,) in db.query(Pedido.created_at).filter(Pedido.created_at.isnot(None)).all()]
+    total_por_dia = {i: 0 for i in range(5)}  # 0=lunes ... 4=viernes
+    for c in fechas:
+        wd = c.weekday()
+        if wd < 5:
+            total_por_dia[wd] += 1
+
+    def _ocurrencias_dia(start_date, end_date, wd):
+        """Cuántas veces cae el día de la semana wd en [start_date, end_date]."""
+        if start_date > end_date:
+            return 0
+        delta = (wd - start_date.weekday()) % 7
+        primero = start_date + timedelta(days=delta)
+        if primero > end_date:
+            return 0
+        return (end_date - primero).days // 7 + 1
+
+    dias_fechas = [c.date() for c in fechas]
+    hoy = datetime.utcnow().date()
+    fecha_min = min(dias_fechas) if dias_fechas else hoy
+    fecha_max = hoy  # el periodo llega hasta hoy aunque no haya pedidos recientes
+
+    nombres_dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
+    pedidos_por_dia = []
+    for i in range(5):
+        occ = _ocurrencias_dia(fecha_min, fecha_max, i)
+        media = round(total_por_dia[i] / occ, 2) if occ else 0.0
+        pedidos_por_dia.append({
+            "dia": nombres_dias[i],
+            "indice": i,
+            "media": media,
+            "total": total_por_dia[i],
+            "ocurrencias": occ,
+        })
 
     return {
         "productos_demandados": productos_demandados,
         "destinos_frecuentes": destinos_frecuentes,
-        "tiempo_medio_aprobacion": tiempo_medio_aprobacion,
+        "pedidos_por_dia": pedidos_por_dia,
     }
 
 
