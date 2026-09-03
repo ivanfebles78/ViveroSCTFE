@@ -2481,7 +2481,8 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   }, [esTraslado, selectedProduct, sourceZone, stockByProductZoneSize, cart]);
 
   // SALIDA: zonas (con tamaño) del producto, descontando carrito.
-  const zonasSalida = useMemo(() => {
+  // Stock físico real por zona/tamaño del producto (todas las tallas).
+  const zonasSalidaTodas = useMemo(() => {
     if (!esSalida || !selectedProduct) return [];
     const pid = String(selectedProduct.id);
     const rows = [];
@@ -2491,7 +2492,6 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       if (parts[0] !== pid) continue;
       const zonaLower = parts[1];
       const tam = parts.slice(2).join("__");
-      // Stock físico real: sin filtro de tamaño "estándar" (árboles en M20 movibles).
       const enCarrito = cart
         .filter((c) => String(c.producto_id) === pid && String(c.zona_origen || "").toLowerCase() === zonaLower && c.tamano_origen === tam)
         .reduce((s, c) => s + Number(c.cantidad || 0), 0);
@@ -2502,6 +2502,19 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
     rows.sort((a, b) => b.disponible - a.disponible || String(a.tamano).localeCompare(String(b.tamano)));
     return rows;
   }, [esSalida, selectedProduct, stockByProductZoneSize, cart, zonaIdByLower]);
+
+  // A un destino EXTERNO solo se pueden sacar tamaños "servibles" (arbustos
+  // M20/M35, árboles/palmeras M35, resto M12/M20/M35; nunca semillero), igual
+  // que valida el backend. "Baja Vivero" (descarte) admite cualquier tamaño.
+  const zonasSalida = useMemo(
+    () => (esExterno ? zonasSalidaTodas.filter((r) => tamanoDisponiblePlanta(selectedProduct, r.tamano)) : zonasSalidaTodas),
+    [zonasSalidaTodas, esExterno, selectedProduct]
+  );
+  // Tamaños con stock que quedan ocultos por no ser servibles (para el aviso).
+  const zonasSalidaNoServibles = useMemo(
+    () => (esExterno ? zonasSalidaTodas.filter((r) => !tamanoDisponiblePlanta(selectedProduct, r.tamano)) : []),
+    [zonasSalidaTodas, esExterno, selectedProduct]
+  );
 
   const totalSeleccionado = useMemo(() => {
     if (esSalida) return zonasSalida.reduce((s, r) => s + Number(zonaQty[`${r.zonaLower}__${r.tamano}`] || 0), 0);
@@ -2580,6 +2593,20 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
     if (esEntrada && entradaOrigen === ENTRADA_ORIGEN_OTROS && !entradaOtros.trim()) { setLocalError("Especifica el origen de la entrada."); return; }
     if (esSalida && !destinoTipo) { setLocalError("Elige el destino de la salida."); return; }
     if (esSalida && esExterno && (!distrito || !barrio || !String(direccion).trim())) { setLocalError("Indica distrito, barrio y dirección de destino."); return; }
+    // A un destino externo no se puede sacar en tamaño no servible (p. ej. un
+    // arbusto en M12). Se comprueba aquí por si el destino se eligió después de
+    // montar el carrito. Para descartar plantas pequeñas usa "Baja Vivero".
+    if (esSalida && esExterno) {
+      const noServibles = cart.filter((c) => {
+        const prod = safeArray(productos).find((p) => String(p.id) === String(c.producto_id));
+        return prod && !tamanoDisponiblePlanta(prod, c.tamano_origen);
+      });
+      if (noServibles.length > 0) {
+        const tams = [...new Set(noServibles.map((c) => c.tamano_origen))].join(", ");
+        setLocalError(`No se puede sacar del vivero a un destino externo en tamaño ${tams}: es demasiado pequeño para su tipo (arbustos solo M20/M35; árboles y palmeras solo M35). Quita esas líneas del carrito o usa el destino «Baja Vivero» para descartarlas.`);
+        return;
+      }
+    }
 
     const origenEntradaFinal = entradaOrigen === ENTRADA_ORIGEN_OTROS && entradaOtros.trim()
       ? entradaOtros.trim().slice(0, 30)
@@ -2697,7 +2724,16 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
               <div style={{ marginTop: 16, color: "#64748b", fontWeight: 700 }}>Elige un producto de la izquierda para indicar cantidades{esEntrada ? " por tamaño y su zona destino" : esTraslado ? ", la zona y el tamaño destino" : " por zona"}.</div>
             ) : esSalida ? (
               zonasSalida.length === 0 ? (
-                <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto ya no tiene stock disponible (o ya lo has añadido todo al carrito).</div>
+                zonasSalidaNoServibles.length > 0 ? (
+                  <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e", fontWeight: 700, fontSize: 13 }}>
+                    Este producto solo tiene stock en tamaños que aún no se pueden entregar a un destino externo
+                    ({[...new Set(zonasSalidaNoServibles.map((r) => r.tamano))].join(", ")}).
+                    Los arbustos solo se sirven en M20 o M35, y los árboles y palmeras en M35.
+                    <div style={{ marginTop: 6, fontWeight: 800 }}>Para descartar plantas pequeñas, cambia el destino a «Baja Vivero».</div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 16, color: "#991b1b", fontWeight: 700 }}>Este producto ya no tiene stock disponible (o ya lo has añadido todo al carrito).</div>
+                )
               ) : (
                 <>
                   <div style={{ marginTop: 6, color: "#64748b", fontWeight: 700, fontSize: 13 }}>Indica cuántas unidades sacar de cada zona.</div>
