@@ -3201,7 +3201,8 @@ export default function Movimientos() {
   const [filtroZona, setFiltroZona] = useState("");
   const [filtroUuid, setFiltroUuid] = useState("");
   const [filtroOrigen, setFiltroOrigen] = useState("");
-  const [filtroDestino, setFiltroDestino] = useState("");
+  const [filtroDestino, setFiltroDestino] = useState("");        // solicitante (destino_tipo)
+  const [filtroDestinoTexto, setFiltroDestinoTexto] = useState(""); // destino: distrito/barrio/dirección
   const [filtroFecha, setFiltroFecha] = useState("");
   const [filtroPedido, setFiltroPedido] = useState("");
   const [copiedUuid, setCopiedUuid] = useState("");
@@ -3230,6 +3231,7 @@ export default function Movimientos() {
     setFiltroUuid("");
     setFiltroOrigen("");
     setFiltroDestino("");
+    setFiltroDestinoTexto("");
     setFiltroFecha("");
     setFiltroPedido("");
   };
@@ -3311,10 +3313,16 @@ export default function Movimientos() {
       const fechaMatch = !filtroFecha || dateInputValue(m?.fecha_movimiento) === filtroFecha;
       const pedidoTxt = filtroPedido.trim();
       const pedidoMatch = !pedidoTxt || String(m?.pedido_id ?? "").includes(pedidoTxt);
+      const destTexto = filtroDestinoTexto.trim().toLowerCase();
+      const destinoTextoMatch =
+        !destTexto ||
+        `${m?.distrito_destino || ""} ${m?.barrio_destino || ""} ${m?.direccion_destino || ""}`
+          .toLowerCase()
+          .includes(destTexto);
 
-      return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && fechaMatch && pedidoMatch;
+      return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && destinoTextoMatch && fechaMatch && pedidoMatch;
     });
-  }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroFecha, filtroPedido]);
+  }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido]);
 
   const handleCreateMovimiento = async (payloadOrList) => {
     const payloads = Array.isArray(payloadOrList) ? payloadOrList : [payloadOrList];
@@ -3523,7 +3531,7 @@ export default function Movimientos() {
           </div>
 
           <div>
-            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6 }}>Destino</div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6 }}>Solicitante</div>
             <select
               value={filtroDestino}
               onChange={(e) => setFiltroDestino(e.target.value)}
@@ -3536,6 +3544,16 @@ export default function Movimientos() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6 }}>Destino</div>
+            <input
+              value={filtroDestinoTexto}
+              onChange={(e) => setFiltroDestinoTexto(e.target.value)}
+              placeholder="Distrito, barrio o dirección"
+              style={inputStyle()}
+            />
           </div>
 
           <div>
