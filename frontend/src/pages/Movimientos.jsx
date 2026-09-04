@@ -3148,6 +3148,10 @@ export default function Movimientos() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  // Paginación de render: solo pintamos las primeras N filas para no bloquear
+  // el navegador con miles de <tr>. "Mostrar más" amplía en bloques.
+  const MOVS_PAGE = 100;
+  const [visibleCount, setVisibleCount] = useState(MOVS_PAGE);
   const [showSalidaModal, setShowSalidaModal] = useState(false);
   const [detalleMovimiento, setDetalleMovimiento] = useState(null);
   const [msg, setMsg] = useState("");
@@ -3249,16 +3253,13 @@ export default function Movimientos() {
     clearMsgTimer();
     setMsg("");
 
+    // La tabla de movimientos solo necesita los propios movimientos (cada uno ya
+    // trae nombre de producto, destino, etc.). Los pintamos en cuanto llegan y
+    // dejamos productos/pedidos cargando en segundo plano: solo hacen falta al
+    // abrir los modales de "Nuevo movimiento" / "Servir pedido".
     try {
-      const [movs, prods, peds] = await Promise.all([
-        getMovimientos(),
-        getProductos(),
-        getPedidos(),
-      ]);
-
+      const movs = await getMovimientos();
       setMovimientos(safeArray(movs));
-      setProductos(safeArray(prods));
-      setPedidos(safeArray(peds));
     } catch (e) {
       showTimedMessage(
         e?.response?.data?.detail || e?.message || "Error cargando movimientos",
@@ -3266,6 +3267,15 @@ export default function Movimientos() {
       );
     } finally {
       setLoading(false);
+    }
+
+    try {
+      const [prods, peds] = await Promise.all([getProductos(), getPedidos()]);
+      setProductos(safeArray(prods));
+      setPedidos(safeArray(peds));
+    } catch (e) {
+      // Silencioso: no bloquea la tabla; si falla, los modales avisarán.
+      void e;
     }
   };
 
@@ -3323,6 +3333,16 @@ export default function Movimientos() {
       return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && destinoTextoMatch && fechaMatch && pedidoMatch;
     });
   }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido]);
+
+  // Al cambiar los filtros (o recargar), volvemos a mostrar solo la primera página.
+  useEffect(() => {
+    setVisibleCount(MOVS_PAGE);
+  }, [filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido, movimientos]);
+
+  const movimientosVisibles = useMemo(
+    () => movimientosFiltrados.slice(0, visibleCount),
+    [movimientosFiltrados, visibleCount]
+  );
 
   const handleCreateMovimiento = async (payloadOrList) => {
     const payloads = Array.isArray(payloadOrList) ? payloadOrList : [payloadOrList];
@@ -3622,7 +3642,7 @@ export default function Movimientos() {
                 </tr>
               </thead>
               <tbody>
-                {movimientosFiltrados.map((m) => {
+                {movimientosVisibles.map((m) => {
                   const tipo = m.tipo_movimiento || getMovimientoTipo(m);
                   const esPrestamo = !!m.es_prestamo;
                   const esDevolucionMov = !!m.es_devolucion || getMovimientoTipo(m) === "devolucion";
@@ -3869,6 +3889,21 @@ export default function Movimientos() {
                 })}
               </tbody>
             </table>
+
+            <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
+              <div style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>
+                Mostrando {Math.min(visibleCount, movimientosFiltrados.length)} de {movimientosFiltrados.length} movimientos
+              </div>
+              {visibleCount < movimientosFiltrados.length && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((n) => n + MOVS_PAGE)}
+                  style={{ padding: "8px 18px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#0f172a", fontWeight: 900, cursor: "pointer", fontSize: 13 }}
+                >
+                  Mostrar más
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
