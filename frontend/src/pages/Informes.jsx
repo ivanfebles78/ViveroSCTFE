@@ -3081,7 +3081,7 @@ export default function Informes() {
                     }}
                   >
                     {filteredProductos.map((p) => {
-                      const label = p.nombre_natural || p.nombre_cientifico || `Producto #${p.id}`;
+                      const label = p.nombre_cientifico || p.nombre_natural || `Producto #${p.id}`;
                       return (
                         <button
                           key={p.id}
@@ -3099,7 +3099,7 @@ export default function Informes() {
                         >
                           <div style={{ fontWeight: 900, color: "#0f172a" }}>{label}</div>
                           <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
-                            {p.nombre_cientifico || "—"} · {p.categoria || "—"} · {p.subcategoria || "—"}
+                            {p.nombre_natural || "—"} · {p.categoria || "—"} · {p.subcategoria || "—"}
                           </div>
                         </button>
                       );
