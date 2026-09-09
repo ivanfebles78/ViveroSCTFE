@@ -15,7 +15,6 @@ import {
   getUnidadMovimiento,
   tamanoDisponiblePlanta,
   displayFormato,
-  fechaDisponibilidadPorDefecto,
   tamanoListoPlanta,
   aplicaFechaDisponibilidad,
 } from "../utils/formato";
@@ -1471,23 +1470,30 @@ function MovimientoModal({
           }
         : {}),
     }));
+    // Aviso para arbustos/árboles que entran o se trasladan a su tamaño listo
+    // sin fecha de disponibilidad: se avisa de que estarán disponibles desde hoy.
+    const necesitaConfirmFecha = finalPayloads.some((p) => {
+      if (p.destino_tipo !== "Vivero" || p.fecha_disponibilidad) return false;
+      const tipoLinea = p.origen_tipo === "Vivero" ? "traslado_interno" : "entrada";
+      return aplicaFechaDisponibilidad(selectedProducto, { tipo: tipoLinea, tamanoOrigen: p.tamano_origen, tamanoDestino: p.tamano_destino });
+    });
+    if (necesitaConfirmFecha) {
+      const ok = window.confirm("Si no especifica una fecha de disponibilidad, el producto estará disponible desde hoy. ¿Desea continuar?");
+      if (!ok) return;
+    }
     await onSubmit(finalPayloads);
   };
 
-  // Fecha de disponibilidad futura por defecto (maduración de arbustos/árboles):
-  // entrada/traslado al tamaño listo. Se recalcula al cambiar los campos
-  // relevantes; el usuario puede cambiarla o borrarla. (Debe ir ANTES del
-  // return condicional para no romper el orden de los hooks.)
+  // La fecha de disponibilidad ya NO se rellena por defecto: el usuario la pone
+  // solo si quiere. Aquí únicamente la limpiamos cuando el movimiento deja de
+  // admitirla, para no arrastrar una fecha de un flujo anterior. (Hook antes
+  // del return condicional para no romper el orden de los hooks.)
   useEffect(() => {
-    if (form.destino_tipo !== "Vivero" || !selectedProducto) return;
-    let def = "";
-    if (form.tipo_elegido === "entrada") {
-      def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "entrada", tamanoDestino: form.tamano_destino });
-    } else if (form.tipo_elegido === "traslado_interno") {
-      def = fechaDisponibilidadPorDefecto(selectedProducto, { tipo: "traslado_interno", tamanoOrigen: form.tamano_origen, tamanoDestino: form.tamano_destino });
+    const aplica = form.destino_tipo === "Vivero" && aplicaFechaDisponibilidad(selectedProducto, { tipo: form.tipo_elegido, tamanoOrigen: form.tamano_origen, tamanoDestino: form.tamano_destino });
+    if (!aplica && form.fecha_disponibilidad) {
+      setForm((p) => ({ ...p, fecha_disponibilidad: "" }));
     }
-    setForm((p) => (p.fecha_disponibilidad === def ? p : { ...p, fecha_disponibilidad: def }));
-  }, [form.tipo_elegido, form.origen_tipo, form.producto_id, form.tamano_origen, form.tamano_destino, form.destino_tipo, selectedProducto]);
+  }, [form.tipo_elegido, form.origen_tipo, form.producto_id, form.tamano_origen, form.tamano_destino, form.destino_tipo, form.fecha_disponibilidad, selectedProducto]);
 
   if (!open) return null;
 
@@ -2069,7 +2075,7 @@ function MovimientoModal({
                       )}
                       {form.destino_tipo === "Vivero" && (
                         <div style={{ gridColumn: "span 2" }}>
-                          <SLabel>Disponible a partir de (opcional)</SLabel>
+                          <div style={{ fontSize: 11, fontWeight: 900, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>Disponible a partir de (opcional)</div>
                           <input type="date" value={form.fecha_disponibilidad || ""} onChange={(e) => setForm((p) => ({ ...p, fecha_disponibilidad: e.target.value }))} disabled={!aplicaFechaWizard} style={{ ...iStyle(), opacity: aplicaFechaWizard ? 1 : 0.5, cursor: aplicaFechaWizard ? "auto" : "not-allowed" }} />
                           <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
                             {aplicaFechaWizard
@@ -2440,15 +2446,11 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       ? aplicaFechaDisponibilidad(selectedProduct, { tipo: "traslado_interno", tamanoOrigen: "Semillero", tamanoDestino: lineTamanoDestino })
       : false;
 
-  // Fecha por defecto (hoy + días). Solo cuando aplica; el campo está
-  // deshabilitado si no. El usuario puede cambiarla o borrarla.
+  // La fecha ya NO se rellena por defecto: el usuario la pone solo si quiere.
+  // Cuando el campo deja de aplicar, la limpiamos para no arrastrarla.
   useEffect(() => {
-    if (!fechaAplica) { setLineFechaDisp(""); return; }
-    const def = esEntrada
-      ? fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "entrada", tamanoDestino: listoTam })
-      : fechaDisponibilidadPorDefecto(selectedProduct, { tipo: "traslado_interno", tamanoOrigen: "Semillero", tamanoDestino: lineTamanoDestino });
-    setLineFechaDisp(def);
-  }, [fechaAplica, selectedProduct, esEntrada, esTraslado, lineTamanoDestino, listoTam]);
+    if (!fechaAplica) setLineFechaDisp("");
+  }, [fechaAplica]);
 
   // ENTRADA: tamaños posibles del producto (destino). Se ofrecen TODOS los
   // formatos/tamaños del producto (p. ej. M12/M20/M35 en plantas); la regla
@@ -2608,6 +2610,19 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
         setLocalError(`No se puede sacar del vivero a un destino externo en tamaño ${tams}: es demasiado pequeño para su tipo (arbustos solo M20/M35; árboles y palmeras solo M35). Quita esas líneas del carrito o usa el destino «Baja Vivero» para descartarlas.`);
         return;
       }
+    }
+
+    // Aviso para arbustos/árboles que entran o se trasladan a su tamaño listo
+    // sin fecha de disponibilidad: estarán disponibles desde hoy salvo que se
+    // indique una fecha futura. El usuario confirma o vuelve a poner la fecha.
+    const necesitaConfirmFecha = cart.some((c) => {
+      if (c.fecha_disponibilidad) return false;
+      const prod = safeArray(productos).find((p) => String(p.id) === String(c.producto_id));
+      return prod && aplicaFechaDisponibilidad(prod, { tipo: c.tipo, tamanoOrigen: c.tamano_origen, tamanoDestino: c.tamano_destino });
+    });
+    if (necesitaConfirmFecha) {
+      const ok = window.confirm("Si no especifica una fecha de disponibilidad, el producto estará disponible desde hoy. ¿Desea continuar?");
+      if (!ok) return;
     }
 
     const origenEntradaFinal = entradaOrigen === ENTRADA_ORIGEN_OTROS && entradaOtros.trim()
@@ -2783,7 +2798,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                     </select>
                   </div>
                   <div style={{ marginTop: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: "#dc2626", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
                     <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} disabled={!fechaAplica} style={{ ...sInput, opacity: fechaAplica ? 1 : 0.5, cursor: fechaAplica ? "auto" : "not-allowed" }} />
                     <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
                       {fechaAplica
@@ -2829,7 +2844,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                       </select>
                     </div>
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#dc2626", textTransform: "uppercase", marginBottom: 6 }}>Disponible a partir de (opcional)</div>
                       <input type="date" value={lineFechaDisp} onChange={(e) => setLineFechaDisp(e.target.value)} disabled={!fechaAplica} style={{ ...sInput, opacity: fechaAplica ? 1 : 0.5, cursor: fechaAplica ? "auto" : "not-allowed" }} />
                       <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginTop: 4 }}>
                         {fechaAplica
