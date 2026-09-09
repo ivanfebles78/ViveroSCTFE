@@ -1609,6 +1609,7 @@ export default function Informes() {
   const [invSearch, setInvSearch] = useState("");
   const [invCategoria, setInvCategoria] = useState("");
   const [invSubcategoria, setInvSubcategoria] = useState("");
+  const [invZona, setInvZona] = useState("");
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -1913,6 +1914,11 @@ export default function Informes() {
     }
     return [...s].sort((a, b) => a.localeCompare(b, "es"));
   }, [inventarioVivero, invCategoria]);
+  // Zonas presentes en el inventario (para el desplegable de zona).
+  const invZonasDisponibles = useMemo(
+    () => inventarioVivero.map((z) => ({ zona: z.zona, label: z.label })),
+    [inventarioVivero]
+  );
 
   // Inventario tras aplicar los filtros de producto/categoría/subcategoría.
   // Filtra los productos dentro de cada zona, recalcula los tamaños presentes
@@ -1921,6 +1927,7 @@ export default function Informes() {
     const term = normalizarBusqueda(invSearch);
     const out = [];
     for (const z of inventarioVivero) {
+      if (invZona && String(z.zona) !== invZona) continue;
       const productos = z.productos.filter((p) => {
         if (invCategoria && String(p.categoria || "").trim() !== invCategoria) return false;
         if (invSubcategoria && String(p.subcategoria || "").trim() !== invSubcategoria) return false;
@@ -1938,7 +1945,7 @@ export default function Informes() {
       out.push({ ...z, productos, tamanos: ordenarTamanos([...tamsSet]) });
     }
     return out;
-  }, [inventarioVivero, invSearch, invCategoria, invSubcategoria]);
+  }, [inventarioVivero, invSearch, invCategoria, invSubcategoria, invZona]);
 
   const stockFilteredItems = useMemo(() => {
     const term = normalizarBusqueda(stockSearch);
@@ -3208,9 +3215,9 @@ export default function Informes() {
               )}
             </div>
 
-            {/* Filtros: producto (científico/común), categoría y subcategoría */}
+            {/* Filtros: producto (científico/común), categoría, subcategoría y zona */}
             {inventarioVivero.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 1.4fr) minmax(200px, 1fr) minmax(200px, 1fr)", gap: 14, marginBottom: 18, alignItems: "end" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1.4fr) minmax(160px, 1fr) minmax(160px, 1fr) minmax(160px, 1fr)", gap: 14, marginBottom: 18, alignItems: "end" }}>
                 <div>
                   <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Buscar producto</div>
                   <input
@@ -3241,6 +3248,17 @@ export default function Informes() {
                   >
                     <option value="">Todas</option>
                     {invSubcategoriasDisponibles.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 900, color: "#0f172a" }}>Zona</div>
+                  <select
+                    value={invZona}
+                    onChange={(e) => setInvZona(e.target.value)}
+                    style={softInputStyle()}
+                  >
+                    <option value="">Todas</option>
+                    {invZonasDisponibles.map((z) => <option key={z.zona} value={String(z.zona)}>{z.label}</option>)}
                   </select>
                 </div>
               </div>
