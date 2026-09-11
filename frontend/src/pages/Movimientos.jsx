@@ -2306,6 +2306,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   const [distrito, setDistrito] = useState("");
   const [barrio, setBarrio] = useState("");
   const [direccion, setDireccion] = useState("");
+  const [prestamo, setPrestamo] = useState(false); // salida externa marcada como préstamo
   const [cart, setCart] = useState([]);
   const [localError, setLocalError] = useState("");
 
@@ -2321,7 +2322,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       setTipo("salida"); setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria("");
       setSelectedProductId(""); setSourceZone(""); setSizeQty({}); setZonaQty({});
       setLineZonaDestino(""); setLineTamanoDestino("");
-      setEntradaOrigen(""); setEntradaOtros(""); setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion("");
+      setEntradaOrigen(""); setEntradaOtros(""); setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion(""); setPrestamo(false);
       setCart([]); setLocalError("");
     }
   }, [open]);
@@ -2330,7 +2331,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
   useEffect(() => {
     setSearch(""); setFiltroCategoria(""); setFiltroSubcategoria("");
     resetSeleccion(); setSourceZone("");
-    setEntradaOrigen(""); setEntradaOtros(""); setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion("");
+    setEntradaOrigen(""); setEntradaOtros(""); setDestinoTipo(""); setDistrito(""); setBarrio(""); setDireccion(""); setPrestamo(false);
     setCart([]); setLocalError("");
   }, [tipo]);
   useEffect(() => { setFiltroSubcategoria(""); }, [filtroCategoria]);
@@ -2643,7 +2644,7 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
       if (c.tipo === "traslado_interno") {
         return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: "Vivero", tamano_origen: c.tamano_origen || null, tamano_destino: c.tamano_destino || c.tamano_origen || null, zona_origen: c.zona_origen, zona_destino: c.zona_destino, distrito_destino: null, barrio_destino: null, direccion_destino: null, cantidad: c.cantidad, fecha_disponibilidad: c.fecha_disponibilidad || null };
       }
-      return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: destinoTipo, tamano_origen: c.tamano_origen || null, tamano_destino: null, zona_origen: c.zona_origen, zona_destino: null, distrito_destino: esExterno ? (distrito || null) : null, barrio_destino: esExterno ? (barrio || null) : null, direccion_destino: esExterno ? (String(direccion).trim() || null) : null, cantidad: c.cantidad };
+      return { ...base(), producto_id: Number(c.producto_id), origen_tipo: "Vivero", destino_tipo: destinoTipo, tamano_origen: c.tamano_origen || null, tamano_destino: null, zona_origen: c.zona_origen, zona_destino: null, distrito_destino: esExterno ? (distrito || null) : null, barrio_destino: esExterno ? (barrio || null) : null, direccion_destino: esExterno ? (String(direccion).trim() || null) : null, es_prestamo: esExterno ? !!prestamo : false, cantidad: c.cantidad };
     });
     await onSubmit(payloads);
   };
@@ -2915,6 +2916,13 @@ function MovimientoCestaModal({ open, onClose, productos, movimientos, zonas, on
                         <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>Dirección</div>
                         <input value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Escribe la dirección de destino" style={sInput} />
                       </div>
+                      <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, border: prestamo ? "2px solid #3b82f6" : "1px solid rgba(59,130,246,0.20)", background: prestamo ? "rgba(59,130,246,0.08)" : "#f8fafc", cursor: "pointer", userSelect: "none" }}>
+                        <input type="checkbox" checked={prestamo} onChange={(e) => setPrestamo(e.target.checked)} style={{ width: 16, height: 16, margin: 0, flexShrink: 0, cursor: "pointer", accentColor: "#1d4ed8" }} />
+                        <div>
+                          <div style={{ fontWeight: 900, color: "#1e3a8a", fontSize: 14 }}>Marcar como préstamo</div>
+                          <div style={{ marginTop: 2, color: "#475569", fontWeight: 700, fontSize: 12 }}>El material saldrá temporalmente y se esperará su devolución.</div>
+                        </div>
+                      </label>
                     </>
                   )}
                 </div>
