@@ -1345,6 +1345,18 @@ function MovimientoModal({
     setDistribucion({}); setSelectedPedidoLineKey(""); setProductoSearch("");
   };
 
+  // Devolución: añade la devolución del préstamo actual al lote y vuelve al
+  // paso 1 para elegir otro préstamo (reinicia la selección del préstamo).
+  const addPrestamoToBatch = () => {
+    const result = buildCurrentPayloads();
+    setErrors(result.errors);
+    if (!result.ok) return;
+    setBatchPayloads((prev) => [...prev, ...result.payloads]);
+    setForm((prev) => ({ ...prev, producto_id: "", cantidad: "", tamano_origen: "", tamano_destino: "", zona_origen: "", zona_destino: "", prestamo_referencia_id: null, prestamo_max: null, pedido_id: "" }));
+    setProductoSearch(""); setDistribucion({});
+    setStep(1);
+  };
+
   const removeBatchItem = (idx) => setBatchPayloads((prev) => prev.filter((_, i) => i !== idx));
 
   // Zonas seleccionables para una línea de pedido. En salidas, las que tienen
@@ -1524,7 +1536,7 @@ function MovimientoModal({
   const step1Valid = !!form.tipo_elegido &&
     (esSalida ? !!form.destino_tipo : true) &&
     (esEntrada ? !!form.origen_tipo && !entradaOtrosSinEspecificar : true) &&
-    (esDevolucionTipo ? !!form.prestamo_referencia_id : true);
+    (esDevolucionTipo ? (!!form.prestamo_referencia_id || batchPayloads.length > 0) : true);
 
   // ¿Alguna fila de la salida supera el stock disponible de su zona/tamaño?
   const hayExcesoSalida = salidaPorZonas &&
@@ -1650,11 +1662,12 @@ function MovimientoModal({
                       {prestamosActivos.map((m) => {
                         const prod = productos.find((p) => String(p.id) === String(m.producto_id));
                         const sel = String(form.prestamo_referencia_id || "") === String(m.id);
+                        const enLote = batchPayloads.some((p) => Number(p.prestamo_referencia_id) === Number(m.id));
                         const quien = [m.destino_tipo, m.distrito_destino, m.barrio_destino, m.direccion_destino].filter(Boolean).join(" · ");
                         const tam = m.tamano_origen || m.tamano_destino;
                         return (
-                          <button key={m.id} type="button" onClick={() => handleSeleccionPrestamo(m)} style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: sel ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.10)", background: sel ? "rgba(245,158,11,0.12)" : "#fff", cursor: "pointer" }}>
-                            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{getProductDisplayName(prod) || `Producto #${m.producto_id}`} · {m._pendiente} uds pendientes</div>
+                          <button key={m.id} type="button" disabled={enLote} onClick={() => handleSeleccionPrestamo(m)} style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: sel ? "2px solid #f59e0b" : "1px solid rgba(15,23,42,0.10)", background: enLote ? "rgba(148,163,184,0.12)" : sel ? "rgba(245,158,11,0.12)" : "#fff", cursor: enLote ? "not-allowed" : "pointer", opacity: enLote ? 0.6 : 1 }}>
+                            <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{getProductDisplayName(prod) || `Producto #${m.producto_id}`} · {m._pendiente} uds pendientes{enLote ? " · ✓ ya en el lote" : ""}</div>
                             <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Préstamo #{m.id}{tam ? ` · ${tam}` : ""}{quien ? ` · ${quien}` : ""}</div>
                           </button>
                         );
@@ -1671,9 +1684,44 @@ function MovimientoModal({
             {/* STEP 2 — Producto */}
             {step === 2 && (
               <div style={{ display: "grid", gap: 16 }}>
-                {/* Filtros y lista de productos: solo en movimientos SIN pedido.
-                    Con un pedido, el producto sale de las líneas del pedido. */}
-                {!selectedPedido && (
+                {/* Devolución: ficha del préstamo elegido (producto + datos) y
+                    zona destino. NO se muestra el buscador de productos: el
+                    producto y la cantidad pendiente salen del propio préstamo. */}
+                {esDevolucionTipo && (() => {
+                  const ps = prestamosActivos.find((m) => String(m.id) === String(form.prestamo_referencia_id));
+                  if (!ps) {
+                    return <div style={{ padding: 14, borderRadius: 12, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.25)", color: "#92400e", fontWeight: 800, fontSize: 13 }}>Vuelve al paso 1 y elige el préstamo a devolver.</div>;
+                  }
+                  const prod = productos.find((p) => String(p.id) === String(ps.producto_id));
+                  const nombre = getProductDisplayName(prod) || ps.producto_nombre_cientifico || ps.producto_nombre_natural || `Producto #${ps.producto_id}`;
+                  const quien = [ps.destino_tipo, ps.distrito_destino, ps.barrio_destino, ps.direccion_destino].filter(Boolean).join(" · ") || "—";
+                  const tam = ps.tamano_origen || ps.tamano_destino || "—";
+                  return (
+                    <div style={{ padding: 16, borderRadius: 14, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.22)" }}>
+                      <div style={{ fontWeight: 900, color: "#92400e", fontSize: 14, marginBottom: 8 }}>↩️ Devolución del préstamo #{ps.id}</div>
+                      <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 15 }}>{nombre}</div>
+                      <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 12, fontWeight: 700, color: "#334155" }}>
+                        <div>Prestado: <strong>{ps._prestado}</strong></div>
+                        <div>Devuelto: <strong>{ps._devuelto}</strong></div>
+                        <div>Pendiente: <strong style={{ color: "#92400e" }}>{ps._pendiente}</strong></div>
+                        <div>Tamaño: <strong>{tam}</strong></div>
+                        <div style={{ gridColumn: "span 2" }}>Lo tiene: <strong>{quien}</strong></div>
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        <SLabel>Zona destino (a qué zona del vivero vuelve)</SLabel>
+                        <select value={form.zona_destino} onChange={(e) => setForm((p) => ({ ...p, zona_destino: e.target.value }))} style={iStyle()}>
+                          <option value="">Seleccionar zona</option>
+                          {zonasPermitidasPorCategoria.map((z) => <option key={z} value={z}>Zona {z}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Filtros y lista de productos: solo en movimientos SIN pedido
+                    y que NO sean devolución. Con un pedido, el producto sale de
+                    las líneas del pedido. */}
+                {!selectedPedido && !esDevolucionTipo && (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 10 }}>
                       <div>
@@ -1977,8 +2025,11 @@ function MovimientoModal({
                 {selectedProducto && formTieneLineaActual() && selectedPedido && (
                   <button type="button" onClick={addCurrentToBatch} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(59,130,246,0.30)", background: "rgba(59,130,246,0.10)", color: "#1d4ed8", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>+ Añadir al lote y seleccionar otra línea</button>
                 )}
-                {selectedProducto && formTieneLineaActual() && !selectedPedido && (
+                {selectedProducto && formTieneLineaActual() && !selectedPedido && !esDevolucionTipo && (
                   <button type="button" onClick={addCurrentToBatch} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(16,185,129,0.35)", background: "rgba(16,185,129,0.10)", color: "#065f46", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>+ Añadir este producto y elegir otro</button>
+                )}
+                {esDevolucionTipo && form.producto_id && Number(form.cantidad) > 0 && form.zona_destino && (
+                  <button type="button" onClick={addPrestamoToBatch} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.12)", color: "#92400e", fontWeight: 900, cursor: "pointer", fontSize: 13 }}>+ Añadir esta devolución y elegir otro préstamo</button>
                 )}
               </div>
             )}
@@ -2048,10 +2099,10 @@ function MovimientoModal({
                   </div>
                 )}
 
-                {/* Destino zona (para entrada, traslado, devolución).
-                    Con un pedido la zona ya se eligió por línea en el paso 2,
-                    así que aquí no se repite. */}
-                {!selectedPedido && (esEntrada || esTrasladoTipo || esDevolucionTipo) && (
+                {/* Destino zona (para entrada y traslado). En devolución la
+                    zona destino se elige en el paso 2 (junto a la ficha del
+                    préstamo). Con un pedido la zona ya se eligió por línea. */}
+                {!selectedPedido && (esEntrada || esTrasladoTipo) && (
                   <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${esEntrada ? "rgba(16,185,129,0.15)" : esTrasladoTipo ? "rgba(59,130,246,0.15)" : "rgba(245,158,11,0.18)"}`, background: esEntrada ? "rgba(16,185,129,0.03)" : esTrasladoTipo ? "rgba(59,130,246,0.03)" : "rgba(245,158,11,0.04)" }}>
                     <div style={{ fontWeight: 900, fontSize: 13, color: esEntrada ? "#065f46" : esTrasladoTipo ? "#1e3a8a" : "#92400e", marginBottom: 10 }}>🎯 Zona destino</div>
                     <div style={{ display: "grid", gridTemplateColumns: (esTrasladoTipo && !formatoFijo) ? "1fr 1fr" : "1fr", gap: 10 }}>
@@ -2193,6 +2244,7 @@ function MovimientoModal({
                   if (step === 2 && salidaPorZonas && hayExcesoSalida) { setErrors(["Hay zonas donde pides más de lo disponible. Corrige las cantidades en rojo."]); return; }
                   if (step === 2 && !salidaPorZonas && formatoConfig.showCantidad !== false && (!form.cantidad || Number(form.cantidad) <= 0)) { setErrors(["La cantidad debe ser mayor que 0."]); return; }
                   if (step === 2 && !salidaPorZonas && !formatoFijo && !form[formatoField]) { setErrors([`Selecciona el ${formatoConfig.kind === "tamano" ? "tamaño" : "formato"} antes de continuar.`]); return; }
+                  if (step === 2 && esDevolucionTipo && form.producto_id && !form.zona_destino) { setErrors(["Selecciona la zona destino de la devolución."]); return; }
                   setErrors([]); setStep((s) => s + 1);
                 }} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${accent} 0%, #06b6d4 100%)`, color: "#fff", fontWeight: 900, cursor: "pointer", opacity: (step === 1 && !form.tipo_elegido) ? 0.55 : 1 }}>
                   Siguiente →
