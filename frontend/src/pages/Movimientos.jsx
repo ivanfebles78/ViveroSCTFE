@@ -3232,6 +3232,7 @@ export default function Movimientos() {
   const [filtroDestinoTexto, setFiltroDestinoTexto] = useState(""); // destino: distrito/barrio/dirección
   const [filtroFecha, setFiltroFecha] = useState("");
   const [filtroPedido, setFiltroPedido] = useState("");
+  const [filtroPrestamo, setFiltroPrestamo] = useState(""); // "", "si", "no"
   const [copiedUuid, setCopiedUuid] = useState("");
 
   const clearMsgTimer = () => {
@@ -3261,6 +3262,7 @@ export default function Movimientos() {
     setFiltroDestinoTexto("");
     setFiltroFecha("");
     setFiltroPedido("");
+    setFiltroPrestamo("");
   };
 
   useEffect(() => {
@@ -3353,14 +3355,18 @@ export default function Movimientos() {
           .toLowerCase()
           .includes(destTexto);
 
-      return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && destinoTextoMatch && fechaMatch && pedidoMatch;
+      const prestamoMatch =
+        !filtroPrestamo ||
+        (filtroPrestamo === "si" ? !!m?.es_prestamo : !m?.es_prestamo);
+
+      return productoMatch && tipoMatch && zonaMatch && uuidMatch && origenMatch && destinoMatch && destinoTextoMatch && fechaMatch && pedidoMatch && prestamoMatch;
     });
-  }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido]);
+  }, [movimientos, filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido, filtroPrestamo]);
 
   // Al cambiar los filtros (o recargar), volvemos a mostrar solo la primera página.
   useEffect(() => {
     setVisibleCount(MOVS_PAGE);
-  }, [filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido, movimientos]);
+  }, [filtroProducto, filtroTipo, filtroZona, filtroUuid, filtroOrigen, filtroDestino, filtroDestinoTexto, filtroFecha, filtroPedido, filtroPrestamo, movimientos]);
 
   const movimientosVisibles = useMemo(
     () => movimientosFiltrados.slice(0, visibleCount),
@@ -3555,6 +3561,19 @@ export default function Movimientos() {
               inputMode="numeric"
               style={inputStyle()}
             />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#64748b", marginBottom: 6 }}>Préstamo</div>
+            <select
+              value={filtroPrestamo}
+              onChange={(e) => setFiltroPrestamo(e.target.value)}
+              style={inputStyle()}
+            >
+              <option value="">Todos</option>
+              <option value="si">Solo préstamos</option>
+              <option value="no">Sin préstamos</option>
+            </select>
           </div>
 
           <div>

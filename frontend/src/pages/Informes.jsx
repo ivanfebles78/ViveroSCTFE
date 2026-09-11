@@ -1173,7 +1173,7 @@ async function exportReportToPdf({
       theme: "grid",
       head: [["Campo", "Valor"]],
       body: [
-        ["Producto", distribucionData.producto_nombre || `Producto #${distribucionData.producto_id || "—"}`],
+        ["Producto", (nombreCientificoComun(distribucionData.producto_nombre_cientifico, distribucionData.producto_nombre_natural) || distribucionData.producto_nombre) || `Producto #${distribucionData.producto_id || "—"}`],
         ["Stock total", fmtNum(distribucionData.stock_total)],
         ["Ubicaciones activas", fmtNum(distribucionData.distribucion?.length || 0)],
       ],
@@ -1580,12 +1580,13 @@ export default function Informes() {
 
   // Informes permitidos por rol (null = todos):
   //   - empresa externa → solo "Movimientos externos".
-  //   - técnico → "Distribución", "Inventario vivero", "Existencias" y "Movimientos externos".
+  //   - técnico → "Distribución", "Inventario vivero", "Existencias",
+  //     "Movimientos externos" y "Préstamos".
   //   - gestor_vivero / admin / manager → todos (null).
   const allowedReportKeys = isEmpresaExterna
     ? ["externos"]
     : isTecnico
-    ? ["distribucion", "inventario", "stock", "externos"]
+    ? ["distribucion", "inventario", "stock", "externos", "prestamos"]
     : null;
 
   // Pestañas visibles según el rol. "estadisticas" es SOLO para administrador,
@@ -2553,9 +2554,11 @@ export default function Informes() {
   };
 
   const onSelectProducto = (producto) => {
+    // Mostramos científico y común juntos ("Científico - Común") para que el
+    // usuario vea exactamente qué producto ha elegido, sin importar por cuál
+    // de los dos nombres haya buscado.
     const label =
-      producto.nombre_natural ||
-      producto.nombre_cientifico ||
+      nombreCientificoComun(producto.nombre_cientifico, producto.nombre_natural) ||
       `Producto #${producto.id}`;
     setSelectedProducto(producto);
     setProductoSearch(label);
@@ -2746,7 +2749,7 @@ export default function Informes() {
   const exportarDistribucionExcel = () => {
     if (!distribucionData) return;
     const filas = [
-      ["Producto", distribucionData.producto_nombre || `Producto #${distribucionData.producto_id || "—"}`],
+      ["Producto", (nombreCientificoComun(distribucionData.producto_nombre_cientifico, distribucionData.producto_nombre_natural) || distribucionData.producto_nombre) || `Producto #${distribucionData.producto_id || "—"}`],
       ["Stock total", fmtNum(distribucionData.stock_total)],
       ["Ubicaciones activas", fmtNum(distribucionData.distribucion?.length || 0)],
       [],
@@ -3145,7 +3148,7 @@ export default function Informes() {
                     <div>
                       <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>Producto</div>
                       <div style={{ fontWeight: 800 }}>
-                        {distribucionData.producto_nombre || `Producto #${distribucionData.producto_id || "—"}`}
+                        {(nombreCientificoComun(distribucionData.producto_nombre_cientifico, distribucionData.producto_nombre_natural) || distribucionData.producto_nombre) || `Producto #${distribucionData.producto_id || "—"}`}
                       </div>
                     </div>
                     <div>

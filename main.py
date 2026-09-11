@@ -3514,6 +3514,8 @@ def reporte_distribucion(
     return {
         "producto_id": prod.id,
         "producto_nombre": _producto_display(prod, prod.id),
+        "producto_nombre_cientifico": prod.nombre_cientifico,
+        "producto_nombre_natural": prod.nombre_natural,
         "stock_total": stock_total,
         "distribucion": distribucion,
     }
