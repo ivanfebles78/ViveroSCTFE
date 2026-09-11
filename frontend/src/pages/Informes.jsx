@@ -2570,14 +2570,16 @@ export default function Informes() {
       ""
     ).trim();
 
-    if (!searchValue) {
+    if (!selectedProducto && !searchValue) {
       showTimedMessage("Debes indicar el nombre del producto.", "error");
       return;
     }
 
     setLoading(true);
     try {
-      const data = await getDistribucionReporte(searchValue);
+      // Si hay producto seleccionado en el desplegable, buscamos por su id
+      // exacto; el texto solo es respaldo cuando no se ha seleccionado ninguno.
+      const data = await getDistribucionReporte(searchValue, selectedProducto?.id ?? null);
       // Corrige el formato mostrado (turba: m³ → unidades) en cada ubicación.
       const dataFix = data && Array.isArray(data.distribucion)
         ? { ...data, distribucion: data.distribucion.map((r) => ({ ...r, tamano: displayFormato(data.producto_nombre, r?.tamano) })) }

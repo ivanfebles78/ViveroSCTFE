@@ -3455,25 +3455,32 @@ def reporte_trazabilidad(
 # =============================
 @app.get("/reportes/distribucion")
 def reporte_distribucion(
-    producto: str,
+    producto: Optional[str] = None,
+    producto_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero"])),
 ):
-    producto = (producto or "").strip()
-    if not producto:
-        raise HTTPException(status_code=400, detail="Debes indicar el nombre del producto")
-
-    prod = (
-        db.query(Producto)
-        .filter(
-            or_(
-                Producto.nombre_cientifico.ilike(f"%{producto}%"),
-                Producto.nombre_natural.ilike(f"%{producto}%"),
+    # Preferimos SIEMPRE el id exacto del producto elegido en el desplegable.
+    # La búsqueda por nombre (ILIKE) es solo un respaldo cuando no hay id, y
+    # puede devolver otro producto si el texto coincide con varios.
+    prod = None
+    if producto_id is not None:
+        prod = db.query(Producto).filter(Producto.id == producto_id).first()
+    else:
+        producto = (producto or "").strip()
+        if not producto:
+            raise HTTPException(status_code=400, detail="Debes indicar el nombre del producto")
+        prod = (
+            db.query(Producto)
+            .filter(
+                or_(
+                    Producto.nombre_cientifico.ilike(f"%{producto}%"),
+                    Producto.nombre_natural.ilike(f"%{producto}%"),
+                )
             )
+            .order_by(Producto.nombre_cientifico.asc())
+            .first()
         )
-        .order_by(Producto.nombre_cientifico.asc())
-        .first()
-    )
 
     if not prod:
         raise HTTPException(status_code=404, detail="Producto no encontrado")

@@ -274,10 +274,11 @@ export const getTrazabilidadReporte = async (uuid) => {
   return data;
 };
 
-export const getDistribucionReporte = async (producto) => {
-  const { data } = await api.get("/reportes/distribucion", {
-    params: { producto },
-  });
+export const getDistribucionReporte = async (producto, productoId = null) => {
+  // Si tenemos el id del producto seleccionado lo mandamos (búsqueda exacta);
+  // si no, se manda el texto como respaldo.
+  const params = productoId != null ? { producto_id: productoId } : { producto };
+  const { data } = await api.get("/reportes/distribucion", { params });
   return data;
 };
 
