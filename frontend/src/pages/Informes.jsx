@@ -3095,7 +3095,12 @@ export default function Informes() {
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => onSelectProducto(p)}
+                          // onMouseDown (no onClick): se dispara ANTES del
+                          // manejador global de "click fuera" (que va en
+                          // mousedown y podría cerrar el desplegable antes de
+                          // registrar el click). preventDefault evita perder el
+                          // foco. Así la selección siempre se aplica.
+                          onMouseDown={(e) => { e.preventDefault(); onSelectProducto(p); }}
                           style={{
                             width: "100%",
                             textAlign: "left",
