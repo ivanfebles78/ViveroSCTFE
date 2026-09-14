@@ -217,6 +217,12 @@ function getVisibleNavItems(role) {
     return NAV_ITEMS.filter((i) => i.to === "/pedidos");
   }
 
+  // Observador: SOLO LECTURA de todo. Ve todos los módulos operativos igual
+  // que un admin, pero el backend le bloquea cualquier cambio.
+  if (role === "observador") {
+    return NAV_ITEMS;
+  }
+
   return [];
 }
 
@@ -227,6 +233,7 @@ function getDefaultRouteForRole(role) {
   if (role === "gestor_vivero") return "/dashboard";
   if (role === "empresa_externa") return "/productos";
   if (role === "proveedor") return "/pedidos";
+  if (role === "observador") return "/dashboard";
   return "/dashboard";
 }
 
@@ -246,6 +253,21 @@ function isPathAllowedForRole(pathname, role) {
       "/lotes",
       "/vivero",
       "/admin/usuarios",
+    ].includes(pathname);
+  }
+
+  // Observador: puede ENTRAR a ver todos los módulos operativos (no la gestión
+  // de usuarios). El backend garantiza que no pueda cambiar nada.
+  if (role === "observador") {
+    return [
+      "/dashboard",
+      "/productos",
+      "/movimientos",
+      "/pedidos",
+      "/aprobaciones",
+      "/informes",
+      "/lotes",
+      "/vivero",
     ].includes(pathname);
   }
 

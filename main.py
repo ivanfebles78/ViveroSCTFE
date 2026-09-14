@@ -350,11 +350,21 @@ def get_current_user(
     return user
 
 
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
 def require_roles(roles: list[str]):
     allowed = {r.lower() for r in roles}
 
-    def _dep(current_user: Usuario = Depends(get_current_user)):
+    def _dep(request: Request, current_user: Usuario = Depends(get_current_user)):
         rol = (current_user.rol or "").strip().lower()
+        # Rol "observador": acceso de SOLO LECTURA a todo el sistema. Puede
+        # entrar a cualquier endpoint de lectura (GET) aunque no esté en su
+        # lista, pero NUNCA a operaciones de escritura (POST/PUT/PATCH/DELETE).
+        if rol == "observador":
+            if request.method in _SAFE_METHODS:
+                return current_user
+            raise HTTPException(status_code=403, detail="El rol observador es de solo lectura: no puede realizar cambios.")
         if rol not in allowed:
             raise HTTPException(status_code=403, detail="Sin permisos")
         return current_user
@@ -3847,7 +3857,7 @@ def marcar_zona_interna(
 # =============================
 # GESTIÓN DE USUARIOS (ADMIN)
 # =============================
-ALLOWED_ROLES = {"admin", "manager", "tecnico", "gestor_vivero", "empresa_externa", "proveedor"}
+ALLOWED_ROLES = {"admin", "manager", "tecnico", "gestor_vivero", "empresa_externa", "proveedor", "observador"}
 ALLOWED_STATUSES_FOR_UPDATE = {"activo", "inactivo", "bloqueado", "pendiente"}
 
 

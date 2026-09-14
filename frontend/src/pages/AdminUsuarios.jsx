@@ -20,6 +20,7 @@ const ROLES = [
   { value: "gestor_vivero", label: "Gestor de vivero" },
   { value: "tecnico", label: "Técnico" },
   { value: "empresa_externa", label: "Empresa externa" },
+  { value: "observador", label: "Observadora (solo lectura)" },
 ];
 
 const PAGE_SIZE = 10;
