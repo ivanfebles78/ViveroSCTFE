@@ -6,6 +6,7 @@ import {
   createMovimiento,
   solicitarModificacionPedido,
   cancelarModificacionPedido,
+  getMe,
 } from "../api/api";
 import { loadZonasFromServer } from "../components/vivero/zonesStorage";
 import { formatUsername } from "../utils/format";
@@ -3220,6 +3221,7 @@ export default function Movimientos() {
   const [movimientos, setMovimientos] = useState([]);
   const [productos, setProductos] = useState([]);
   const [pedidos, setPedidos] = useState([]);
+  const [esObservador, setEsObservador] = useState(false); // rol de solo lectura
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -3319,6 +3321,11 @@ export default function Movimientos() {
 
   useEffect(() => {
     load();
+    // Rol del usuario: el observador es de solo lectura (se le ocultan las
+    // acciones de registrar movimientos / servir pedidos).
+    getMe()
+      .then((u) => setEsObservador(String(u?.rol || u?.role || "").trim().toLowerCase() === "observador"))
+      .catch(() => {});
 
     return () => {
       clearMsgTimer();
@@ -3491,6 +3498,7 @@ export default function Movimientos() {
           </div>
         </div>
 
+        {!esObservador && (
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
             onClick={() => setShowSalidaModal(true)}
@@ -3523,6 +3531,7 @@ export default function Movimientos() {
             Servir pedido / Devolución
           </button>
         </div>
+        )}
       </div>
 
       <MessageBanner

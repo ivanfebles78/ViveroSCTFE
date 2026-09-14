@@ -2380,7 +2380,9 @@ export default function Pedidos() {
   const role = me?.rol || me?.role;
   // Proveedor es estrictamente de lectura: no edita ni cancela ni crea.
   const isProveedor = role === "proveedor";
-  const isReadOnly = role === "tecnico" || role === "gestor_vivero" || isProveedor;
+  // Observador: solo lectura de todo (no crea ni gestiona pedidos).
+  const isObservador = role === "observador";
+  const isReadOnly = role === "tecnico" || role === "gestor_vivero" || isProveedor || isObservador;
   const isAdmin = role === "admin";
 
   const clearMsgTimer = () => {
