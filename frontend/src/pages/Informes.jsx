@@ -1575,8 +1575,9 @@ export default function Informes() {
   const isTecnico = role === "tecnico";
   const isGestorVivero = role === "gestor_vivero";
   const isAdmin = role === "admin";
+  const isObservador = role === "observador";
   const canAccess =
-    role === "admin" || role === "manager" || isGestorVivero || isEmpresaExterna || isTecnico;
+    role === "admin" || role === "manager" || isGestorVivero || isEmpresaExterna || isTecnico || isObservador;
 
   // Informes permitidos por rol (null = todos):
   //   - empresa externa → solo "Movimientos externos".
