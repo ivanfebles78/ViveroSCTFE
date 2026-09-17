@@ -22,7 +22,8 @@ export function tamanoDisponiblePlanta(producto, tamano) {
   if (t === "" || t === "semillero") return false;
   const sub = _normTxt(producto?.subcategoria);
   if (sub === "arbusto") return t === "m20" || t === "m35";
-  if (sub === "arbol" || sub === "palmera") return t === "m35";
+  if (sub === "palmera") return t === "m20" || t === "m35";
+  if (sub === "arbol") return t === "m35";
   return t === "m12" || t === "m20" || t === "m35";
 }
 

@@ -399,7 +399,8 @@ def _tamano_disponible_planta(categoria, subcategoria, tamano) -> bool:
     """Reglas de disponibilidad por tamaño de maceta para PLANTAS:
       - Semillero: nunca cuenta (aún no disponible).
       - Arbusto: solo M20 o M35.
-      - Árbol y Palmera: solo M35.
+      - Palmera: M20 o M35.
+      - Árbol: solo M35.
       - Resto de plantas: M12, M20 o M35 (nunca semillero).
     No aplica a productos que no sean plantas (devuelve True)."""
     if _norm_txt(categoria) not in ("planta", "plantas"):
@@ -410,7 +411,9 @@ def _tamano_disponible_planta(categoria, subcategoria, tamano) -> bool:
     sub = _norm_txt(subcategoria)
     if sub == "arbusto":
         return t in ("m20", "m35")
-    if sub in ("arbol", "palmera"):
+    if sub == "palmera":
+        return t in ("m20", "m35")
+    if sub == "arbol":
         return t == "m35"
     return t in ("m12", "m20", "m35")
 
