@@ -163,6 +163,11 @@ class PedidoItem(Base):
     tamano = Column(String(30), nullable=True)
     cantidad = Column(Numeric(12, 3), nullable=False)
     cantidad_servida = Column(Numeric(12, 3), nullable=False, default=0)
+    # Unidades ya devueltas de esta línea (material que salió con el pedido y la
+    # empresa externa reintegra). El tope de una devolución es
+    # cantidad_servida - cantidad_devuelta (nunca se puede devolver más de lo
+    # que salió). No cambia el estado del pedido (sigue SERVIDO).
+    cantidad_devuelta = Column(Numeric(12, 3), nullable=False, default=0, server_default="0")
 
     # Destino por línea (para pedidos con varios destinos: la empresa externa
     # puede repartir el material entre distintas direcciones). Si es NULL, se
@@ -277,6 +282,11 @@ class Movimiento(Base):
     observaciones = Column(Text, nullable=True)
     es_prestamo = Column(Boolean, default=False, nullable=False)
     es_devolucion = Column(Boolean, default=False, nullable=False)
+    # True cuando esta ENTRADA es la devolución de material de un pedido ya
+    # servido (la empresa externa reintegra lo que le sobró). Se distingue así
+    # de la devolución de préstamo (que usa prestamo_referencia_id) y del
+    # servicio de un pedido de reposición (entrada normal, este flag en False).
+    es_devolucion_pedido = Column(Boolean, default=False, nullable=False, server_default="false")
     prestamo_referencia_id = Column(Integer, ForeignKey("movimientos.id"), nullable=True)
     devuelto = Column(Boolean, default=False, nullable=False)
     fecha_devolucion = Column(DateTime, nullable=True)

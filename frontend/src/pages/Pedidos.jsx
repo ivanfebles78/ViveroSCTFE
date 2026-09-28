@@ -16,7 +16,25 @@ import {
   cancelarPedido,
   eliminarPedido,
   descargarPedidoPdf,
+  devolverPedido,
+  getZonasConfig,
 } from "../api/api";
+
+// Zonas por defecto (fallback si no se puede leer la config de zonas del vivero).
+const DEFAULT_ZONAS_DEV = ["1", "2", "3a", "3b", "4a", "4b", "5", "6", "7", "8", "9a", "9b", "9c", "10a", "10b", "11", "12"];
+
+// Zonas de las que SALIÓ esta línea al servirse (para sugerir el destino de la
+// devolución "al mismo sitio"). Se leen de los movimientos de salida de la línea.
+function origenZonasDeLinea(it) {
+  const movs = Array.isArray(it?.movimientos_servicio) ? it.movimientos_servicio : [];
+  const zs = movs
+    .filter((m) => (m?.tipo_movimiento === "salida" || !m?.es_devolucion_pedido) && m?.zona_origen)
+    .map((m) => m.zona_origen);
+  return [...new Set(zs)];
+}
+function nombreLineaDev(it) {
+  return it?.producto_nombre_cientifico || it?.producto_nombre || it?.producto_nombre_natural || `línea ${it?.id}`;
+}
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -2351,6 +2369,176 @@ function ImprimirPedidosModal({ open, pedidos, mapProdName, onClose }) {
   );
 }
 
+// ── Modal: devolver material de un pedido ya servido ──
+function DevolucionModal({ pedido, onClose, onDone, onError }) {
+  const [zonas, setZonas] = useState(DEFAULT_ZONAS_DEV);
+  const [rows, setRows] = useState({});
+  const [nota, setNota] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!pedido) return;
+    let alive = true;
+    (async () => {
+      try {
+        const list = await getZonasConfig();
+        const ids = Array.isArray(list)
+          ? list.map((z) => (typeof z === "string" ? z : z?.id || z?.api_id || z?.zona || "")).filter(Boolean)
+          : [];
+        if (alive && ids.length) setZonas(ids);
+      } catch {
+        /* nos quedamos con las zonas por defecto */
+      }
+    })();
+    const init = {};
+    for (const it of pedido.items || []) {
+      if (Number(it.devolvible || 0) <= 0) continue;
+      const origen = origenZonasDeLinea(it)[0] || "";
+      init[it.id] = { cant: "", zona: origen, fecha: "" };
+    }
+    setRows(init);
+    setNota("");
+    setErr("");
+    return () => {
+      alive = false;
+    };
+  }, [pedido]);
+
+  if (!pedido) return null;
+  const lineas = (pedido.items || []).filter((it) => Number(it.devolvible || 0) > 0);
+  const setRow = (id, field, value) => setRows((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: value } }));
+
+  const onSubmit = async () => {
+    setErr("");
+    const payloadLineas = [];
+    for (const it of lineas) {
+      const r = rows[it.id] || {};
+      const cant = Number(r.cant || 0);
+      if (!cant) continue;
+      const max = Number(it.devolvible || 0);
+      if (cant < 0 || cant > max) {
+        setErr(`La cantidad a devolver de ${nombreLineaDev(it)} debe estar entre 0 y ${max}.`);
+        return;
+      }
+      if (!r.zona) {
+        setErr(`Elige la zona de destino de ${nombreLineaDev(it)}.`);
+        return;
+      }
+      const l = { pedido_item_id: it.id, cantidad: cant, zona_destino: r.zona };
+      if (r.fecha) l.fecha_disponibilidad = r.fecha;
+      payloadLineas.push(l);
+    }
+    if (!payloadLineas.length) {
+      setErr("Indica al menos una cantidad a devolver.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await devolverPedido(pedido.id, { lineas: payloadLineas, nota: nota || null });
+      onDone?.();
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e?.message || "No se pudo registrar la devolución.";
+      setErr(detail);
+      onError?.(detail);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cell = { padding: "8px 10px", fontSize: 13, color: "#0f172a", borderBottom: "1px solid rgba(15,23,42,0.06)" };
+  const th = { ...cell, fontWeight: 900, color: "#64748b", textTransform: "uppercase", fontSize: 11, letterSpacing: "0.05em", background: "#f8fafc" };
+  const inp = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid rgba(15,23,42,0.14)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ width: "min(880px, 97vw)", maxHeight: "94vh", background: "#fff", borderRadius: 20, overflow: "hidden", boxShadow: "0 32px 80px rgba(2,6,23,0.38)", display: "flex", flexDirection: "column" }}>
+        <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", color: "#fff", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>↩️ Devolución de material · Pedido #{pedido.id}</div>
+            <div style={{ marginTop: 2, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontSize: 12 }}>
+              Reintegra al vivero lo que sobró. Máximo por línea = lo que salió y no se ha devuelto aún.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: "8px 14px", borderRadius: 12, fontWeight: 900, cursor: "pointer", background: "#f59e0b", color: "#111827", border: "2px solid #000" }}>Cerrar</button>
+        </div>
+
+        <div style={{ padding: 18, overflow: "auto" }}>
+          {lineas.length === 0 ? (
+            <div style={{ color: "#64748b", fontWeight: 700 }}>Este pedido no tiene unidades servidas pendientes de devolver.</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, textAlign: "left" }}>Producto</th>
+                  <th style={th}>Tamaño</th>
+                  <th style={th}>Salió</th>
+                  <th style={th}>Devuelto</th>
+                  <th style={th}>Devolvible</th>
+                  <th style={{ ...th, width: 90 }}>Devolver</th>
+                  <th style={{ ...th, width: 130 }}>Zona destino</th>
+                  <th style={{ ...th, width: 150 }}>Disp. (opcional)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineas.map((it) => {
+                  const r = rows[it.id] || {};
+                  const origen = origenZonasDeLinea(it);
+                  return (
+                    <tr key={it.id}>
+                      <td style={{ ...cell, fontWeight: 800 }}>
+                        {nombreLineaDev(it)}
+                        {origen.length ? <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>salió de: zona {origen.join(", ")}</div> : null}
+                      </td>
+                      <td style={{ ...cell, textAlign: "center" }}>{it.tamano || "—"}</td>
+                      <td style={{ ...cell, textAlign: "center" }}>{formatCantidad(it.cantidad_servida)}</td>
+                      <td style={{ ...cell, textAlign: "center" }}>{formatCantidad(it.cantidad_devuelta)}</td>
+                      <td style={{ ...cell, textAlign: "center", fontWeight: 900, color: "#065f46" }}>{formatCantidad(it.devolvible)}</td>
+                      <td style={cell}>
+                        <input type="number" min={0} max={Number(it.devolvible || 0)} step="1" placeholder="0" value={r.cant || ""}
+                          onChange={(e) => {
+                            let v = e.target.value.replace(/[^\d.]/g, "");
+                            const max = Number(it.devolvible || 0);
+                            if (v !== "" && Number(v) > max) v = String(max);
+                            setRow(it.id, "cant", v);
+                          }}
+                          style={{ ...inp, textAlign: "right" }} />
+                      </td>
+                      <td style={cell}>
+                        <select value={r.zona || ""} onChange={(e) => setRow(it.id, "zona", e.target.value)} style={inp}>
+                          <option value="">Zona…</option>
+                          {zonas.map((z) => <option key={z} value={z}>Zona {z}</option>)}
+                        </select>
+                      </td>
+                      <td style={cell}>
+                        <input type="date" value={r.fecha || ""} onChange={(e) => setRow(it.id, "fecha", e.target.value)} style={inp} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 5 }}>Nota (opcional)</div>
+            <textarea value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Motivo de la devolución, observaciones…" style={{ ...inp, minHeight: 56, resize: "vertical" }} />
+          </div>
+
+          {err ? <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{err}</div> : null}
+        </div>
+
+        <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(15,23,42,0.08)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cancelar</button>
+          <button onClick={onSubmit} disabled={busy || lineas.length === 0} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: busy ? "#94a3b8" : "linear-gradient(90deg,#10b981,#06b6d4)", color: "#fff", fontWeight: 900, cursor: busy ? "not-allowed" : "pointer" }}>
+            {busy ? "Guardando…" : "✓ Registrar devolución"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Pedidos() {
   const { me } = useOutletContext();
 
@@ -2375,6 +2563,7 @@ export default function Pedidos() {
   const [editSearch, setEditSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [imprimirOpen, setImprimirOpen] = useState(false);
+  const [devolucionPedido, setDevolucionPedido] = useState(null);
   const [expandedRows, setExpandedRows] = useState({});
 
   const role = me?.rol || me?.role;
@@ -2384,6 +2573,8 @@ export default function Pedidos() {
   const isObservador = role === "observador";
   const isReadOnly = role === "tecnico" || role === "gestor_vivero" || isProveedor || isObservador;
   const isAdmin = role === "admin";
+  // Roles operativos internos que pueden registrar una devolución de pedido.
+  const puedeDevolver = ["admin", "manager", "tecnico", "gestor_vivero"].includes(role);
 
   const clearMsgTimer = () => {
     if (msgTimerRef.current) {
@@ -3152,6 +3343,32 @@ export default function Pedidos() {
                           })()}
 
                           {(() => {
+                            const e = estadoNormalizado(estado);
+                            const servidoParcial = e === "SERVIDO" || e === "APROBADO_PARCIAL";
+                            const tieneDevolvible = (p.items || []).some((it) => Number(it.devolvible || 0) > 0);
+                            if (!puedeDevolver || !servidoParcial || !tieneDevolvible) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setDevolucionPedido(p)}
+                                title="Registrar devolución de material de este pedido"
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: 12,
+                                  border: "1px solid rgba(59,130,246,0.35)",
+                                  background: "rgba(59,130,246,0.10)",
+                                  color: "#1d4ed8",
+                                  fontWeight: 900,
+                                  cursor: "pointer",
+                                  fontSize: 13,
+                                }}
+                              >
+                                ↩️ Devolución
+                              </button>
+                            );
+                          })()}
+
+                          {(() => {
                             // Show the "—" placeholder ONLY when there are
                             // truly no actions to render: can't edit/cancel
                             // and no PDF available either.  PDF is now available
@@ -3191,6 +3408,17 @@ export default function Pedidos() {
         pedidos={pedidos}
         mapProdName={mapProdName}
         onClose={() => setImprimirOpen(false)}
+      />
+
+      <DevolucionModal
+        pedido={devolucionPedido}
+        onClose={() => setDevolucionPedido(null)}
+        onDone={() => {
+          setDevolucionPedido(null);
+          showTimedMessage("Devolución registrada. Stock reintegrado al vivero.", "success");
+          refrescar();
+        }}
+        onError={(d) => showTimedMessage(d, "error")}
       />
     </div>
   );

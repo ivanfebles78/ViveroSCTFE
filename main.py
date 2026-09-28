@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 import unicodedata
 import uuid
 import json
@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from pdf_pedido import generar_pdf_pedido
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 from passlib.context import CryptContext
 from jose import jwt, JWTError
@@ -61,6 +61,9 @@ def _ensure_schema() -> None:
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS barrio_destino VARCHAR(150)",
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS direccion_destino VARCHAR(255)",
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio NUMERIC(10,2)",
+        # Devolución de material de un pedido servido (empresa externa reintegra).
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS cantidad_devuelta NUMERIC(12,3) NOT NULL DEFAULT 0",
+        "ALTER TABLE movimientos ADD COLUMN IF NOT EXISTS es_devolucion_pedido BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     try:
         with engine.begin() as conn:
@@ -201,6 +204,21 @@ class MovimientoCreate(BaseModel):
     # Fecha/hora del movimiento. Si no se envía, se usa el momento actual.
     # Permite registrar a posteriori un movimiento que ocurrió en otra fecha.
     fecha_movimiento: Optional[datetime] = None
+
+
+# ── Devolución de material de un pedido ya servido ──
+# La empresa externa se llevó material como parte de un pedido y devuelve lo
+# que le sobró. Se registra como una ENTRADA asociada al pedido y a la línea,
+# reingresando el stock al MISMO lote del que salió (trazabilidad por UUID).
+class DevolucionLineaCreate(BaseModel):
+    pedido_item_id: int
+    cantidad: float = Field(gt=0)
+    zona_destino: str = Field(min_length=1)      # zona del vivero a la que reingresa
+    fecha_disponibilidad: Optional[date] = None  # opcional; por defecto disponible ya
+
+class DevolucionPedidoCreate(BaseModel):
+    lineas: List[DevolucionLineaCreate] = Field(min_length=1)
+    nota: Optional[str] = None
 
 class MovimientoOut(BaseModel):
     id: int
@@ -1131,6 +1149,14 @@ def _pedido_to_dict(
                 "tamano": getattr(item, "tamano", None),
                 "cantidad": getattr(item, "cantidad", 0),
                 "cantidad_servida": getattr(item, "cantidad_servida", 0),
+                "cantidad_devuelta": getattr(item, "cantidad_devuelta", 0),
+                # Unidades que aún se pueden devolver de esta línea (lo servido
+                # menos lo ya devuelto). El frontend lo usa como tope del input.
+                "devolvible": max(
+                    float(getattr(item, "cantidad_servida", 0) or 0)
+                    - float(getattr(item, "cantidad_devuelta", 0) or 0),
+                    0,
+                ),
                 "estado_item": _item_estado(item),
                 # Destino de la línea. Si la línea no lo tiene (pedidos antiguos
                 # o de un solo destino), cae al destino del pedido.
@@ -1151,6 +1177,8 @@ def _pedido_to_dict(
                         "fecha_movimiento": getattr(mov, "fecha_movimiento", None),
                         "fecha_caducidad": getattr(mov, "fecha_caducidad", None),
                         "cantidad": getattr(mov, "cantidad", 0),
+                        "tipo_movimiento": getattr(mov, "tipo_movimiento", None),
+                        "es_devolucion_pedido": bool(getattr(mov, "es_devolucion_pedido", False)),
                         "origen_tipo": getattr(mov, "origen_tipo", None),
                         "destino_tipo": getattr(mov, "destino_tipo", None),
                         "zona_origen": getattr(mov, "zona_origen", None),
@@ -3091,6 +3119,208 @@ def crear_movimiento(
     db.commit()
     db.refresh(movimiento)
     return movimiento
+
+
+# =============================
+# DEVOLUCIÓN DE MATERIAL DE UN PEDIDO SERVIDO
+# =============================
+def _uuid_origen_de_linea(db: Session, pedido_item: PedidoItem) -> Optional[str]:
+    """UUID del lote del que SALIÓ esta línea al servirse. Se usa para reingresar
+    la devolución al MISMO lote y conservar la trazabilidad por UUID
+    (entrada original → salida al servir → devolución). Devuelve el primer uuid
+    del movimiento de salida más reciente de la línea, o None si no hay traza."""
+    mov = (
+        db.query(Movimiento)
+        .filter(
+            Movimiento.pedido_item_id == pedido_item.id,
+            Movimiento.tipo_movimiento == "salida",
+        )
+        .order_by(Movimiento.id.desc())
+        .first()
+    )
+    if not mov:
+        return None
+    raw = (getattr(mov, "uuid_lote", None) or "").strip()
+    if not raw:
+        return None
+    primero = raw.split(",")[0].strip()
+    return primero or None
+
+
+@app.post("/pedidos/{pedido_id}/devoluciones")
+def registrar_devolucion_pedido(
+    pedido_id: int,
+    payload: DevolucionPedidoCreate,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero"])),
+):
+    """Registra la devolución de material de un pedido YA SERVIDO.
+
+    La empresa externa se llevó material con un pedido y devuelve lo que le
+    sobró. Cada línea devuelta genera un movimiento de ENTRADA asociado al
+    pedido y a la línea, reingresando el stock al MISMO lote del que salió.
+
+    Reglas:
+      - Por línea: cantidad <= cantidad_servida - cantidad_devuelta (nunca más
+        de lo que salió).
+      - El técnico elige la zona de destino (puede ser la de origen u otra).
+      - Sin fecha de disponibilidad por defecto (disponible ya); opcional.
+      - No cambia el estado del pedido (sigue SERVIDO). Sin límite temporal.
+    """
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if (getattr(pedido, "tipo", "salida") or "salida").strip().lower() == "reposicion":
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede devolver material de pedidos de salida (no de reposición).",
+        )
+
+    if not payload.lineas:
+        raise HTTPException(status_code=400, detail="Indica al menos una línea a devolver.")
+
+    ahora = datetime.utcnow()
+    hoy = ahora.date()
+    resultados = []
+
+    for ln in payload.lineas:
+        item = (
+            db.query(PedidoItem)
+            .filter(PedidoItem.id == ln.pedido_item_id, PedidoItem.pedido_id == pedido.id)
+            .first()
+        )
+        if not item:
+            raise HTTPException(
+                status_code=404,
+                detail=f"La línea {ln.pedido_item_id} no pertenece a este pedido.",
+            )
+
+        cant = float(ln.cantidad or 0)
+        if cant <= 0:
+            raise HTTPException(status_code=400, detail="La cantidad a devolver debe ser mayor que 0.")
+
+        servida = float(item.cantidad_servida or 0)
+        devuelta = float(getattr(item, "cantidad_devuelta", 0) or 0)
+        devolvible = servida - devuelta
+        if cant > devolvible + 1e-9:
+            nombre = (
+                getattr(getattr(item, "producto", None), "nombre_cientifico", None)
+                or f"línea {item.id}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No puedes devolver {cant:g} uds de {nombre}: como máximo {devolvible:g} "
+                    f"(salieron {servida:g}, ya devueltas {devuelta:g})."
+                ),
+            )
+
+        zona = (ln.zona_destino or "").strip()
+        if not zona:
+            raise HTTPException(status_code=400, detail="Indica la zona de destino de la devolución.")
+
+        fdisp = ln.fecha_disponibilidad
+        if fdisp is not None and fdisp <= hoy:
+            raise HTTPException(
+                status_code=400,
+                detail="La fecha de disponibilidad, si se indica, debe ser futura.",
+            )
+
+        tam = item.tamano
+
+        # Reingreso al MISMO lote del que salió (trazabilidad por UUID). Si no
+        # hay traza de salida (datos antiguos), se crea un lote nuevo.
+        origen_uuid = _uuid_origen_de_linea(db, item)
+        if not origen_uuid:
+            origen_uuid = str(uuid.uuid4())
+            db.add(Lote(
+                uuid_lote=origen_uuid,
+                producto_id=item.producto_id,
+                cantidad_inicial=cant,
+                tamano_inicial=tam,
+                origen_tipo="Devolución pedido",
+                origen_referencia=f"pedido#{pedido.id}",
+                zona_inicial=zona,
+                created_by=user.username,
+            ))
+
+        movimiento = Movimiento(
+            pedido_id=pedido.id,
+            pedido_item_id=item.id,
+            uuid_lote=origen_uuid,
+            producto_id=item.producto_id,
+            tipo_movimiento="entrada",
+            origen_tipo="Empresa Externa",
+            destino_tipo="Vivero",
+            zona_origen=None,
+            zona_destino=zona,
+            tamano_origen=None,
+            tamano_destino=tam,
+            cantidad=cant,
+            observaciones=(payload.nota or f"Devolución de pedido #{pedido.id}"),
+            es_prestamo=False,
+            es_devolucion=False,
+            es_devolucion_pedido=True,
+            prestamo_referencia_id=None,
+            fecha_movimiento=ahora,
+            fecha_disponibilidad=fdisp,
+            created_by=user.username,
+        )
+        db.add(movimiento)
+        db.flush()
+
+        # Reingresar stock: (uuid de origen, zona elegida, tamaño de la línea).
+        inv = (
+            db.query(InventarioLote)
+            .filter(
+                InventarioLote.uuid_lote == origen_uuid,
+                InventarioLote.producto_id == item.producto_id,
+                InventarioLote.zona == zona,
+                InventarioLote.tamano == tam,
+            )
+            .first()
+        )
+        if inv:
+            inv.cantidad_disponible = float(inv.cantidad_disponible or 0) + cant
+            if fdisp is not None:
+                inv.fecha_disponibilidad = fdisp
+        else:
+            db.add(InventarioLote(
+                uuid_lote=origen_uuid,
+                producto_id=item.producto_id,
+                zona=zona,
+                tamano=tam,
+                cantidad_disponible=cant,
+                fecha_disponibilidad=fdisp,
+            ))
+
+        db.add(MovimientoLoteDetalle(
+            movimiento_id=movimiento.id,
+            uuid_lote=origen_uuid,
+            producto_id=item.producto_id,
+            zona_origen=None,
+            zona_destino=zona,
+            tamano_origen=None,
+            tamano_destino=tam,
+            cantidad=cant,
+        ))
+
+        item.cantidad_devuelta = devuelta + cant
+
+        resultados.append({
+            "pedido_item_id": item.id,
+            "movimiento_id": movimiento.id,
+            "uuid_lote": origen_uuid,
+            "cantidad": cant,
+            "zona_destino": zona,
+            "cantidad_servida": servida,
+            "cantidad_devuelta": devuelta + cant,
+            "devolvible_restante": max(servida - (devuelta + cant), 0.0),
+        })
+
+    db.commit()
+    return {"ok": True, "pedido_id": pedido.id, "devoluciones": resultados}
 
 
 # =============================

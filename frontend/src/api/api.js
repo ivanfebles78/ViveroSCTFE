@@ -154,6 +154,14 @@ export const createMovimiento = async (payload) => {
   return data;
 };
 
+// Devolución de material de un pedido ya servido (la empresa externa reintegra
+// lo que le sobró). payload = { lineas: [{ pedido_item_id, cantidad,
+// zona_destino, fecha_disponibilidad? }], nota? }.
+export const devolverPedido = async (pedidoId, payload) => {
+  const { data } = await api.post(`/pedidos/${pedidoId}/devoluciones`, payload);
+  return data;
+};
+
 // ---------------- ZONAS ----------------
 
 export const getZonaItems = async (zonaId) => {
