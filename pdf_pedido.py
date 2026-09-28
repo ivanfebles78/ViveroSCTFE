@@ -353,6 +353,65 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
             story.append(t_items)
             story.append(Spacer(1, 8))
 
+    # ===== Bloque: devoluciones registradas =====
+    # Material que la empresa externa devolvió del pedido (entradas marcadas
+    # con es_devolucion_pedido). Deja constancia en el PDF de fecha, cantidad,
+    # zona y quién la registró.
+    devoluciones = []
+    for it in items:
+        prod = getattr(it, "producto", None)
+        nombre_it = (
+            getattr(prod, "nombre_cientifico", None)
+            or getattr(prod, "nombre_natural", None)
+            or f"#{getattr(it, 'producto_id', '?')}"
+        )
+        cat_it = getattr(prod, "categoria", None)
+        for mov in (getattr(it, "movimientos", []) or []):
+            if getattr(mov, "es_devolucion_pedido", False):
+                devoluciones.append((mov, nombre_it, cat_it, it))
+
+    if devoluciones:
+        devoluciones.sort(key=lambda x: getattr(x[0], "fecha_movimiento", None) or datetime.min)
+        story.append(Paragraph("Devoluciones registradas", style_h2))
+        data_dev = [["Fecha", "Producto", "Tamaño", "Cantidad", "Zona destino", "Registró"]]
+        total_dev = 0.0
+        for mov, nombre_it, cat_it, it in devoluciones:
+            tam = getattr(mov, "tamano_destino", None) or getattr(it, "tamano", None) or "—"
+            unidad = _unidad_para_categoria(cat_it, tam)
+            total_dev += float(getattr(mov, "cantidad", 0) or 0)
+            data_dev.append([
+                _fmt_fecha(getattr(mov, "fecha_movimiento", None)),
+                nombre_it,
+                str(tam),
+                f"{_fmt_cantidad(getattr(mov, 'cantidad', 0))} {unidad}",
+                _c(getattr(mov, "zona_destino", None)),
+                _c(getattr(mov, "created_by", None)),
+            ])
+        t_dev = Table(data_dev, colWidths=[28 * mm, 51 * mm, 22 * mm, 29 * mm, 24 * mm, 21 * mm])
+        t_dev.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_SECUNDARIO),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("ALIGN", (2, 0), (2, -1), "CENTER"),
+            ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, COLOR_GRIS_FONDO]),
+            ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
+        ]))
+        story.append(t_dev)
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            f"Total devuelto: <b>{_fmt_cantidad(total_dev)}</b> uds en "
+            f"{len(devoluciones)} devolución(es).",
+            style_body,
+        ))
+        story.append(Spacer(1, 10))
+
     # ===== Bloque: nota =====
     nota = getattr(pedido, "nota", None)
     if nota:
