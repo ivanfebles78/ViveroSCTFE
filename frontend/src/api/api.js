@@ -441,9 +441,8 @@ export const adminEmailTest = async (to) => {
 // ACCOUNT TOKENS (public, no auth)
 // =========================
 
-export const requestPasswordReset = async (username, email) => {
+export const requestPasswordReset = async (email) => {
   const { data } = await api.post("/auth/forgot-password", {
-    username,
     email,
   });
   return data;

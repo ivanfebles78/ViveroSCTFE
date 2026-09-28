@@ -91,6 +91,22 @@ export default function CuentaToken({ purposeOverride }) {
       setErrorMsg("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
+    if (!/[A-Z]/.test(password)) {
+      setErrorMsg("La contraseña debe incluir al menos una letra mayúscula.");
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setErrorMsg("La contraseña debe incluir al menos una letra minúscula.");
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setErrorMsg("La contraseña debe incluir al menos un número.");
+      return;
+    }
+    if (!/[!*#_]/.test(password)) {
+      setErrorMsg("La contraseña debe incluir al menos un símbolo (! * # _).");
+      return;
+    }
     if (password !== confirm) {
       setErrorMsg("Las contraseñas no coinciden.");
       return;
@@ -190,7 +206,7 @@ export default function CuentaToken({ purposeOverride }) {
                 </label>
 
                 <p style={styles.hint}>
-                  Mínimo 8 caracteres. Usa una mezcla de letras, números y símbolos.
+                  Mínimo 8 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo (! * # _).
                 </p>
 
                 {errorMsg && <div style={styles.errorBox}>{errorMsg}</div>}

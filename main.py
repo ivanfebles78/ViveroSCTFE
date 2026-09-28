@@ -4396,6 +4396,10 @@ class ConsumeTokenIn(BaseModel):
     new_password: str
 
 
+# Símbolos aceptados como "carácter especial" en la contraseña.
+_PASSWORD_SYMBOLS = "!*#_"
+
+
 def _validate_password_or_400(pwd: str) -> str:
     if not pwd or len(pwd) < 8:
         raise HTTPException(
@@ -4407,11 +4411,18 @@ def _validate_password_or_400(pwd: str) -> str:
             status_code=400,
             detail="La contraseña es demasiado larga.",
         )
+    if not any(c.isupper() for c in pwd):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos una letra mayúscula.")
+    if not any(c.islower() for c in pwd):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos una letra minúscula.")
+    if not any(c.isdigit() for c in pwd):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos un número.")
+    if not any(c in _PASSWORD_SYMBOLS for c in pwd):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos un símbolo (! * # _).")
     return pwd
 
 
 class ForgotPasswordIn(BaseModel):
-    username: str
     email: str
 
 
@@ -4441,32 +4452,29 @@ def admin_email_test(
 def auth_forgot_password(payload: ForgotPasswordIn, db: Session = Depends(get_db)):
     """
     Endpoint público (sin auth) para solicitar reset de contraseña desde el login.
-    Si username + email coinciden con un usuario activo, envía un email con enlace.
-    Si no coinciden, ignora silenciosamente la petición.
+    Si el email coincide con el de un usuario (activo o bloqueado), envía un email
+    con el enlace de reset. Si no coincide, ignora silenciosamente la petición.
+    Los emails son únicos por usuario, así que basta con el email.
 
     En todos los casos devuelve 200 OK con el mismo mensaje genérico para no
-    filtrar información sobre qué usuarios/emails existen en el sistema.
+    filtrar información sobre qué emails existen en el sistema.
     """
     GENERIC_RESPONSE = {
         "ok": True,
         "message": (
-            "Si los datos coinciden con una cuenta válida, recibirás un email "
+            "Si el email coincide con una cuenta válida, recibirás un email "
             "con instrucciones para restablecer tu contraseña."
         ),
     }
 
-    username = (payload.username or "").strip()
     email = (payload.email or "").strip().lower()
 
-    if not username or not email:
+    if not email:
         return GENERIC_RESPONSE
 
     user = (
         db.query(Usuario)
-        .filter(
-            func.lower(Usuario.username) == username.lower(),
-            func.lower(Usuario.email) == email,
-        )
+        .filter(func.lower(Usuario.email) == email)
         .first()
     )
 

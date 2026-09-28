@@ -95,7 +95,6 @@ function EyeOffIcon() {
 }
 
 function ForgotPasswordModal({ onClose }) {
-  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -104,8 +103,8 @@ function ForgotPasswordModal({ onClose }) {
   const submit = async (e) => {
     e.preventDefault();
     setErrorMsg("");
-    if (!username.trim() || !email.trim()) {
-      setErrorMsg("Rellena ambos campos.");
+    if (!email.trim()) {
+      setErrorMsg("Introduce tu email.");
       return;
     }
     if (!email.includes("@")) {
@@ -114,7 +113,7 @@ function ForgotPasswordModal({ onClose }) {
     }
     setSubmitting(true);
     try {
-      await requestPasswordReset(username.trim(), email.trim());
+      await requestPasswordReset(email.trim());
       setDone(true);
     } catch (err) {
       // Por seguridad mostramos el mismo mensaje genérico aunque haya error.
@@ -146,21 +145,9 @@ function ForgotPasswordModal({ onClose }) {
     <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14, padding: 8 }}>
       <h2 style={{ margin: 0, color: "#10231a" }}>¿Olvidaste tu contraseña?</h2>
       <p style={{ margin: 0, color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
-        Introduce tu nombre de usuario y el email asociado a tu cuenta. Si los
-        datos coinciden, te enviaremos un enlace para restablecer la contraseña.
+        Introduce el email asociado a tu cuenta. Si coincide, te enviaremos un
+        enlace para restablecer la contraseña.
       </p>
-
-      <label style={modalLabel}>
-        Usuario
-        <input
-          style={modalInput}
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoComplete="username"
-          autoFocus
-          required
-        />
-      </label>
 
       <label style={modalLabel}>
         Email
@@ -170,6 +157,7 @@ function ForgotPasswordModal({ onClose }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
+          autoFocus
           required
         />
       </label>
