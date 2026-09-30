@@ -64,6 +64,12 @@ def _ensure_schema() -> None:
         # Devolución de material de un pedido servido (empresa externa reintegra).
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS cantidad_devuelta NUMERIC(12,3) NOT NULL DEFAULT 0",
         "ALTER TABLE movimientos ADD COLUMN IF NOT EXISTS es_devolucion_pedido BOOLEAN NOT NULL DEFAULT FALSE",
+        # Flujo del proveedor en pedidos de reposición (leído / aceptado / fecha estimada).
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS leido_at TIMESTAMP",
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS leido_por VARCHAR(150)",
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS aceptado_at TIMESTAMP",
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS aceptado_por VARCHAR(150)",
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_estimada_entrega DATE",
     ]
     try:
         with engine.begin() as conn:
@@ -843,6 +849,37 @@ def recompute_pedido_estado(pedido: Pedido) -> str:
 # proveedor sees the pedido as soon as ANY of its items has been approved.
 SERVICEABLE_STATES = ("APROBADO", "APROBADO_PARCIAL", "SERVIDO")
 
+
+def _estado_efectivo_pedido(pedido) -> str:
+    """Estado 'mostrable' del pedido, con la capa del proveedor superpuesta.
+
+    NO cambia el estado almacenado (que sigue derivándose por líneas). Solo se
+    calcula para la UI/PDF. Estados posibles añadidos:
+      - SOLICITADO  (RESERVA renombrado de cara al usuario)
+      - LEIDO       (reposición: el proveedor abrió el detalle)
+      - ACEPTADO    (reposición: el proveedor aceptó con fecha estimada)
+      - RETRASADO   (reposición: aceptado + fecha estimada vencida y sin servir)
+    El resto (APROBADO, APROBADO_PARCIAL, SERVIDO, CANCELADO, DENEGADO, CADUCADO)
+    se muestran tal cual.
+    """
+    base = (getattr(pedido, "estado", "") or "").upper()
+    if base in ("SERVIDO", "CANCELADO", "CADUCADO", "DENEGADO"):
+        return base
+    tipo = (getattr(pedido, "tipo", "salida") or "salida").strip().lower()
+    if tipo != "reposicion":
+        return "SOLICITADO" if base == "RESERVA" else base
+    # Reposición: capa del proveedor sobre APROBADO / APROBADO_PARCIAL / RESERVA
+    if getattr(pedido, "aceptado_at", None) is not None:
+        fest = getattr(pedido, "fecha_estimada_entrega", None)
+        if fest is not None and fest < datetime.utcnow().date():
+            return "RETRASADO"
+        return "ACEPTADO"
+    if getattr(pedido, "leido_at", None) is not None:
+        return "LEIDO"
+    if base == "RESERVA":
+        return "SOLICITADO"
+    return base
+
 # States where the manager can still take aprobar/denegar actions on items
 # (there are still RESERVA items to decide).
 DECIDABLE_STATES   = ("RESERVA", "APROBADO_PARCIAL")
@@ -1140,6 +1177,14 @@ def _pedido_to_dict(
         "motivo_denegacion": None if ocultar_motivo else getattr(pedido, "motivo_denegacion", None),
         "served_at": getattr(pedido, "served_at", None),
         "served_by": getattr(pedido, "served_by", None),
+        # Estado 'mostrable' con la capa del proveedor (Solicitado/Leído/Aceptado/
+        # Retrasado…). El 'estado' de arriba sigue siendo el interno derivado.
+        "estado_efectivo": _estado_efectivo_pedido(pedido),
+        "leido_at": getattr(pedido, "leido_at", None),
+        "leido_por": getattr(pedido, "leido_por", None),
+        "aceptado_at": getattr(pedido, "aceptado_at", None),
+        "aceptado_por": getattr(pedido, "aceptado_por", None),
+        "fecha_estimada_entrega": getattr(pedido, "fecha_estimada_entrega", None),
         # Modificación pendiente (si la hay): congela el pedido hasta decidirse.
         "modificacion_pendiente": _serialize_modificacion(_modificacion_pendiente(pedido)),
         "items": [
@@ -3321,6 +3366,72 @@ def registrar_devolucion_pedido(
 
     db.commit()
     return {"ok": True, "pedido_id": pedido.id, "devoluciones": resultados}
+
+
+# =============================
+# FLUJO DEL PROVEEDOR (reposición): LEÍDO / ACEPTADO
+# =============================
+class AceptarPedidoIn(BaseModel):
+    fecha_estimada_entrega: date
+
+
+def _get_reposicion_o_400(db: Session, pedido_id: int) -> Pedido:
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    if (getattr(pedido, "tipo", "salida") or "salida").strip().lower() != "reposicion":
+        raise HTTPException(status_code=400, detail="Este flujo solo aplica a pedidos de reposición.")
+    return pedido
+
+
+@app.post("/pedidos/{pedido_id}/leido")
+def marcar_pedido_leido(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_roles(["proveedor"])),
+):
+    """El proveedor abre el detalle → se marca como 'Leído' (una sola vez).
+    Idempotente: si ya estaba leído, no cambia la fecha."""
+    pedido = _get_reposicion_o_400(db, pedido_id)
+    base = (pedido.estado or "").upper()
+    if base in SERVICEABLE_STATES and pedido.leido_at is None:
+        pedido.leido_at = datetime.utcnow()
+        pedido.leido_por = user.username
+        db.commit()
+        db.refresh(pedido)
+    return {"ok": True, "estado_efectivo": _estado_efectivo_pedido(pedido), "leido_at": pedido.leido_at}
+
+
+@app.post("/pedidos/{pedido_id}/aceptar")
+def aceptar_pedido(
+    pedido_id: int,
+    payload: AceptarPedidoIn,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_roles(["proveedor"])),
+):
+    """El proveedor acepta el pedido y fija la fecha estimada de entrega (obligatoria)."""
+    pedido = _get_reposicion_o_400(db, pedido_id)
+    base = (pedido.estado or "").upper()
+    if base not in ("APROBADO", "APROBADO_PARCIAL"):
+        raise HTTPException(status_code=400, detail="Solo se puede aceptar un pedido aprobado.")
+    hoy = datetime.utcnow().date()
+    if payload.fecha_estimada_entrega < hoy:
+        raise HTTPException(status_code=400, detail="La fecha estimada de entrega no puede ser anterior a hoy.")
+    ahora = datetime.utcnow()
+    if pedido.leido_at is None:
+        pedido.leido_at = ahora
+        pedido.leido_por = user.username
+    pedido.aceptado_at = ahora
+    pedido.aceptado_por = user.username
+    pedido.fecha_estimada_entrega = payload.fecha_estimada_entrega
+    db.commit()
+    db.refresh(pedido)
+    return {
+        "ok": True,
+        "estado_efectivo": _estado_efectivo_pedido(pedido),
+        "aceptado_at": pedido.aceptado_at,
+        "fecha_estimada_entrega": pedido.fecha_estimada_entrega,
+    }
 
 
 # =============================

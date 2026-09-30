@@ -162,6 +162,20 @@ export const devolverPedido = async (pedidoId, payload) => {
   return data;
 };
 
+// Flujo del proveedor (reposición): marcar "leído" al abrir el detalle, y
+// "aceptar" con fecha estimada de entrega (obligatoria, formato YYYY-MM-DD).
+export const marcarPedidoLeido = async (pedidoId) => {
+  const { data } = await api.post(`/pedidos/${pedidoId}/leido`, {});
+  return data;
+};
+
+export const aceptarPedido = async (pedidoId, fechaEstimadaEntrega) => {
+  const { data } = await api.post(`/pedidos/${pedidoId}/aceptar`, {
+    fecha_estimada_entrega: fechaEstimadaEntrega,
+  });
+  return data;
+};
+
 // ---------------- ZONAS ----------------
 
 export const getZonaItems = async (zonaId) => {

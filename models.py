@@ -136,6 +136,17 @@ class Pedido(Base):
     # Caducidad del propio pedido (p.ej. empresa_externa: 15 días)
     fecha_caducidad = Column(Date, nullable=True)
 
+    # --- Flujo del proveedor (solo pedidos de reposición) ---
+    # "Leído": el proveedor abre el detalle del pedido aprobado.
+    leido_at = Column(DateTime, nullable=True)
+    leido_por = Column(String(150), nullable=True)
+    # "Aceptado": el proveedor acepta y fija una fecha estimada de entrega
+    # (obligatoria). "Retrasado" es derivado: aceptado + estimada vencida y aún
+    # sin servir. No se guardan como estado; se calculan en _estado_efectivo_pedido.
+    aceptado_at = Column(DateTime, nullable=True)
+    aceptado_por = Column(String(150), nullable=True)
+    fecha_estimada_entrega = Column(Date, nullable=True)
+
     items = relationship(
         "PedidoItem",
         back_populates="pedido",
