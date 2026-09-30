@@ -2542,24 +2542,32 @@ function DevolucionModal({ pedido, onClose, onDone, onError }) {
   );
 }
 
-// ── Modal: el proveedor acepta un pedido de reposición con fecha estimada ──
-function AceptarModal({ pedido, onClose, onDone, onError }) {
+// ── Modal "Ver Pedido" (proveedor): abrirlo marca "Leído"; dentro se acepta ──
+function VerPedidoModal({ pedido, onClose, onLeido, onAceptado, onError }) {
   const [fecha, setFecha] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
-    if (pedido) { setFecha(""); setErr(""); }
+    if (!pedido) return;
+    setFecha("");
+    setErr("");
+    // Abrir el modal = marcar el pedido como "Leído" (una sola vez).
+    if (!pedido.leido_at) {
+      marcarPedidoLeido(pedido.id).then(() => onLeido?.()).catch(() => {});
+    }
   }, [pedido]);
   if (!pedido) return null;
   const hoy = new Date().toISOString().slice(0, 10);
-  const onSubmit = async () => {
+  const yaAceptado = !!pedido.aceptado_at;
+  const items = Array.isArray(pedido.items) ? pedido.items : [];
+  const onAceptar = async () => {
     setErr("");
     if (!fecha) { setErr("Indica la fecha estimada de entrega."); return; }
     if (fecha < hoy) { setErr("La fecha no puede ser anterior a hoy."); return; }
     setBusy(true);
     try {
       await aceptarPedido(pedido.id, fecha);
-      onDone?.();
+      onAceptado?.();
     } catch (e) {
       const d = e?.response?.data?.detail || e?.message || "No se pudo aceptar el pedido.";
       setErr(d);
@@ -2568,22 +2576,57 @@ function AceptarModal({ pedido, onClose, onDone, onError }) {
       setBusy(false);
     }
   };
+  const cell = { padding: "8px 10px", fontSize: 13, color: "#0f172a", borderBottom: "1px solid rgba(15,23,42,0.06)" };
+  const th = { ...cell, fontWeight: 900, color: "#64748b", textTransform: "uppercase", fontSize: 11, background: "#f8fafc" };
   const inp = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ width: "min(460px, 96vw)", background: "#fff", borderRadius: 18, overflow: "hidden", boxShadow: "0 32px 80px rgba(2,6,23,0.38)" }}>
-        <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", color: "#fff", padding: "16px 20px" }}>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>Aceptar pedido #{pedido.id}</div>
-          <div style={{ marginTop: 2, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontSize: 12 }}>Indica cuándo prevés entregarlo en el vivero.</div>
+      <div style={{ width: "min(720px, 97vw)", maxHeight: "94vh", background: "#fff", borderRadius: 18, overflow: "hidden", boxShadow: "0 32px 80px rgba(2,6,23,0.38)", display: "flex", flexDirection: "column" }}>
+        <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", color: "#fff", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>Pedido de reposición #{pedido.id}</div>
+            <div style={{ marginTop: 2, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontSize: 12 }}>
+              Solicitado: {fmtFechaES(pedido.created_at)} · Aprobado: {fmtFechaES(pedido.aprobado_at)}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: "8px 14px", borderRadius: 12, fontWeight: 900, cursor: "pointer", background: "#f59e0b", color: "#111827", border: "2px solid #000" }}>Cerrar</button>
         </div>
-        <div style={{ padding: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Fecha estimada de entrega</div>
-          <input type="date" min={hoy} value={fecha} onChange={(e) => setFecha(e.target.value)} style={inp} />
-          {err ? <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{err}</div> : null}
-        </div>
-        <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(15,23,42,0.08)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cancelar</button>
-          <button onClick={onSubmit} disabled={busy} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: busy ? "#94a3b8" : "linear-gradient(90deg,#10b981,#06b6d4)", color: "#fff", fontWeight: 900, cursor: busy ? "not-allowed" : "pointer" }}>{busy ? "Guardando…" : "✓ Aceptar pedido"}</button>
+        <div style={{ padding: 18, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: "left" }}>Producto</th>
+                <th style={th}>Tamaño</th>
+                <th style={th}>Cantidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td style={{ ...cell, fontWeight: 800 }}>{nombreLineaDev(it)}</td>
+                  <td style={{ ...cell, textAlign: "center" }}>{it.tamano || "—"}</td>
+                  <td style={{ ...cell, textAlign: "center", fontWeight: 900 }}>{formatCantidad(it.cantidad)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ marginTop: 18, padding: 16, borderRadius: 14, background: yaAceptado ? "rgba(16,185,129,0.06)" : "rgba(59,130,246,0.05)", border: `1px solid ${yaAceptado ? "rgba(16,185,129,0.25)" : "rgba(59,130,246,0.18)"}` }}>
+            {yaAceptado ? (
+              <div style={{ fontWeight: 800, color: "#065f46", fontSize: 14 }}>
+                ✓ Aceptado el {fmtFechaES(pedido.aceptado_at)} · entrega estimada: <b>{fmtFechaES(pedido.fecha_estimada_entrega)}</b>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Fecha estimada de entrega</div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <input type="date" min={hoy} value={fecha} onChange={(e) => setFecha(e.target.value)} style={{ ...inp, maxWidth: 220 }} />
+                  <button onClick={onAceptar} disabled={busy} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: busy ? "#94a3b8" : "linear-gradient(90deg,#10b981,#06b6d4)", color: "#fff", fontWeight: 900, cursor: busy ? "not-allowed" : "pointer" }}>{busy ? "Guardando…" : "✓ Aceptar"}</button>
+                </div>
+              </>
+            )}
+            {err ? <div style={{ marginTop: 12, color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{err}</div> : null}
+          </div>
         </div>
       </div>
     </div>
@@ -2615,7 +2658,7 @@ export default function Pedidos() {
   const [modalOpen, setModalOpen] = useState(false);
   const [imprimirOpen, setImprimirOpen] = useState(false);
   const [devolucionPedido, setDevolucionPedido] = useState(null);
-  const [aceptarObj, setAceptarObj] = useState(null);
+  const [verPedido, setVerPedido] = useState(null);
   const [expandedRows, setExpandedRows] = useState({});
 
   const role = me?.rol || me?.role;
@@ -2969,20 +3012,10 @@ export default function Pedidos() {
   }, [pedidos, estadoFiltro, idFiltro, fechaFiltro, solicitanteFiltro, textoFiltro, mapProdName]);
 
   const toggleExpanded = (pedidoId) => {
-    setExpandedRows((prev) => {
-      const willOpen = !prev[pedidoId];
-      // Al ABRIR el detalle, si es un proveedor viendo un pedido de reposición
-      // aún no leído, se marca "Leído" (una sola vez) y se refresca.
-      if (willOpen && isProveedor) {
-        const ped = (pedidos || []).find((x) => x.id === pedidoId);
-        if (ped && ped.tipo === "reposicion" && !ped.leido_at) {
-          marcarPedidoLeido(pedidoId)
-            .then(() => refrescar())
-            .catch(() => {});
-        }
-      }
-      return { ...prev, [pedidoId]: willOpen };
-    });
+    setExpandedRows((prev) => ({
+      ...prev,
+      [pedidoId]: !prev[pedidoId],
+    }));
   };
 
   const clearFilters = () => {
@@ -3444,26 +3477,26 @@ export default function Pedidos() {
                           })()}
 
                           {(() => {
-                            if (!isProveedor || p.tipo !== "reposicion" || p.aceptado_at) return null;
+                            if (!isProveedor || p.tipo !== "reposicion") return null;
                             const e = estadoNormalizado(estado);
-                            if (e !== "APROBADO" && e !== "APROBADO_PARCIAL") return null;
+                            if (!["APROBADO", "APROBADO_PARCIAL", "SERVIDO"].includes(e)) return null;
                             return (
                               <button
                                 type="button"
-                                onClick={() => setAceptarObj(p)}
-                                title="Aceptar el pedido e indicar la fecha estimada de entrega"
+                                onClick={() => setVerPedido(p)}
+                                title="Ver el pedido y aceptarlo"
                                 style={{
                                   padding: "8px 12px",
                                   borderRadius: 12,
-                                  border: "none",
-                                  background: "linear-gradient(90deg,#10b981,#06b6d4)",
-                                  color: "#fff",
+                                  border: "1px solid rgba(59,130,246,0.35)",
+                                  background: "rgba(59,130,246,0.10)",
+                                  color: "#1d4ed8",
                                   fontWeight: 900,
                                   cursor: "pointer",
                                   fontSize: 13,
                                 }}
                               >
-                                ✓ Aceptar
+                                👁 Ver Pedido
                               </button>
                             );
                           })()}
@@ -3521,11 +3554,12 @@ export default function Pedidos() {
         onError={(d) => showTimedMessage(d, "error")}
       />
 
-      <AceptarModal
-        pedido={aceptarObj}
-        onClose={() => setAceptarObj(null)}
-        onDone={() => {
-          setAceptarObj(null);
+      <VerPedidoModal
+        pedido={verPedido}
+        onClose={() => setVerPedido(null)}
+        onLeido={() => refrescar()}
+        onAceptado={() => {
+          setVerPedido(null);
           showTimedMessage("Pedido aceptado. Fecha estimada de entrega guardada.", "success");
           refrescar();
         }}
