@@ -18,6 +18,8 @@ import {
   descargarPedidoPdf,
   devolverPedido,
   getZonasConfig,
+  marcarPedidoLeido,
+  aceptarPedido,
 } from "../api/api";
 
 // Zonas por defecto (fallback si no se puede leer la config de zonas del vivero).
@@ -54,6 +56,7 @@ const ESTADO_FILTERS = [
 const estadoLabel = (estado) => {
   const e = String(estado || "").trim().toUpperCase();
   if (e === "APROBADO_PARCIAL") return "APROBADO PARCIAL";
+  if (e === "LEIDO") return "LEÍDO";
   return e || "—";
 };
 
@@ -2539,6 +2542,54 @@ function DevolucionModal({ pedido, onClose, onDone, onError }) {
   );
 }
 
+// ── Modal: el proveedor acepta un pedido de reposición con fecha estimada ──
+function AceptarModal({ pedido, onClose, onDone, onError }) {
+  const [fecha, setFecha] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (pedido) { setFecha(""); setErr(""); }
+  }, [pedido]);
+  if (!pedido) return null;
+  const hoy = new Date().toISOString().slice(0, 10);
+  const onSubmit = async () => {
+    setErr("");
+    if (!fecha) { setErr("Indica la fecha estimada de entrega."); return; }
+    if (fecha < hoy) { setErr("La fecha no puede ser anterior a hoy."); return; }
+    setBusy(true);
+    try {
+      await aceptarPedido(pedido.id, fecha);
+      onDone?.();
+    } catch (e) {
+      const d = e?.response?.data?.detail || e?.message || "No se pudo aceptar el pedido.";
+      setErr(d);
+      onError?.(d);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const inp = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", outline: "none", fontWeight: 700, color: "#0f172a", background: "#fff", boxSizing: "border-box" };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ width: "min(460px, 96vw)", background: "#fff", borderRadius: 18, overflow: "hidden", boxShadow: "0 32px 80px rgba(2,6,23,0.38)" }}>
+        <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", color: "#fff", padding: "16px 20px" }}>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>Aceptar pedido #{pedido.id}</div>
+          <div style={{ marginTop: 2, color: "rgba(255,255,255,0.6)", fontWeight: 700, fontSize: 12 }}>Indica cuándo prevés entregarlo en el vivero.</div>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Fecha estimada de entrega</div>
+          <input type="date" min={hoy} value={fecha} onChange={(e) => setFecha(e.target.value)} style={inp} />
+          {err ? <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{err}</div> : null}
+        </div>
+        <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(15,23,42,0.08)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.14)", background: "#fff", color: "#334155", fontWeight: 900, cursor: "pointer" }}>Cancelar</button>
+          <button onClick={onSubmit} disabled={busy} style={{ padding: "9px 22px", borderRadius: 10, border: "none", background: busy ? "#94a3b8" : "linear-gradient(90deg,#10b981,#06b6d4)", color: "#fff", fontWeight: 900, cursor: busy ? "not-allowed" : "pointer" }}>{busy ? "Guardando…" : "✓ Aceptar pedido"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Pedidos() {
   const { me } = useOutletContext();
 
@@ -2564,6 +2615,7 @@ export default function Pedidos() {
   const [modalOpen, setModalOpen] = useState(false);
   const [imprimirOpen, setImprimirOpen] = useState(false);
   const [devolucionPedido, setDevolucionPedido] = useState(null);
+  const [aceptarObj, setAceptarObj] = useState(null);
   const [expandedRows, setExpandedRows] = useState({});
 
   const role = me?.rol || me?.role;
@@ -2917,10 +2969,20 @@ export default function Pedidos() {
   }, [pedidos, estadoFiltro, idFiltro, fechaFiltro, solicitanteFiltro, textoFiltro, mapProdName]);
 
   const toggleExpanded = (pedidoId) => {
-    setExpandedRows((prev) => ({
-      ...prev,
-      [pedidoId]: !prev[pedidoId],
-    }));
+    setExpandedRows((prev) => {
+      const willOpen = !prev[pedidoId];
+      // Al ABRIR el detalle, si es un proveedor viendo un pedido de reposición
+      // aún no leído, se marca "Leído" (una sola vez) y se refresca.
+      if (willOpen && isProveedor) {
+        const ped = (pedidos || []).find((x) => x.id === pedidoId);
+        if (ped && ped.tipo === "reposicion" && !ped.leido_at) {
+          marcarPedidoLeido(pedidoId)
+            .then(() => refrescar())
+            .catch(() => {});
+        }
+      }
+      return { ...prev, [pedidoId]: willOpen };
+    });
   };
 
   const clearFilters = () => {
@@ -3110,6 +3172,7 @@ export default function Pedidos() {
               <tbody>
                 {pedidosFiltrados.map((p) => {
                   const estado = p.estado || "RESERVA";
+                  const estadoEfectivo = p.estado_efectivo || estado;
                   const canEditCancel = puedeEditarCancelar(p);
                   const expanded = !!expandedRows[p.id];
 
@@ -3239,15 +3302,27 @@ export default function Pedidos() {
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)", whiteSpace: "nowrap" }}>
                         {(() => {
-                          const e = estadoNormalizado(estado);
-                          let color = "#92400e"; // reserva/default ámbar
+                          const e = estadoNormalizado(estadoEfectivo);
+                          let color = "#92400e"; // solicitado/default ámbar
                           if (e === "APROBADO") color = "#065f46";
                           else if (e === "APROBADO_PARCIAL") color = "#115e59";
+                          else if (e === "LEIDO") color = "#1d4ed8";
+                          else if (e === "ACEPTADO") color = "#7c3aed";
+                          else if (e === "RETRASADO") color = "#b91c1c";
                           else if (e === "DENEGADO") color = "#991b1b";
                           else if (e === "SERVIDO") color = "#1e3a8a";
                           else if (e === "CANCELADO") color = "#334155";
                           else if (e === "CADUCADO") color = "#475569";
-                          return <span style={{ fontWeight: 900, color, fontSize: 13 }}>{estadoLabel(estado)}</span>;
+                          return (
+                            <span style={{ fontWeight: 900, color, fontSize: 13 }}>
+                              {estadoLabel(estadoEfectivo)}
+                              {p.fecha_estimada_entrega ? (
+                                <div style={{ fontWeight: 700, fontSize: 11, color: e === "RETRASADO" ? "#b91c1c" : "#64748b" }}>
+                                  Entrega est.: {fmtFechaES(p.fecha_estimada_entrega)}
+                                </div>
+                              ) : null}
+                            </span>
+                          );
                         })()}
                       </td>
 
@@ -3369,6 +3444,31 @@ export default function Pedidos() {
                           })()}
 
                           {(() => {
+                            if (!isProveedor || p.tipo !== "reposicion" || p.aceptado_at) return null;
+                            const e = estadoNormalizado(estado);
+                            if (e !== "APROBADO" && e !== "APROBADO_PARCIAL") return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setAceptarObj(p)}
+                                title="Aceptar el pedido e indicar la fecha estimada de entrega"
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: 12,
+                                  border: "none",
+                                  background: "linear-gradient(90deg,#10b981,#06b6d4)",
+                                  color: "#fff",
+                                  fontWeight: 900,
+                                  cursor: "pointer",
+                                  fontSize: 13,
+                                }}
+                              >
+                                ✓ Aceptar
+                              </button>
+                            );
+                          })()}
+
+                          {(() => {
                             // Show the "—" placeholder ONLY when there are
                             // truly no actions to render: can't edit/cancel
                             // and no PDF available either.  PDF is now available
@@ -3416,6 +3516,17 @@ export default function Pedidos() {
         onDone={() => {
           setDevolucionPedido(null);
           showTimedMessage("Devolución registrada. Stock reintegrado al vivero.", "success");
+          refrescar();
+        }}
+        onError={(d) => showTimedMessage(d, "error")}
+      />
+
+      <AceptarModal
+        pedido={aceptarObj}
+        onClose={() => setAceptarObj(null)}
+        onDone={() => {
+          setAceptarObj(null);
+          showTimedMessage("Pedido aceptado. Fecha estimada de entrega guardada.", "success");
           refrescar();
         }}
         onError={(d) => showTimedMessage(d, "error")}
