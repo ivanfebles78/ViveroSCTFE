@@ -169,9 +169,10 @@ export const marcarPedidoLeido = async (pedidoId) => {
   return data;
 };
 
-export const aceptarPedido = async (pedidoId, fechaEstimadaEntrega) => {
+export const aceptarPedido = async (pedidoId, fechaEstimadaEntrega, comentario) => {
   const { data } = await api.post(`/pedidos/${pedidoId}/aceptar`, {
     fecha_estimada_entrega: fechaEstimadaEntrega,
+    comentario: comentario || null,
   });
   return data;
 };

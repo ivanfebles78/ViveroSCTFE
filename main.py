@@ -70,6 +70,7 @@ def _ensure_schema() -> None:
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS aceptado_at TIMESTAMP",
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS aceptado_por VARCHAR(150)",
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_estimada_entrega DATE",
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS comentario_proveedor TEXT",
     ]
     try:
         with engine.begin() as conn:
@@ -1185,6 +1186,7 @@ def _pedido_to_dict(
         "aceptado_at": getattr(pedido, "aceptado_at", None),
         "aceptado_por": getattr(pedido, "aceptado_por", None),
         "fecha_estimada_entrega": getattr(pedido, "fecha_estimada_entrega", None),
+        "comentario_proveedor": getattr(pedido, "comentario_proveedor", None),
         # Modificación pendiente (si la hay): congela el pedido hasta decidirse.
         "modificacion_pendiente": _serialize_modificacion(_modificacion_pendiente(pedido)),
         "items": [
@@ -3373,6 +3375,7 @@ def registrar_devolucion_pedido(
 # =============================
 class AceptarPedidoIn(BaseModel):
     fecha_estimada_entrega: date
+    comentario: Optional[str] = None
 
 
 def _get_reposicion_o_400(db: Session, pedido_id: int) -> Pedido:
@@ -3424,6 +3427,7 @@ def aceptar_pedido(
     pedido.aceptado_at = ahora
     pedido.aceptado_por = user.username
     pedido.fecha_estimada_entrega = payload.fecha_estimada_entrega
+    pedido.comentario_proveedor = (payload.comentario or "").strip() or None
     db.commit()
     db.refresh(pedido)
     return {

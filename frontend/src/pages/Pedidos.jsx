@@ -2545,10 +2545,11 @@ function DevolucionModal({ pedido, onClose, onDone, onError }) {
 // ── Modal: el proveedor acepta un pedido de reposición con fecha estimada ──
 function AceptarModal({ pedido, onClose, onDone, onError }) {
   const [fecha, setFecha] = useState("");
+  const [comentario, setComentario] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
-    if (pedido) { setFecha(""); setErr(""); }
+    if (pedido) { setFecha(""); setComentario(""); setErr(""); }
   }, [pedido]);
   if (!pedido) return null;
   const hoy = new Date().toISOString().slice(0, 10);
@@ -2558,7 +2559,7 @@ function AceptarModal({ pedido, onClose, onDone, onError }) {
     if (fecha < hoy) { setErr("La fecha no puede ser anterior a hoy."); return; }
     setBusy(true);
     try {
-      await aceptarPedido(pedido.id, fecha);
+      await aceptarPedido(pedido.id, fecha, comentario.trim() || null);
       onDone?.();
     } catch (e) {
       const d = e?.response?.data?.detail || e?.message || "No se pudo aceptar el pedido.";
@@ -2579,6 +2580,8 @@ function AceptarModal({ pedido, onClose, onDone, onError }) {
         <div style={{ padding: 20 }}>
           <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Fecha estimada de entrega</div>
           <input type="date" min={hoy} value={fecha} onChange={(e) => setFecha(e.target.value)} style={inp} />
+          <div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: "14px 0 6px" }}>Comentario (opcional)</div>
+          <textarea value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Añade un comentario sobre la entrega…" style={{ ...inp, minHeight: 70, resize: "vertical" }} />
           {err ? <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#991b1b", fontWeight: 800, fontSize: 13 }}>{err}</div> : null}
         </div>
         <div style={{ padding: "12px 18px", borderTop: "1px solid rgba(15,23,42,0.08)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -3321,6 +3324,11 @@ export default function Pedidos() {
                                   Entrega est.: {fmtFechaES(p.fecha_estimada_entrega)}
                                 </div>
                               ) : null}
+                              {p.comentario_proveedor ? (
+                                <div style={{ fontWeight: 700, fontSize: 11, color: "#64748b", maxWidth: 220, whiteSpace: "normal", marginTop: 2 }} title={p.comentario_proveedor}>
+                                  💬 {p.comentario_proveedor}
+                                </div>
+                              ) : null}
                             </span>
                           );
                         })()}
@@ -3421,7 +3429,9 @@ export default function Pedidos() {
                             const e = estadoNormalizado(estado);
                             const servidoParcial = e === "SERVIDO" || e === "APROBADO_PARCIAL";
                             const tieneDevolvible = (p.items || []).some((it) => Number(it.devolvible || 0) > 0);
-                            if (!puedeDevolver || !servidoParcial || !tieneDevolvible) return null;
+                            // La devolución solo aplica a SALIDAS (material que sale del
+                            // vivero). En reposición (material que entra) no hay devolución.
+                            if (p.tipo === "reposicion" || !puedeDevolver || !servidoParcial || !tieneDevolvible) return null;
                             return (
                               <button
                                 type="button"

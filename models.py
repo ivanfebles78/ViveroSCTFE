@@ -146,6 +146,8 @@ class Pedido(Base):
     aceptado_at = Column(DateTime, nullable=True)
     aceptado_por = Column(String(150), nullable=True)
     fecha_estimada_entrega = Column(Date, nullable=True)
+    # Comentario opcional que el proveedor añade al aceptar el pedido.
+    comentario_proveedor = Column(Text, nullable=True)
 
     items = relationship(
         "PedidoItem",
