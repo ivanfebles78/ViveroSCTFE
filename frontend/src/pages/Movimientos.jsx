@@ -763,7 +763,14 @@ function PedidoSelectorModal({ open, pedidos, onClose, onSelect }) {
                   <div style={{ padding: "10px 16px", display: "grid", gap: 6 }}>
                     {safeArray(p.items).map((it, idx) => (
                       <div key={`${p.id}-${idx}`} style={{ padding: "8px 12px", borderRadius: 8, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.07)", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13 }}>{it.producto_nombre || `Producto #${it.producto_id}`}</div>
+                        <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 13 }}>
+                          {it.producto_nombre || `Producto #${it.producto_id}`}
+                          {Array.isArray(it.matriculas) && it.matriculas.some((m) => m) ? (
+                            <div style={{ marginTop: 2, color: "#334155", fontWeight: 800, fontSize: 11 }}>
+                              🏷️ IDs: <span style={{ fontWeight: 700, color: "#0f172a" }}>{it.matriculas.filter((m) => m).join(", ")}</span>
+                            </div>
+                          ) : null}
+                        </div>
                         <div style={{ color: "#64748b", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>{it.tamano || "—"} · {formatCantidad(it.cantidad) || "0"} uds</div>
                       </div>
                     ))}
@@ -1859,6 +1866,13 @@ function MovimientoModal({
                               <div>
                                 <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{linea.producto_nombre || `Producto #${linea.producto_id}`}</div>
                                 <div style={{ marginTop: 2, color: "#64748b", fontWeight: 700, fontSize: 12 }}>Tamaño: {linea.tamano || "—"} · Cantidad: {linea.cantidad || 0}{disabled ? ` · ${linea._razon_bloqueo === "ya_en_lote" ? "✓ añadida al lote" : linea._razon_bloqueo === "ya_servida" ? "ya movida" : linea._razon_bloqueo === "item_denegado" ? "línea denegada" : linea._razon_bloqueo === "item_pendiente" ? "pendiente de aprobar" : "no disponible"}` : ""}</div>
+                                {/* IDs/matrículas por unidad (árboles/palmeras UTE):
+                                    útil al preparar físicamente las piezas. */}
+                                {Array.isArray(linea.matriculas) && linea.matriculas.some((m) => m) ? (
+                                  <div style={{ marginTop: 3, color: "#334155", fontWeight: 800, fontSize: 12 }}>
+                                    🏷️ IDs: <span style={{ fontWeight: 700, color: "#0f172a" }}>{linea.matriculas.filter((m) => m).join(", ")}</span>
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                             {!disabled && (
