@@ -181,6 +181,10 @@ class PedidoItem(Base):
     # cantidad_servida - cantidad_devuelta (nunca se puede devolver más de lo
     # que salió). No cambia el estado del pedido (sigue SERVIDO).
     cantidad_devuelta = Column(Numeric(12, 3), nullable=False, default=0, server_default="0")
+    # IDs/matrículas por unidad para árboles/palmeras (JSON: lista de strings).
+    # Opcional; lo rellena la empresa externa (UTE) al crear el pedido para que
+    # el personal del ayuntamiento sepa dónde va plantada cada unidad.
+    matriculas = Column(Text, nullable=True)
 
     # Destino por línea (para pedidos con varios destinos: la empresa externa
     # puede repartir el material entre distintas direcciones). Si es NULL, se

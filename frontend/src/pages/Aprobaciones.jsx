@@ -560,6 +560,16 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
                       <tr key={it.id || `${grupo.destino}-${idx}`} style={{ borderTop: "1px solid rgba(15,23,42,0.06)", ...rowMuted }}>
                         <td style={{ ...tdStyle(), textDecoration: estIt === "DENEGADO" ? "line-through" : "none" }}>
                           {productoLabel}
+                          {/* IDs/matrículas por unidad (árboles/palmeras UTE).
+                              Solo lectura: las consulta el manager al aprobar. */}
+                          {Array.isArray(it.matriculas) && it.matriculas.some((m) => m) ? (
+                            <div style={{ marginTop: 3, fontSize: 11, fontWeight: 800, color: "#334155", textDecoration: "none" }}>
+                              🏷️ IDs:{" "}
+                              <span style={{ fontWeight: 700, color: "#0f172a" }}>
+                                {it.matriculas.filter((m) => m).join(", ")}
+                              </span>
+                            </div>
+                          ) : null}
                         </td>
                         <td style={tdStyle()}>{it.tamano || "—"}</td>
                         <td style={{ ...tdStyle(), fontWeight: 900 }}>{formatCantidad(cantidad) || "0"}</td>

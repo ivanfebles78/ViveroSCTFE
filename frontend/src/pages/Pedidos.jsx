@@ -750,7 +750,9 @@ function PedidoModal({
   // eligiendo productos y asociándolos a cada destino.
   const MAX_DESTINOS = 10;
   const grupoSeqRef = useRef(1);
-  const makeGrupo = () => ({ _id: grupoSeqRef.current++, distrito: "", barrio: "", direccion: "", cart: {} });
+  // `matriculas`: por línea (lineKey) una lista de IDs/matrículas, una entrada
+  // por unidad. Solo se usa para árboles/palmeras en pedidos de la UTE.
+  const makeGrupo = () => ({ _id: grupoSeqRef.current++, distrito: "", barrio: "", direccion: "", cart: {}, matriculas: {} });
   const [grupos, setGrupos] = useState(() => [makeGrupo()]);
   // Grupo al que se añaden los productos seleccionados en el panel izquierdo.
   const [activeGrupoId, setActiveGrupoId] = useState(null);
@@ -890,7 +892,23 @@ function PedidoModal({
         const cart = { ...g.cart };
         if (qty <= 0) delete cart[key];
         else cart[key] = qty;
-        return { ...g, cart };
+        // Si se quita la línea, descartamos también sus matrículas.
+        const matriculas = { ...(g.matriculas || {}) };
+        if (qty <= 0) delete matriculas[key];
+        return { ...g, cart, matriculas };
+      })
+    );
+  };
+  // Fija el ID/matrícula de la unidad `idx` de una línea (árbol/palmera, UTE).
+  const setGrupoLineMatricula = (grupoId, key, idx, value) => {
+    setGrupos((prev) =>
+      prev.map((g) => {
+        if (g._id !== grupoId) return g;
+        const prevArr = (g.matriculas && g.matriculas[key]) || [];
+        const arr = prevArr.slice();
+        while (arr.length <= idx) arr.push("");
+        arr[idx] = value;
+        return { ...g, matriculas: { ...(g.matriculas || {}), [key]: arr } };
       })
     );
   };
@@ -1031,14 +1049,22 @@ function PedidoModal({
     const items = [];
     for (const g of grupos) {
       for (const line of grupoLines(g)) {
-        items.push({
+        const item = {
           producto_id: line.producto_id,
           tamano: line.tamano,
           cantidad: line.cantidad,
           distrito_destino: g.distrito,
           barrio_destino: g.barrio,
           direccion_destino: String(g.direccion || "").trim(),
-        });
+        };
+        // Matrículas: recortadas al nº de unidades; solo se envían si hay alguna
+        // con contenido (conservan su posición = unidad #1, #2, …).
+        const n = Math.max(0, Math.floor(Number(line.cantidad) || 0));
+        const matArr = ((g.matriculas && g.matriculas[line.key]) || [])
+          .slice(0, n)
+          .map((m) => String(m || "").trim());
+        if (matArr.some((m) => m)) item.matriculas = matArr;
+        items.push(item);
       }
     }
     const primero = grupos[0];
@@ -1506,8 +1532,16 @@ function PedidoModal({
                         {lines.map((line) => {
                           const prod = productos.find((p) => p.id === line.producto_id);
                           const allowDecimals = !!getProductFormatoConfig(prod)?.allowDecimals;
+                          // Árboles y palmeras de la UTE admiten un ID/matrícula
+                          // por unidad (opcional), para saber dónde va plantado.
+                          const sub = String(prod?.subcategoria || "").trim().toLowerCase();
+                          const esArbolPalmera = sub === "arbol" || sub === "árbol" || sub === "palmera";
+                          const nUnidades = Math.max(0, Math.floor(Number(line.cantidad) || 0));
+                          const mostrarMatriculas = esEmpresaExterna && esArbolPalmera && nUnidades > 0;
+                          const matArr = (g.matriculas && g.matriculas[line.key]) || [];
                           return (
-                            <div key={line.key} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
+                            <div key={line.key} style={{ display: "grid", gap: 6 }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", borderRadius: 10, background: "rgba(248,250,252,0.9)", border: "1px solid rgba(15,23,42,0.06)" }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line.nombre}</div>
                                 <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>Tamaño: {line.tamano}</div>
@@ -1521,6 +1555,26 @@ function PedidoModal({
                                 style={{ width: 84, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.12)", textAlign: "center", fontWeight: 900, color: "#0f172a" }}
                               />
                               <button type="button" onClick={() => setGrupoLineQty(g._id, line.key, 0)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(239,68,68,0.18)", background: "rgba(239,68,68,0.08)", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 12 }}>Quitar</button>
+                            </div>
+                            {mostrarMatriculas && (
+                              <div style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(59,130,246,0.05)", border: "1px dashed rgba(59,130,246,0.28)" }}>
+                                <div style={{ fontSize: 11, fontWeight: 900, color: "#1e3a8a", marginBottom: 6 }}>
+                                  ID / matrículas <span style={{ fontWeight: 700, color: "#64748b" }}>(opcional · una por unidad)</span>
+                                </div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                  {Array.from({ length: nUnidades }).map((_, i) => (
+                                    <input
+                                      key={i}
+                                      value={matArr[i] || ""}
+                                      onChange={(e) => setGrupoLineMatricula(g._id, line.key, i, e.target.value)}
+                                      placeholder={`ID #${i + 1}`}
+                                      maxLength={60}
+                                      style={{ width: 112, padding: "6px 8px", borderRadius: 8, border: "1px solid rgba(15,23,42,0.14)", fontWeight: 700, color: "#0f172a", fontSize: 12, background: "#fff" }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             </div>
                           );
                         })}
@@ -1789,6 +1843,17 @@ function PedidoDetalleCellOld({
                   {variosDestinos && _dstDeItem(it) ? (
                     <div style={{ marginTop: 2, fontSize: 11, fontWeight: 800, color: "#1e3a8a" }}>
                       📍 {_dstDeItem(it)}
+                    </div>
+                  ) : null}
+
+                  {/* IDs/matrículas por unidad (árboles/palmeras de la UTE).
+                      Solo lectura: lo rellena la UTE, lo consulta quien aprueba. */}
+                  {Array.isArray(it.matriculas) && it.matriculas.some((m) => m) ? (
+                    <div style={{ marginTop: 3, fontSize: 11, fontWeight: 800, color: "#334155" }}>
+                      🏷️ IDs:{" "}
+                      <span style={{ fontWeight: 700, color: "#0f172a" }}>
+                        {it.matriculas.filter((m) => m).join(", ")}
+                      </span>
                     </div>
                   ) : null}
 

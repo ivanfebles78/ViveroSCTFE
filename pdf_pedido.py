@@ -8,9 +8,27 @@ listo para servir desde FastAPI con `Response(content=..., media_type=...)`.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
+
+
+def _matriculas_de_item(item) -> list:
+    """Lee las matrículas (JSON) de un PedidoItem como lista de strings.
+
+    Tolera None, texto no-JSON o tipos raros: devuelve [] si no hay datos.
+    """
+    raw = getattr(item, "matriculas", None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(x).strip() if x is not None else "" for x in data]
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -174,6 +192,16 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
         fontSize=8.5,
         textColor=COLOR_GRIS,
     )
+    # Celda de IDs/matrículas dentro de la tabla de items (permite ajuste de
+    # línea cuando hay varias matrículas por producto).
+    style_matricula = ParagraphStyle(
+        "MatriculaViverApp",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=COLOR_SECUNDARIO,
+    )
 
     story = []
 
@@ -262,6 +290,12 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
                 n_reserva += 1
         is_partial = len(all_labels) > 1
 
+        # ¿Algún item lleva IDs/matrículas? Solo entonces añadimos la columna,
+        # para no ensuciar los PDF de pedidos sin matrículas (reposición, etc.).
+        hay_matriculas = any(
+            any(m for m in _matriculas_de_item(it)) for it in items
+        )
+
         if is_partial:
             resumen_parts = []
             if n_aprobado: resumen_parts.append(f"<b><font color='#065F46'>{n_aprobado} aprobado{'s' if n_aprobado != 1 else ''}</font></b>")
@@ -301,13 +335,30 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
             ]))
             story.append(barra)
 
+            # Índices de columna según si mostramos la columna de matrículas.
+            # Orden base: # | Producto | Tamaño | Cantidad | [ID/Matrículas] | Servida | [Estado]
+            col_cant = 3
+            col_mat = 4 if hay_matriculas else None
+            col_serv = 5 if hay_matriculas else 4
+            col_est = (6 if hay_matriculas else 5) if is_partial else None
+
+            header = ["#", "Producto", "Tamaño", "Cantidad"]
+            if hay_matriculas:
+                header.append("ID/Matrículas")
+            header.append("Servida")
             if is_partial:
-                data = [["#", "Producto", "Tamaño", "Cantidad", "Servida", "Estado"]]
+                header.append("Estado")
+
+            if hay_matriculas and is_partial:
+                col_widths = [8 * mm, 44 * mm, 22 * mm, 22 * mm, 32 * mm, 22 * mm, 25 * mm]
+            elif hay_matriculas:
+                col_widths = [8 * mm, 55 * mm, 28 * mm, 25 * mm, 34 * mm, 25 * mm]
+            elif is_partial:
                 col_widths = [10 * mm, 56 * mm, 30 * mm, 26 * mm, 26 * mm, 27 * mm]
             else:
-                data = [["#", "Producto", "Tamaño", "Cantidad", "Servida"]]
                 col_widths = [10 * mm, 70 * mm, 35 * mm, 30 * mm, 30 * mm]
 
+            data = [header]
             per_row_styles = []
             for idx, item in enumerate(grupo_items, start=1):
                 prod = getattr(item, "producto", None)
@@ -318,11 +369,15 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
                 cantidad = f"{_fmt_cantidad(item.cantidad)} {unidad}"
                 servida = f"{_fmt_cantidad(item.cantidad_servida)} {unidad}"
                 label, bg, fg = _item_estado_label(getattr(item, "estado_item", None))
+                fila = [str(idx), nombre, str(tam), cantidad]
+                if hay_matriculas:
+                    ms = [m for m in _matriculas_de_item(item) if m]
+                    fila.append(Paragraph(", ".join(ms) if ms else "—", style_matricula))
+                fila.append(servida)
                 if is_partial:
-                    data.append([str(idx), nombre, str(tam), cantidad, servida, label])
+                    fila.append(label)
                     per_row_styles.append((idx, bg, fg, label == "Denegado"))
-                else:
-                    data.append([str(idx), nombre, str(tam), cantidad, servida])
+                data.append(fila)
 
             t_items = Table(data, colWidths=col_widths)
             base_style = [
@@ -332,7 +387,8 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
                 ("FONTSIZE", (0, 0), (-1, 0), 9),
                 ("FONTSIZE", (0, 1), (-1, -1), 9),
                 ("ALIGN", (0, 0), (0, -1), "CENTER"),
-                ("ALIGN", (3, 0), (4, -1), "RIGHT"),
+                ("ALIGN", (col_cant, 0), (col_cant, -1), "RIGHT"),
+                ("ALIGN", (col_serv, 0), (col_serv, -1), "RIGHT"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -341,14 +397,16 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, COLOR_GRIS_FONDO]),
                 ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
             ]
+            if col_mat is not None:
+                base_style.append(("ALIGN", (col_mat, 0), (col_mat, -1), "LEFT"))
             if is_partial:
-                base_style.append(("ALIGN", (5, 0), (5, -1), "CENTER"))
-                base_style.append(("FONTNAME", (5, 1), (5, -1), "Helvetica-Bold"))
+                base_style.append(("ALIGN", (col_est, 0), (col_est, -1), "CENTER"))
+                base_style.append(("FONTNAME", (col_est, 1), (col_est, -1), "Helvetica-Bold"))
                 for row_idx, bg, fg, is_denegado in per_row_styles:
-                    base_style.append(("BACKGROUND", (5, row_idx), (5, row_idx), bg))
-                    base_style.append(("TEXTCOLOR", (5, row_idx), (5, row_idx), fg))
+                    base_style.append(("BACKGROUND", (col_est, row_idx), (col_est, row_idx), bg))
+                    base_style.append(("TEXTCOLOR", (col_est, row_idx), (col_est, row_idx), fg))
                     if is_denegado:
-                        base_style.append(("TEXTCOLOR", (0, row_idx), (4, row_idx), COLOR_GRIS))
+                        base_style.append(("TEXTCOLOR", (0, row_idx), (col_est - 1, row_idx), COLOR_GRIS))
             t_items.setStyle(TableStyle(base_style))
             story.append(t_items)
             story.append(Spacer(1, 8))

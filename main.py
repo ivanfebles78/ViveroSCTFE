@@ -71,6 +71,8 @@ def _ensure_schema() -> None:
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS aceptado_por VARCHAR(150)",
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_estimada_entrega DATE",
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS comentario_proveedor TEXT",
+        # IDs/matrículas por unidad (árboles/palmeras) en las líneas de pedido.
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS matriculas TEXT",
     ]
     try:
         with engine.begin() as conn:
@@ -1128,6 +1130,38 @@ def _serialize_modificacion(mod) -> Optional[dict]:
     }
 
 
+def _parse_matriculas(raw) -> list:
+    """Devuelve la lista de IDs/matrículas almacenada como JSON en el item.
+
+    Tolera valores None, texto no-JSON o tipos inesperados: siempre devuelve
+    una lista de strings (vacía si no hay nada).
+    """
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(x) if x is not None else "" for x in data]
+
+
+def _normalize_matriculas(raw) -> Optional[str]:
+    """Normaliza la lista de matrículas recibida del frontend para guardarla.
+
+    Recorta espacios de cada entrada conservando su posición (la unidad #1,
+    #2, …). Si no queda ninguna entrada con contenido, devuelve None para no
+    guardar JSON vacío.
+    """
+    if not raw:
+        return None
+    limpio = [str(x).strip() if x is not None else "" for x in raw]
+    if not any(limpio):
+        return None
+    return json.dumps(limpio, ensure_ascii=False)
+
+
 def _pedido_to_dict(
     pedido: Pedido,
     viewer_role: Optional[str] = None,
@@ -1210,6 +1244,9 @@ def _pedido_to_dict(
                 "distrito_destino": getattr(item, "distrito_destino", None) or getattr(pedido, "distrito_destino", None),
                 "barrio_destino": getattr(item, "barrio_destino", None) or getattr(pedido, "barrio_destino", None),
                 "direccion_destino": getattr(item, "direccion_destino", None) or getattr(pedido, "direccion_destino", None),
+                # IDs/matrículas por unidad (árboles/palmeras de la UTE). Lista
+                # de strings (una por unidad); huecos vacíos = sin ID asignado.
+                "matriculas": _parse_matriculas(getattr(item, "matriculas", None)),
                 "servicio_completo": int(getattr(item, "cantidad_servida", 0) or 0)
                 >= int(getattr(item, "cantidad", 0) or 0),
                 "producto_nombre_cientifico": getattr(getattr(item, "producto", None), "nombre_cientifico", None),
@@ -2003,6 +2040,12 @@ def create_pedido(
                 distrito_destino=it_distrito,
                 barrio_destino=it_barrio,
                 direccion_destino=it_direccion,
+                # Matrículas solo tienen sentido en salidas (árboles/palmeras UTE).
+                matriculas=(
+                    _normalize_matriculas(item.matriculas)
+                    if tipo_pedido == "salida"
+                    else None
+                ),
             )
         )
 
