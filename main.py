@@ -194,6 +194,9 @@ class PedidoItemCreate(BaseModel):
     distrito_destino: Optional[str] = None
     barrio_destino: Optional[str] = None
     direccion_destino: Optional[str] = None
+    # IDs/matrículas por unidad (solo árboles/palmeras en pedidos de la UTE).
+    # Lista opcional; una entrada por unidad, se permiten huecos vacíos.
+    matriculas: Optional[List[str]] = None
 
 
 class PedidoCreate(BaseModel):
