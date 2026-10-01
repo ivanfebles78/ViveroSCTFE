@@ -3,6 +3,7 @@ from typing import Optional, List
 import unicodedata
 import uuid
 import json
+import re
 from decimal import Decimal
 
 from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File, Request
@@ -74,12 +75,15 @@ def _ensure_schema() -> None:
         # IDs/matrículas por unidad (árboles/palmeras) en las líneas de pedido.
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS matriculas TEXT",
     ]
-    try:
-        with engine.begin() as conn:
-            for stmt in ddl:
+    # IMPORTANTE: cada sentencia en SU PROPIA transacción. Si todas comparten
+    # una, un fallo en PostgreSQL aborta la transacción entera y NINGUNA columna
+    # se añade (incluida matriculas), lo que luego rompe los INSERT del ORM.
+    for stmt in ddl:
+        try:
+            with engine.begin() as conn:
                 conn.execute(text(stmt))
-    except Exception as exc:  # pragma: no cover - no debe tumbar el arranque
-        print(f"[schema] aviso al asegurar columnas: {exc}")
+        except Exception as exc:  # pragma: no cover - no debe tumbar el arranque
+            print(f"[schema] aviso al asegurar columna ({stmt!r}): {exc}")
 
 
 _ensure_schema()
@@ -105,6 +109,28 @@ logging.basicConfig(level=logging.INFO)
 # cualquier excepción, registra el traceback completo en los logs de
 # Railway y devuelve un JSON con detalle útil que sí lleva los headers
 # CORS, así el frontend puede mostrar el mensaje real al usuario.
+def _cors_headers_for(request: Request) -> dict:
+    """Devuelve las cabeceras CORS para una respuesta de error.
+
+    El handler de excepciones corre FUERA del CORSMiddleware (en Starlette el
+    ServerErrorMiddleware es el más externo), así que sus respuestas NO llevan
+    los headers CORS automáticos → el navegador las muestra como "CORS error"
+    en vez del 500 real. Las añadimos a mano reflejando el Origin si es válido.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    permitido = origin == "http://localhost:5173" or bool(
+        re.match(r"^https://.*\.railway\.app$", origin)
+    )
+    if not permitido:
+        return {}
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Vary": "Origin",
+    }
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.error(
@@ -118,6 +144,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={
             "detail": f"Error interno: {type(exc).__name__}: {str(exc)[:300]}",
         },
+        headers=_cors_headers_for(request),
     )
 
 # =============================
