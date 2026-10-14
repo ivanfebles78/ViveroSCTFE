@@ -4588,7 +4588,7 @@ class ConsumeTokenIn(BaseModel):
 
 
 # Símbolos aceptados como "carácter especial" en la contraseña.
-_PASSWORD_SYMBOLS = "!*#_"
+_PASSWORD_SYMBOLS = "!*#_@"
 
 
 def _validate_password_or_400(pwd: str) -> str:
@@ -4609,7 +4609,7 @@ def _validate_password_or_400(pwd: str) -> str:
     if not any(c.isdigit() for c in pwd):
         raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos un número.")
     if not any(c in _PASSWORD_SYMBOLS for c in pwd):
-        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos un símbolo (! * # _).")
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos un símbolo (! * # _ @).")
     return pwd
 
 

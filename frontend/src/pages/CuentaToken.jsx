@@ -34,6 +34,27 @@ function extractError(err, fallback) {
   return err?.message || fallback;
 }
 
+function eyeIcon(visible) {
+  if (visible) {
+    // Ojo tachado = contraseña visible, pulsa para ocultar.
+    return (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path d="M3 3l18 18" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17.9 17.9 0 0 1-3.2 4M6.2 6.2A17.9 17.9 0 0 0 2 12s3.5 7 10 7a10.5 10.5 0 0 0 4.3-.9"
+          stroke="#64748b" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  // Ojo = contraseña oculta, pulsa para ver.
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="#64748b" strokeWidth="1.6" />
+      <circle cx="12" cy="12" r="3" stroke="#64748b" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
 function shieldIcon() {
   return (
     <svg width="44" height="44" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -59,6 +80,7 @@ export default function CuentaToken({ purposeOverride }) {
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const copy = useMemo(() => PURPOSE_COPY[purpose] || PURPOSE_COPY.activate, [purpose]);
 
@@ -103,8 +125,8 @@ export default function CuentaToken({ purposeOverride }) {
       setErrorMsg("La contraseña debe incluir al menos un número.");
       return;
     }
-    if (!/[!*#_]/.test(password)) {
-      setErrorMsg("La contraseña debe incluir al menos un símbolo (! * # _).");
+    if (!/[!*#_@]/.test(password)) {
+      setErrorMsg("La contraseña debe incluir al menos un símbolo (! * # _ @).");
       return;
     }
     if (password !== confirm) {
@@ -179,34 +201,58 @@ export default function CuentaToken({ purposeOverride }) {
               <form onSubmit={onSubmit} style={styles.form}>
                 <label style={styles.label}>
                   Nueva contraseña
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    style={styles.input}
-                    autoComplete="new-password"
-                    minLength={8}
-                    required
-                    disabled={phase === "submitting"}
-                  />
+                  <div style={styles.inputWrap}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={styles.inputWithIcon}
+                      autoComplete="new-password"
+                      minLength={8}
+                      required
+                      disabled={phase === "submitting"}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      style={styles.eyeBtn}
+                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      tabIndex={-1}
+                    >
+                      {eyeIcon(showPassword)}
+                    </button>
+                  </div>
                 </label>
 
                 <label style={styles.label}>
                   Confirma la contraseña
-                  <input
-                    type="password"
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    style={styles.input}
-                    autoComplete="new-password"
-                    minLength={8}
-                    required
-                    disabled={phase === "submitting"}
-                  />
+                  <div style={styles.inputWrap}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                      style={styles.inputWithIcon}
+                      autoComplete="new-password"
+                      minLength={8}
+                      required
+                      disabled={phase === "submitting"}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      style={styles.eyeBtn}
+                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      tabIndex={-1}
+                    >
+                      {eyeIcon(showPassword)}
+                    </button>
+                  </div>
                 </label>
 
                 <p style={styles.hint}>
-                  Mínimo 8 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo (! * # _).
+                  Mínimo 8 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo (! * # _ @).
                 </p>
 
                 {errorMsg && <div style={styles.errorBox}>{errorMsg}</div>}
@@ -313,6 +359,37 @@ const styles = {
     fontSize: 14,
     outline: "none",
     fontFamily: "inherit",
+  },
+  inputWrap: {
+    position: "relative",
+    display: "block",
+  },
+  inputWithIcon: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "10px 44px 10px 12px",
+    border: "1px solid #d6d3d1",
+    borderRadius: 10,
+    fontSize: 14,
+    outline: "none",
+    fontFamily: "inherit",
+  },
+  eyeBtn: {
+    position: "absolute",
+    right: 6,
+    top: "50%",
+    transform: "translateY(-50%)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    padding: 0,
+    border: "none",
+    borderRadius: 8,
+    background: "transparent",
+    cursor: "pointer",
+    lineHeight: 0,
   },
   hint: {
     margin: 0,
