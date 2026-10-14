@@ -271,8 +271,22 @@ export default function AdminUsuarios() {
 
   const flash = (msg) => {
     setInfo(msg);
-    setTimeout(() => setInfo(""), 4000);
+    setTimeout(() => setInfo(""), 5000);
   };
+
+  // Los mensajes (éxito/error) se cierran solos a los 5 s; también pueden
+  // cerrarse a mano con la X de cada banner.
+  useEffect(() => {
+    if (!info) return;
+    const t = setTimeout(() => setInfo(""), 5000);
+    return () => clearTimeout(t);
+  }, [info]);
+
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(""), 5000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   const handleBackup = async () => {
     setBackupBusy(true);
@@ -452,14 +466,16 @@ export default function AdminUsuarios() {
       </div>
 
       {info && (
-        <div style={{ ...flashBox, background: "#dcfce7", borderColor: "#16a34a", color: "#166534" }}>
-          {info}
+        <div style={{ ...flashBox, background: "#dcfce7", borderColor: "#16a34a", color: "#166534", display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <span style={{ flex: 1 }}>{info}</span>
+          <button type="button" onClick={() => setInfo("")} aria-label="Cerrar" style={flashCloseBtn}>×</button>
         </div>
       )}
 
       {error && (
-        <div style={{ ...flashBox, background: "#fee2e2", borderColor: "#dc2626", color: "#991b1b" }}>
-          {error}
+        <div style={{ ...flashBox, background: "#fee2e2", borderColor: "#dc2626", color: "#991b1b", display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <span style={{ flex: 1 }}>{error}</span>
+          <button type="button" onClick={() => setError("")} aria-label="Cerrar" style={flashCloseBtn}>×</button>
         </div>
       )}
 
@@ -903,6 +919,22 @@ const flashBox = {
   border: "1px solid",
   fontWeight: 700,
   fontSize: 14,
+};
+
+const flashCloseBtn = {
+  flexShrink: 0,
+  width: 24,
+  height: 24,
+  lineHeight: "20px",
+  padding: 0,
+  border: "none",
+  borderRadius: 6,
+  background: "transparent",
+  color: "inherit",
+  fontSize: 20,
+  fontWeight: 900,
+  cursor: "pointer",
+  opacity: 0.7,
 };
 
 function pageBtnStyle(active, disabled) {
