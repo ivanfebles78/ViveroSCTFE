@@ -4518,11 +4518,12 @@ def admin_resend_invitation(
     db.commit()
     try:
         email_service.send_invitation_email(
-            to=user.email, username=user.username, token=raw_token
+            to=user.email, username=user.username, token=raw_token, strict=True
         )
     except Exception as e:  # noqa: BLE001
-        print(f"[admin_resend_invitation] Email send failed: {e}")
-    return {"ok": True}
+        print(f"[admin_resend_invitation] Email send failed: {e}", flush=True)
+        raise HTTPException(status_code=502, detail=f"No se pudo enviar el correo: {e}")
+    return {"ok": True, "sent_to": user.email, "driver": email_service.config_status().get("driver")}
 
 
 @app.post("/admin/users/{user_id}/reset-password")
@@ -4541,11 +4542,12 @@ def admin_reset_password(
     db.commit()
     try:
         email_service.send_reset_password_email(
-            to=user.email, username=user.username, token=raw_token
+            to=user.email, username=user.username, token=raw_token, strict=True
         )
     except Exception as e:  # noqa: BLE001
-        print(f"[admin_reset_password] Email send failed: {e}")
-    return {"ok": True}
+        print(f"[admin_reset_password] Email send failed: {e}", flush=True)
+        raise HTTPException(status_code=502, detail=f"No se pudo enviar el correo: {e}")
+    return {"ok": True, "sent_to": user.email, "driver": email_service.config_status().get("driver")}
 
 
 @app.post("/admin/users/{user_id}/unlock")
@@ -4569,11 +4571,12 @@ def admin_unlock_user(
     db.commit()
     try:
         email_service.send_unlock_email(
-            to=user.email, username=user.username, token=raw_token
+            to=user.email, username=user.username, token=raw_token, strict=True
         )
     except Exception as e:  # noqa: BLE001
-        print(f"[admin_unlock_user] Email send failed: {e}")
-    return {"ok": True}
+        print(f"[admin_unlock_user] Email send failed: {e}", flush=True)
+        raise HTTPException(status_code=502, detail=f"No se pudo enviar el correo: {e}")
+    return {"ok": True, "sent_to": user.email, "driver": email_service.config_status().get("driver")}
 
 
 # =============================

@@ -161,12 +161,15 @@ def _send_resend(*, to: str, subject: str, html: str, text: str,
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status >= 400:
                 body = resp.read().decode("utf-8", errors="replace")
-                print(f"[email:resend] HTTP {resp.status}: {body}")
+                print(f"[email:resend] HTTP {resp.status}: {body}", flush=True)
                 if strict:
                     raise RuntimeError(f"Resend rechazó el envío (HTTP {resp.status}): {body}")
+            else:
+                body = resp.read().decode("utf-8", errors="replace")
+                print(f"[email:resend] OK {resp.status} -> {to}: {body}", flush=True)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-        print(f"[email:resend] ERROR HTTP {e.code}: {body}")
+        print(f"[email:resend] ERROR HTTP {e.code}: {body}", flush=True)
         if strict:
             raise RuntimeError(f"Resend rechazó el envío (HTTP {e.code}): {body}")
         # No relanzamos: el flujo de admin no debería romperse porque falle el email.
@@ -231,22 +234,22 @@ def _send_brevo(*, to: str, subject: str, html: str, text: str,
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status >= 400:
                 body = resp.read().decode("utf-8", errors="replace")
-                print(f"[email:brevo] HTTP {resp.status}: {body}")
+                print(f"[email:brevo] HTTP {resp.status}: {body}", flush=True)
                 if strict:
                     raise RuntimeError(f"Brevo rechazó el envío (HTTP {resp.status}): {body}")
             else:
                 # Brevo responde 201 con un messageId al aceptar el envío.
                 body = resp.read().decode("utf-8", errors="replace")
-                print(f"[email:brevo] OK {resp.status}: {body}")
+                print(f"[email:brevo] OK {resp.status} -> {to}: {body}", flush=True)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-        print(f"[email:brevo] ERROR HTTP {e.code}: {body}")
+        print(f"[email:brevo] ERROR HTTP {e.code}: {body}", flush=True)
         if strict:
             raise RuntimeError(f"Brevo rechazó el envío (HTTP {e.code}): {body}")
     except RuntimeError:
         raise
     except Exception as e:  # noqa: BLE001
-        print(f"[email:brevo] ERROR: {e}")
+        print(f"[email:brevo] ERROR: {e}", flush=True)
         if strict:
             raise RuntimeError(f"Error al enviar por Brevo: {type(e).__name__}: {e}")
 
@@ -503,7 +506,7 @@ def _wrap_text(intro: str, button_url: str, outro: str) -> str:
     )
 
 
-def send_invitation_email(*, to: str, username: str, token: str) -> None:
+def send_invitation_email(*, to: str, username: str, token: str, strict: bool = False) -> None:
     url = f"{_frontend_url()}/activar/{token}"
     subject = "ViverApp · Activa tu cuenta"
     html = _wrap_html(
@@ -526,10 +529,10 @@ def send_invitation_email(*, to: str, username: str, token: str) -> None:
         button_url=url,
         outro="Si no esperabas este mensaje, contacta con el administrador del sistema.",
     )
-    _dispatch(to=to, subject=subject, html=html, text=text)
+    _dispatch(to=to, subject=subject, html=html, text=text, strict=strict)
 
 
-def send_reset_password_email(*, to: str, username: str, token: str) -> None:
+def send_reset_password_email(*, to: str, username: str, token: str, strict: bool = False) -> None:
     url = f"{_frontend_url()}/reset-password/{token}"
     subject = "Reset Password"
     html = _wrap_html(
@@ -552,7 +555,7 @@ def send_reset_password_email(*, to: str, username: str, token: str) -> None:
         button_url=url,
         outro="Si no has pedido este cambio, contacta inmediatamente con el administrador.",
     )
-    _dispatch(to=to, subject=subject, html=html, text=text)
+    _dispatch(to=to, subject=subject, html=html, text=text, strict=strict)
 
 
 def config_status() -> dict:
@@ -618,7 +621,7 @@ def send_test_email(*, to: str) -> None:
     )
 
 
-def send_unlock_email(*, to: str, username: str, token: str) -> None:
+def send_unlock_email(*, to: str, username: str, token: str, strict: bool = False) -> None:
     url = f"{_frontend_url()}/desbloquear/{token}"
     subject = "Desbloqueo de cuenta"
     html = _wrap_html(
@@ -641,7 +644,7 @@ def send_unlock_email(*, to: str, username: str, token: str) -> None:
         button_url=url,
         outro="Si no has solicitado este desbloqueo, contacta con el administrador.",
     )
-    _dispatch(to=to, subject=subject, html=html, text=text)
+    _dispatch(to=to, subject=subject, html=html, text=text, strict=strict)
 
 
 # ----------------------------------------------------------------------------
