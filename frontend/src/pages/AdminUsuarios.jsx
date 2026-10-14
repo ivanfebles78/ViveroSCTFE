@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   adminListUsers,
   adminCreateUser,
@@ -234,6 +235,7 @@ function EditUserForm({ user, onCancel, onUpdated, onError }) {
 }
 
 export default function AdminUsuarios() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -460,9 +462,17 @@ export default function AdminUsuarios() {
             Crea cuentas, reenvía invitaciones, restablece contraseñas y desbloquea cuentas.
           </p>
         </div>
-        <button style={btnPrimary} onClick={() => setModal({ type: "new" })}>
-          + Nuevo usuario
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            style={{ ...btnPrimary, background: "#fff", color: "#0f5132", border: "1px solid rgba(15,81,50,0.35)" }}
+            onClick={() => navigate("/admin/conexiones")}
+          >
+            📊 Conexiones
+          </button>
+          <button style={btnPrimary} onClick={() => setModal({ type: "new" })}>
+            + Nuevo usuario
+          </button>
+        </div>
       </div>
 
       {/* Toast fijo: siempre visible en pantalla aunque se haya hecho scroll. */}

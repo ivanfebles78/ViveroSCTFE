@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { clearStoredToken, getMe, getProductos, getZonaItems, getPedidos, marcarZonaInterna } from "../api/api";
+import { clearStoredToken, getStoredToken, getMe, getProductos, getZonaItems, getPedidos, marcarZonaInterna, authHeartbeat, authLogout } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
 import zonasDefault from "../components/vivero/zonasConfig";
 import ZoneEditor from "../components/vivero/ZoneEditor";
@@ -1492,6 +1492,16 @@ export default function Layout() {
     loadMe();
   }, [navigate]);
 
+  // Heartbeat de conexión: cada 60 s avisa "sigo conectado" para el informe de
+  // conexiones (admin). Al cerrar/recargar la pestaña deja de llegar y el
+  // backend estima la desconexión por la última señal recibida.
+  useEffect(() => {
+    if (!getStoredToken()) return;
+    authHeartbeat();
+    const id = setInterval(() => authHeartbeat(), 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const rolActual = (me?.rol || me?.role || "").trim().toLowerCase();
   const esEmpresaExternaRol = rolActual === "empresa_externa";
 
@@ -1948,7 +1958,9 @@ export default function Layout() {
             </button>
 
             <button
-              onClick={() => {
+              onClick={async () => {
+                // Registra la desconexión antes de limpiar la sesión.
+                await authLogout();
                 clearStoredToken();
                 try {
                   window.localStorage.removeItem("user");

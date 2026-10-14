@@ -386,3 +386,22 @@ class MovimientoLoteDetalle(Base):
 
     movimiento = relationship("Movimiento", back_populates="detalles")
     producto = relationship("Producto")
+
+# =========================
+# CONEXIONES DE USUARIO
+# Registro de cada login a la aplicación, para el informe de conexiones
+# (solo visible por el administrador). Guarda quién, cuándo entró, su última
+# actividad (heartbeat) y cuándo se desconectó.
+# =========================
+class ConexionUsuario(Base):
+    __tablename__ = "conexiones_usuario"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(150), nullable=False, index=True)
+    rol = Column(String(50), nullable=True)
+    login_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    # Última señal de actividad del cliente (heartbeat). Si deja de llegar,
+    # usamos este valor como hora aproximada de desconexión.
+    last_seen_at = Column(DateTime, nullable=True)
+    # Desconexión explícita (botón "Salir").
+    logout_at = Column(DateTime, nullable=True)

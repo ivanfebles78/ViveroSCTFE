@@ -441,6 +441,28 @@ export const adminUnlockUser = async (userId) => {
   return data;
 };
 
+// ---------------- CONEXIONES ----------------
+
+// Señal de "sigo conectado". Silenciosa (no rompe la UI si falla).
+export const authHeartbeat = async () => {
+  try {
+    await api.post("/auth/heartbeat");
+  } catch { /* noop */ }
+};
+
+// Desconexión explícita (botón Salir). Silenciosa.
+export const authLogout = async () => {
+  try {
+    await api.post("/auth/logout");
+  } catch { /* noop */ }
+};
+
+// Informe de conexiones (solo admin).
+export const adminConexiones = async ({ limit = 100, offset = 0 } = {}) => {
+  const { data } = await api.get(`/admin/conexiones?limit=${limit}&offset=${offset}`);
+  return data;
+};
+
 // Diagnóstico de correo (solo admin).
 export const adminEmailConfig = async () => {
   const { data } = await api.get("/admin/email-config");

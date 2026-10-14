@@ -36,6 +36,7 @@ from models import (
     CaducidadConfig,
     AccountToken,
     ZonaPolygon,
+    ConexionUsuario,
     Base,
 )
 from schemas import PedidoActionRequest, PedidoDecidirRequest, PedidoOut
@@ -368,7 +369,18 @@ def auth_login(payload: LoginRequest, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
 
-    access_token = create_access_token({"sub": user.username})
+    # Registro de conexión (informe de conexiones del admin). El id de la
+    # conexión viaja en el token (sid) para poder cerrarla al salir / por
+    # inactividad.
+    ahora = datetime.utcnow()
+    conexion = ConexionUsuario(
+        username=user.username, rol=user.rol, login_at=ahora, last_seen_at=ahora
+    )
+    db.add(conexion)
+    db.commit()
+    db.refresh(conexion)
+
+    access_token = create_access_token({"sub": user.username, "sid": conexion.id})
 
     return {
         "access_token": access_token,
@@ -427,6 +439,125 @@ def require_roles(roles: list[str]):
         return current_user
 
     return _dep
+
+
+# =============================
+# CONEXIONES (login/heartbeat/logout + informe admin)
+# =============================
+def _sid_from_authorization(authorization: Optional[str]) -> Optional[int]:
+    """Extrae el id de conexión (sid) del token Bearer, de forma tolerante."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        sid = payload.get("sid")
+        return int(sid) if sid is not None else None
+    except (JWTError, ValueError, TypeError):
+        return None
+
+
+@app.post("/auth/heartbeat")
+def auth_heartbeat(
+    authorization: Optional[str] = Header(default=None),
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Señal periódica de que el usuario sigue conectado. Actualiza last_seen_at
+    de su conexión; si deja de llegar, se considera desconectado."""
+    sid = _sid_from_authorization(authorization)
+    if sid is not None:
+        c = (
+            db.query(ConexionUsuario)
+            .filter(ConexionUsuario.id == sid, ConexionUsuario.logout_at.is_(None))
+            .first()
+        )
+        if c is not None:
+            c.last_seen_at = datetime.utcnow()
+            db.commit()
+    return {"ok": True}
+
+
+@app.post("/auth/logout")
+def auth_logout(
+    authorization: Optional[str] = Header(default=None),
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Desconexión explícita (botón Salir): marca logout_at en la conexión."""
+    sid = _sid_from_authorization(authorization)
+    if sid is not None:
+        ahora = datetime.utcnow()
+        c = (
+            db.query(ConexionUsuario)
+            .filter(
+                ConexionUsuario.id == sid,
+                ConexionUsuario.username == current_user.username,
+                ConexionUsuario.logout_at.is_(None),
+            )
+            .first()
+        )
+        if c is not None:
+            c.logout_at = ahora
+            c.last_seen_at = ahora
+            db.commit()
+    return {"ok": True}
+
+
+# Minutos sin heartbeat tras los que una conexión sin logout se da por cerrada.
+_CONEXION_INACTIVIDAD_MIN = 3
+
+
+@app.get("/admin/conexiones")
+def admin_conexiones(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Informe de conexiones (SOLO admin): cada login con su hora de entrada y
+    de desconexión (explícita o estimada por inactividad)."""
+    limit = max(1, min(int(limit or 100), 500))
+    offset = max(0, int(offset or 0))
+
+    q = db.query(ConexionUsuario).order_by(ConexionUsuario.login_at.desc())
+    total = q.count()
+    rows = q.offset(offset).limit(limit).all()
+
+    ahora = datetime.utcnow()
+    umbral = timedelta(minutes=_CONEXION_INACTIVIDAD_MIN)
+    items = []
+    for c in rows:
+        logout_at = getattr(c, "logout_at", None)
+        last_seen = getattr(c, "last_seen_at", None)
+        login_at = getattr(c, "login_at", None)
+        if logout_at is not None:
+            estado = "cerrada"
+            desconexion = logout_at
+        elif last_seen is not None and (ahora - last_seen) > umbral:
+            estado = "inactiva"
+            desconexion = last_seen
+        else:
+            estado = "activa"
+            desconexion = None
+        duracion = (
+            int((desconexion - login_at).total_seconds())
+            if (login_at is not None and desconexion is not None)
+            else None
+        )
+        items.append({
+            "id": c.id,
+            "username": c.username,
+            "rol": c.rol,
+            "login_at": login_at,
+            "logout_at": logout_at,
+            "last_seen_at": last_seen,
+            "estado": estado,            # activa | inactiva | cerrada
+            "desconexion": desconexion,  # exacta (logout) o estimada (last_seen)
+            "duracion_segundos": duracion,
+        })
+
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
 
 
 # =============================
