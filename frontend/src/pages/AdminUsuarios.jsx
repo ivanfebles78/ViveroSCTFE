@@ -465,17 +465,21 @@ export default function AdminUsuarios() {
         </button>
       </div>
 
-      {info && (
-        <div style={{ ...flashBox, background: "#dcfce7", borderColor: "#16a34a", color: "#166534", display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <span style={{ flex: 1 }}>{info}</span>
-          <button type="button" onClick={() => setInfo("")} aria-label="Cerrar" style={flashCloseBtn}>×</button>
-        </div>
-      )}
-
-      {error && (
-        <div style={{ ...flashBox, background: "#fee2e2", borderColor: "#dc2626", color: "#991b1b", display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <span style={{ flex: 1 }}>{error}</span>
-          <button type="button" onClick={() => setError("")} aria-label="Cerrar" style={flashCloseBtn}>×</button>
+      {/* Toast fijo: siempre visible en pantalla aunque se haya hecho scroll. */}
+      {(info || error) && (
+        <div style={toastContainer}>
+          {info && (
+            <div style={{ ...toastBox, background: "#dcfce7", borderColor: "#16a34a", color: "#166534" }}>
+              <span style={{ flex: 1 }}>{info}</span>
+              <button type="button" onClick={() => setInfo("")} aria-label="Cerrar" style={flashCloseBtn}>×</button>
+            </div>
+          )}
+          {error && (
+            <div style={{ ...toastBox, background: "#fee2e2", borderColor: "#dc2626", color: "#991b1b" }}>
+              <span style={{ flex: 1 }}>{error}</span>
+              <button type="button" onClick={() => setError("")} aria-label="Cerrar" style={flashCloseBtn}>×</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -930,6 +934,34 @@ const flashBox = {
   border: "1px solid",
   fontWeight: 700,
   fontSize: 14,
+};
+
+// Contenedor fijo del toast: centrado arriba, por encima de todo y siempre
+// en la zona visible aunque el usuario haya hecho scroll por la lista.
+const toastContainer = {
+  position: "fixed",
+  top: 16,
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 10000,
+  width: "min(560px, calc(100% - 32px))",
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  pointerEvents: "none",
+};
+
+const toastBox = {
+  pointerEvents: "auto",
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 12,
+  padding: "12px 16px",
+  borderRadius: 12,
+  border: "1px solid",
+  fontWeight: 700,
+  fontSize: 14,
+  boxShadow: "0 12px 32px rgba(2,6,23,0.22)",
 };
 
 const flashCloseBtn = {
