@@ -7,6 +7,8 @@ Drivers soportados:
       EMAIL_DRIVER=resend, RESEND_API_KEY=..., EMAIL_FROM=...
   - "brevo":  API HTTPS de Brevo  (https://brevo.com).
       EMAIL_DRIVER=brevo,  BREVO_API_KEY=...,  EMAIL_FROM=...
+      (La clave se lee de BREVO_API_KEY o, si no está, de MCP_API_KEY —
+       así vale el nombre con el que se generó la API key en Brevo.)
   - "smtp":   SMTP nativo (Office 365, Gmail, cualquier servidor).
       EMAIL_DRIVER=smtp, SMTP_HOST=..., SMTP_PORT=587,
       SMTP_USERNAME=..., SMTP_PASSWORD=..., SMTP_USE_TLS=true,
@@ -79,6 +81,12 @@ def _parse_email_from() -> Tuple[str, str]:
 
 def _driver() -> str:
     return _env("EMAIL_DRIVER", "console").lower()
+
+
+def _brevo_api_key() -> str:
+    """Clave de la API de Brevo. Se acepta tanto BREVO_API_KEY como MCP_API_KEY
+    (el nombre con el que el usuario generó la API key en Railway)."""
+    return _env("BREVO_API_KEY") or _env("MCP_API_KEY")
 
 
 # ----------------------------------------------------------------------------
@@ -174,12 +182,12 @@ def _send_resend(*, to: str, subject: str, html: str, text: str,
 def _send_brevo(*, to: str, subject: str, html: str, text: str,
                 attachments: Optional[List[Attachment]] = None,
                 strict: bool = False) -> None:
-    api_key = _env("BREVO_API_KEY")
+    api_key = _brevo_api_key()
     if not api_key:
         if strict:
-            raise RuntimeError("Driver brevo pero BREVO_API_KEY no está configurada.")
+            raise RuntimeError("Driver brevo pero no hay clave (BREVO_API_KEY ni MCP_API_KEY).")
         print(
-            "[email:brevo] WARNING: BREVO_API_KEY no configurada. "
+            "[email:brevo] WARNING: ni BREVO_API_KEY ni MCP_API_KEY configuradas. "
             "Cayendo a driver consola."
         )
         _send_console(to=to, subject=subject, html=html, text=text, attachments=attachments)
@@ -560,7 +568,7 @@ def config_status() -> dict:
         "email_from": _email_from(),
         "frontend_url": _frontend_url(),
         "resend_api_key_set": _has("RESEND_API_KEY"),
-        "brevo_api_key_set": _has("BREVO_API_KEY"),
+        "brevo_api_key_set": bool(_brevo_api_key()),
         "smtp_host": _env("SMTP_HOST") or None,
         "smtp_port": _env("SMTP_PORT", "587"),
         "smtp_username_set": _has("SMTP_USERNAME"),
@@ -576,7 +584,7 @@ def config_status() -> dict:
     elif driver == "resend" and not status["resend_api_key_set"]:
         status["aviso"] = "Driver resend pero falta RESEND_API_KEY."
     elif driver == "brevo" and not status["brevo_api_key_set"]:
-        status["aviso"] = "Driver brevo pero falta BREVO_API_KEY."
+        status["aviso"] = "Driver brevo pero falta la clave (BREVO_API_KEY o MCP_API_KEY)."
     elif driver == "smtp" and not (status["smtp_host"] and status["smtp_username_set"] and status["smtp_password_set"]):
         status["aviso"] = "Driver smtp pero faltan SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD."
     else:
