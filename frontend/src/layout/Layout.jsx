@@ -253,6 +253,7 @@ function isPathAllowedForRole(pathname, role) {
       "/lotes",
       "/vivero",
       "/admin/usuarios",
+      "/admin/conexiones",
     ].includes(pathname);
   }
 
