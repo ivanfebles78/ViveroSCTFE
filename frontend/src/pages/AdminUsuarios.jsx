@@ -582,7 +582,18 @@ export default function AdminUsuarios() {
             )}
             <div style={{ marginTop: 8, color: "#334155", lineHeight: 1.6 }}>
               <div>Resend API key: <strong>{emailCfg.resend_api_key_set ? "✓ configurada" : "—"}</strong></div>
-              <div>Brevo API key: <strong>{emailCfg.brevo_api_key_set ? "✓ configurada" : "—"}</strong></div>
+              <div>
+                Brevo API key: <strong>{emailCfg.brevo_api_key_set ? "✓ configurada" : "—"}</strong>
+                {emailCfg.brevo_api_key_set && (
+                  <>
+                    {" "}· origen: <strong>{emailCfg.brevo_api_key_source}</strong>
+                    {" "}· formato v3 (xkeysib-):{" "}
+                    <strong style={{ color: emailCfg.brevo_api_key_v3_format ? "#065f46" : "#991b1b" }}>
+                      {emailCfg.brevo_api_key_v3_format ? "✓ sí" : "✗ NO"}
+                    </strong>
+                  </>
+                )}
+              </div>
               <div>SMTP host: <strong>{emailCfg.smtp_host || "—"}</strong> · puerto {emailCfg.smtp_port} · TLS {emailCfg.smtp_use_tls} · SSL {emailCfg.smtp_use_ssl}</div>
               <div>SMTP usuario: <strong>{emailCfg.smtp_username_set ? "✓" : "—"}</strong> · SMTP contraseña: <strong>{emailCfg.smtp_password_set ? "✓" : "—"}</strong></div>
               <div>Frontend URL (enlaces): <strong>{emailCfg.frontend_url}</strong></div>

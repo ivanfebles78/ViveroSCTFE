@@ -572,6 +572,13 @@ def config_status() -> dict:
         "frontend_url": _frontend_url(),
         "resend_api_key_set": _has("RESEND_API_KEY"),
         "brevo_api_key_set": bool(_brevo_api_key()),
+        # Diagnóstico (sin exponer el secreto): de qué variable sale la clave
+        # de Brevo y si tiene formato de API key v3 (empieza por 'xkeysib-').
+        "brevo_api_key_source": (
+            "BREVO_API_KEY" if _has("BREVO_API_KEY")
+            else ("MCP_API_KEY" if _has("MCP_API_KEY") else None)
+        ),
+        "brevo_api_key_v3_format": _brevo_api_key().startswith("xkeysib-"),
         "smtp_host": _env("SMTP_HOST") or None,
         "smtp_port": _env("SMTP_PORT", "587"),
         "smtp_username_set": _has("SMTP_USERNAME"),
