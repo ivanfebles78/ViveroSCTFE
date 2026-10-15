@@ -1160,6 +1160,12 @@ def _notificar_pedido_decidido(db: Session, pedido: Pedido) -> list[str]:
          filtrado a sus líneas).
     Devuelve una lista de avisos para recipients sin email registrado.
     """
+    # Notificaciones de decisión de pedido DESACTIVADAS a petición del cliente:
+    # al aprobar/denegar un pedido no se envía ningún correo (ni al solicitante,
+    # ni a técnicos, ni al proveedor). El resto de correos (usuarios, reset,
+    # desbloqueo, prueba) siguen activos.
+    return []
+
     warnings: list[str] = []
     estado = (getattr(pedido, "estado", "") or "").upper()
     tipo = (getattr(pedido, "tipo", "") or "salida").strip().lower()
