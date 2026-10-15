@@ -2213,10 +2213,10 @@ def create_pedido(
     db.commit()
     db.refresh(pedido)
 
-    # Notify managers — they have a new pedido waiting for their decision.
-    warnings = _notificar_pedido_creado(db, pedido)
-
-    return _pedido_to_dict(pedido, warnings=warnings)
+    # Aviso por email a los managers DESACTIVADO a petición del cliente: al
+    # crear un pedido NO se envía ningún correo. (La notificación de decisión
+    # del pedido —aprobado/denegado— se mantiene intacta.)
+    return _pedido_to_dict(pedido)
 
 
 @app.put("/pedidos/{pedido_id}")
