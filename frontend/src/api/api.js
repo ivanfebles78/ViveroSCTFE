@@ -441,6 +441,12 @@ export const adminUnlockUser = async (userId) => {
   return data;
 };
 
+// Desbloqueo directo (sin correo): reactiva la cuenta con su contraseña actual.
+export const adminMarkUserActive = async (userId) => {
+  const { data } = await api.post(`/admin/users/${userId}/mark-active`);
+  return data;
+};
+
 // ---------------- CONEXIONES ----------------
 
 // Señal de "sigo conectado". Silenciosa (no rompe la UI si falla).

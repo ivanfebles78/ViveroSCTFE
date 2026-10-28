@@ -8,6 +8,7 @@ import {
   adminResendInvitation,
   adminResetPassword,
   adminUnlockUser,
+  adminMarkUserActive,
   descargarBackup,
   restaurarBackup,
   adminEmailConfig,
@@ -394,6 +395,25 @@ export default function AdminUsuarios() {
     }
   };
 
+  // Desbloqueo directo desde el panel (sin correo): reactiva con su contraseña.
+  const handleMarkActive = async (user) => {
+    if (!window.confirm(
+      `¿Marcar la cuenta de "${user.username}" como desbloqueada?\n\n` +
+      "Se reactivará con su contraseña actual (no se envía ningún correo)."
+    )) return;
+    setBusyId(user.id);
+    setError("");
+    try {
+      await adminMarkUserActive(user.id);
+      flash(`Cuenta de ${user.username} desbloqueada (activa).`);
+      await reload();
+    } catch (err) {
+      setError(extractError(err, "No se pudo desbloquear la cuenta."));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleDelete = async (user) => {
     const confirmed = window.confirm(
       `¿Borrar definitivamente al usuario "${user.username}"?\n\n` +
@@ -751,9 +771,24 @@ export default function AdminUsuarios() {
                           </button>
                         )}
                         {status === "bloqueado" && (
-                          <button style={btnActionWarn} onClick={() => handleUnlock(u)} disabled={isBusy}>
-                            Desbloquear
-                          </button>
+                          <>
+                            <button
+                              style={{ ...btnAction, background: "#0f5132", color: "#fff", borderColor: "#0f5132" }}
+                              onClick={() => handleMarkActive(u)}
+                              disabled={isBusy}
+                              title="Reactivar la cuenta con su contraseña actual, sin enviar correo"
+                            >
+                              ✓ Desbloquear
+                            </button>
+                            <button
+                              style={btnActionWarn}
+                              onClick={() => handleUnlock(u)}
+                              disabled={isBusy}
+                              title="Enviar un correo para que el usuario defina una nueva contraseña"
+                            >
+                              Email de desbloqueo
+                            </button>
+                          </>
                         )}
                         <button style={btnAction} onClick={() => setModal({ type: "edit", user: u })} disabled={isBusy}>
                           Editar

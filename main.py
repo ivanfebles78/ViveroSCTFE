@@ -4716,6 +4716,29 @@ def admin_unlock_user(
     return {"ok": True, "sent_to": user.email, "driver": email_service.config_status().get("driver")}
 
 
+@app.post("/admin/users/{user_id}/mark-active")
+def admin_mark_active(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Desbloqueo DIRECTO desde el panel (sin correo): reactiva la cuenta con su
+    contraseña actual y pone a cero el contador de intentos fallidos."""
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if (user.status or "").strip().lower() != "bloqueado":
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede desbloquear a usuarios en estado 'bloqueado'.",
+        )
+    user.status = "activo"
+    user.failed_login_attempts = 0
+    db.add(user)
+    db.commit()
+    return {"ok": True, "username": user.username, "status": user.status}
+
+
 # =============================
 # TOKENS PÚBLICOS (sin auth)
 # Activación inicial · Reset password · Unlock
