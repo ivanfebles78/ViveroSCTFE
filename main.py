@@ -2326,6 +2326,12 @@ def update_pedido(
                 distrito_destino=it_distrito,
                 barrio_destino=it_barrio,
                 direccion_destino=it_direccion,
+                # Preserva los IDs/matrículas por unidad al editar (árboles/palmeras).
+                matriculas=(
+                    _normalize_matriculas(item.matriculas)
+                    if tipo_pedido == "salida"
+                    else None
+                ),
             )
         )
 

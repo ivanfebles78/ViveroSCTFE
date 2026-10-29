@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getPedidos, aprobarPedido, denegarPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf } from "../api/api";
+import { getPedidos, getProductos, updatePedido, aprobarPedido, denegarPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf } from "../api/api";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
 
@@ -42,6 +42,53 @@ const ESTADO_FILTERS = [
 const DECIDABLE_FRONTEND = new Set(["RESERVA", "APROBADO_PARCIAL"]);
 
 const safeArray = (x) => (Array.isArray(x) ? x : []);
+
+// ── Disponibilidad / reglas de tamaño (espejo del backend) ──────────────
+const _normTxt = (s) =>
+  String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+const _normTam = (s) => {
+  const r = String(s || "").trim().toLowerCase();
+  return r === "m30" ? "m35" : r;
+};
+// ¿Ese tamaño está permitido para pedidos de ese producto? (reglas de planta)
+function _tamanoDisponiblePlanta(categoria, subcategoria, tamano) {
+  if (!["planta", "plantas"].includes(_normTxt(categoria))) return true;
+  const t = _normTam(tamano);
+  if (t === "" || t === "semillero") return false;
+  const s = _normTxt(subcategoria);
+  if (s === "arbusto") return t === "m20" || t === "m35";
+  if (s === "palmera") return t === "m20" || t === "m35";
+  if (s === "arbol") return t === "m35";
+  return t === "m12" || t === "m20" || t === "m35";
+}
+const _prodNombre = (p) =>
+  p?.nombre_cientifico || p?.producto_nombre_cientifico || p?.nombre || p?.nombre_natural || `Producto #${p?.id}`;
+// Disponibilidad por tamaño que da el backend (stock − reservado por pedidos vivos).
+const _dispBySize = (p) => (p && (p.disponible_by_size || p.stock_by_size)) || {};
+
+const selMini = {
+  height: 42,
+  padding: "0 12px",
+  borderRadius: 10,
+  border: "1px solid rgba(15,23,42,0.18)",
+  background: "#fff",
+  fontWeight: 700,
+  color: "#0f172a",
+  fontSize: 13,
+  outline: "none",
+  boxSizing: "border-box",
+  width: "100%",
+};
+const btnGhostMini = {
+  padding: "9px 16px",
+  borderRadius: 10,
+  border: "1px solid rgba(15,23,42,0.18)",
+  background: "#fff",
+  color: "#0f172a",
+  fontWeight: 900,
+  fontSize: 13,
+  cursor: "pointer",
+};
 
 const fmtFechaES = (value) => {
   if (!value) return "—";
@@ -192,7 +239,7 @@ const DESTINO_COLORS = [
 ];
 const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
 
-function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdated, onMessage }) {
+function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = false, onPedidoUpdated, onMessage }) {
   // Pending decisions: { [item.id]: "aprobar" | "denegar" }.  Lives only
   // in the modal — nothing hits the DB until the manager presses
   // "Confirmar decisiones".  Closing the modal discards them.
@@ -206,11 +253,64 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
   const [modDecisions, setModDecisions] = useState({}); // { [cambio.id]: "aprobar" | "denegar" }
   const [modSubmitting, setModSubmitting] = useState(false);
 
+  // ── Edición del pedido (solo manager/admin sobre pedidos de salida en RESERVA) ──
+  const [editing, setEditing] = useState(false);
+  // Copia de trabajo de las líneas mientras se edita.
+  const [editLines, setEditLines] = useState([]); // [{key, producto_id, tamano, nombre, cantidad, destino, matriculas}]
+  const [savingEdit, setSavingEdit] = useState(false);
+  // Panel "Añadir producto".
+  const [addOpen, setAddOpen] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
+  const [addCat, setAddCat] = useState("");
+  const [addSub, setAddSub] = useState("");
+  const [addProductId, setAddProductId] = useState("");
+  const [addTam, setAddTam] = useState("");
+  const [addQty, setAddQty] = useState("1");
+  const [addDestIdx, setAddDestIdx] = useState(0);
+
+  // Disponibilidad por (producto, tamaño) que da el backend.
+  const dispMap = useMemo(() => {
+    const m = new Map();
+    for (const p of safeArray(productos)) {
+      const d = _dispBySize(p);
+      for (const [t, q] of Object.entries(d)) m.set(`${Number(p.id)}|${_normTam(t)}`, Math.max(0, Number(q || 0)));
+    }
+    return m;
+  }, [productos]);
+
+  // Suma original de este pedido por (producto, tamaño) — para devolver su propia
+  // reserva al "pool" disponible al editar.
+  const origSumByKey = useMemo(() => {
+    const m = new Map();
+    for (const it of safeArray(pedido?.items)) {
+      const k = `${Number(it.producto_id)}|${_normTam(it.tamano)}`;
+      m.set(k, (m.get(k) || 0) + Number(it.cantidad || 0));
+    }
+    return m;
+  }, [pedido]);
+
+  // Productos con stock (al menos un tamaño permitido y con disponibilidad > 0),
+  // para el buscador de "Añadir producto".
+  const productosConStock = useMemo(() => {
+    return safeArray(productos)
+      .map((p) => {
+        const d = _dispBySize(p);
+        const sizes = Object.entries(d)
+          .filter(([t, q]) => Number(q || 0) > 0 && _tamanoDisponiblePlanta(p.categoria, p.subcategoria, t))
+          .map(([t]) => t);
+        return { ...p, _sizes: sizes };
+      })
+      .filter((p) => p._sizes.length > 0);
+  }, [productos]);
+
   // Reset local state whenever a different pedido is opened.
   useEffect(() => {
     setPendingDecisions({});
     setMotivo("");
     setModDecisions({});
+    setEditing(false);
+    setEditLines([]);
+    setAddOpen(false);
   }, [pedido?.id]);
 
   if (!pedido) return null;
@@ -367,6 +467,194 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
     return order.map((dst) => ({ destino: dst, items: map.get(dst) }));
   })();
 
+  // ── Edición: solo pedidos de SALIDA en estado RESERVA y con permiso ──
+  const tipoPedido = (pedido?.tipo || "salida").toString().trim().toLowerCase();
+  const editable =
+    canApprove && estadoNormPedido === "RESERVA" && tipoPedido === "salida" && !mod;
+
+  // Lista de destinos del pedido (para asignar los productos añadidos).
+  const destinosList = (() => {
+    const seen = new Map();
+    for (const it of items) {
+      const label = destinoDeItem(it);
+      const key = label || "__main__";
+      if (!seen.has(key)) {
+        seen.set(key, {
+          label: label || destino,
+          distrito: it.distrito_destino ?? pedido.distrito_destino ?? null,
+          barrio: it.barrio_destino ?? pedido.barrio_destino ?? null,
+          direccion: it.direccion_destino ?? pedido.direccion_destino ?? null,
+        });
+      }
+    }
+    if (seen.size === 0) {
+      seen.set("__main__", {
+        label: destino,
+        distrito: pedido.distrito_destino ?? null,
+        barrio: pedido.barrio_destino ?? null,
+        direccion: pedido.direccion_destino ?? null,
+      });
+    }
+    return Array.from(seen.values());
+  })();
+
+  const poolFor = (pid, tam) => {
+    const k = `${Number(pid)}|${_normTam(tam)}`;
+    return (dispMap.get(k) || 0) + (origSumByKey.get(k) || 0);
+  };
+  const editUsedByKey = (pid, tam, exceptIdx = -1) => {
+    const k = `${Number(pid)}|${_normTam(tam)}`;
+    let s = 0;
+    editLines.forEach((l, i) => {
+      if (i !== exceptIdx && `${Number(l.producto_id)}|${_normTam(l.tamano)}` === k) s += Number(l.cantidad || 0);
+    });
+    return s;
+  };
+  const maxForLine = (idx) => {
+    const l = editLines[idx];
+    if (!l) return 0;
+    return Math.max(0, poolFor(l.producto_id, l.tamano) - editUsedByKey(l.producto_id, l.tamano, idx));
+  };
+
+  const startEdit = () => {
+    setEditLines(
+      safeArray(pedido.items).map((it, i) => ({
+        key: String(it.id ?? `k${i}`),
+        producto_id: Number(it.producto_id),
+        tamano: it.tamano,
+        nombre:
+          it.producto_nombre_cientifico || it.producto_nombre || it.producto_nombre_natural || `Producto #${it.producto_id}`,
+        cantidad: Number(it.cantidad || 0),
+        destino: {
+          distrito: it.distrito_destino ?? null,
+          barrio: it.barrio_destino ?? null,
+          direccion: it.direccion_destino ?? null,
+        },
+        matriculas: Array.isArray(it.matriculas) ? it.matriculas.slice() : null,
+      }))
+    );
+    setEditing(true);
+    setAddOpen(false);
+  };
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditLines([]);
+    setAddOpen(false);
+  };
+  const setLineQty = (idx, val) => {
+    const max = maxForLine(idx);
+    let n = Math.floor(Number(val) || 0);
+    if (n < 1) n = 1;
+    if (max > 0 && n > max) n = max;
+    setEditLines((prev) =>
+      prev.map((l, i) =>
+        i === idx
+          ? { ...l, cantidad: n, matriculas: Array.isArray(l.matriculas) ? l.matriculas.slice(0, n) : l.matriculas }
+          : l
+      )
+    );
+  };
+  const removeLine = (idx) => setEditLines((prev) => prev.filter((_, i) => i !== idx));
+
+  // Buscador de "Añadir producto".
+  const addCats = Array.from(new Set(productosConStock.map((p) => String(p.categoria || "").trim()).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b, "es")
+  );
+  const addSubs = Array.from(
+    new Set(
+      productosConStock
+        .filter((p) => !addCat || String(p.categoria || "").trim() === addCat)
+        .map((p) => String(p.subcategoria || "").trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b, "es"));
+  const addFiltered = productosConStock
+    .filter((p) => {
+      if (addCat && String(p.categoria || "").trim() !== addCat) return false;
+      if (addSub && String(p.subcategoria || "").trim() !== addSub) return false;
+      const txt = addSearch.trim().toLowerCase();
+      if (!txt) return true;
+      return [p.nombre_cientifico, p.nombre_natural, p.nombre, p.categoria, p.subcategoria]
+        .map((x) => String(x || "").toLowerCase())
+        .some((x) => x.includes(txt));
+    })
+    .sort((a, b) => String(_prodNombre(a)).localeCompare(String(_prodNombre(b)), "es"));
+  const addProductObj = productosConStock.find((p) => String(p.id) === String(addProductId)) || null;
+  const addSizes = addProductObj ? addProductObj._sizes : [];
+  const addDisp = addProductObj && addTam ? Math.max(0, poolFor(addProductObj.id, addTam) - editUsedByKey(addProductObj.id, addTam)) : 0;
+
+  const confirmAdd = () => {
+    if (!addProductObj || !addTam) return;
+    const n = Math.floor(Number(addQty) || 0);
+    if (n < 1) {
+      if (onMessage) onMessage("Indica una cantidad válida.");
+      return;
+    }
+    if (n > addDisp) {
+      if (onMessage) onMessage(`Solo hay ${addDisp} disponibles de ${_prodNombre(addProductObj)} (${addTam}).`);
+      return;
+    }
+    const dest = destinosList[addDestIdx] || destinosList[0];
+    setEditLines((prev) => [
+      ...prev,
+      {
+        key: `new-${Date.now()}`,
+        producto_id: Number(addProductObj.id),
+        tamano: addTam,
+        nombre: _prodNombre(addProductObj),
+        cantidad: n,
+        destino: { distrito: dest?.distrito ?? null, barrio: dest?.barrio ?? null, direccion: dest?.direccion ?? null },
+        matriculas: null,
+      },
+    ]);
+    // Reset del formulario de añadir (mantiene cat/subcat para añadir varios).
+    setAddProductId("");
+    setAddTam("");
+    setAddQty("1");
+    setAddOpen(false);
+  };
+
+  const saveEdit = async () => {
+    if (savingEdit) return;
+    if (editLines.length === 0) {
+      if (onMessage) onMessage("El pedido debe tener al menos una línea.");
+      return;
+    }
+    const payload = {
+      nota: pedido.nota ?? null,
+      distrito_destino: pedido.distrito_destino ?? null,
+      barrio_destino: pedido.barrio_destino ?? null,
+      direccion_destino: pedido.direccion_destino ?? null,
+      items: editLines.map((l) => {
+        const item = {
+          producto_id: Number(l.producto_id),
+          tamano: l.tamano,
+          cantidad: Number(l.cantidad),
+          distrito_destino: l.destino?.distrito ?? null,
+          barrio_destino: l.destino?.barrio ?? null,
+          direccion_destino: l.destino?.direccion ?? null,
+        };
+        if (Array.isArray(l.matriculas) && l.matriculas.some((m) => m)) {
+          item.matriculas = l.matriculas.slice(0, Math.floor(Number(l.cantidad) || 0)).map((m) => String(m || ""));
+        }
+        return item;
+      }),
+    };
+    setSavingEdit(true);
+    try {
+      const updated = await updatePedido(pedido.id, payload);
+      if (onPedidoUpdated) onPedidoUpdated(updated);
+      if (onMessage) onMessage(`Pedido #${pedido.id} actualizado.`);
+      setEditing(false);
+      setEditLines([]);
+      setAddOpen(false);
+    } catch (e) {
+      if (onMessage) onMessage(e?.response?.data?.detail || e?.message || "No se pudo guardar el pedido.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -503,11 +791,145 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
             </div>
           )}
 
-          <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 8 }}>
-            Productos del pedido ({items.length})
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>
+              Productos del pedido ({editing ? editLines.length : items.length})
+            </div>
+            {editable && !editing ? (
+              <button
+                type="button"
+                onClick={startEdit}
+                style={{ padding: "8px 14px", borderRadius: 12, border: "1px solid #1d4ed8", background: "#eff6ff", color: "#1d4ed8", fontWeight: 900, cursor: "pointer", fontSize: 13 }}
+                title="Editar cantidades o añadir productos antes de aprobar (solo pedidos en reserva)"
+              >
+                ✏️ Editar pedido
+              </button>
+            ) : null}
           </div>
 
-          {items.length === 0 ? (
+          {editing ? (
+            <div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={thStyle()}>Producto</th>
+                      <th style={thStyle()}>Tamaño</th>
+                      {variosDestinos ? <th style={thStyle()}>Destino</th> : null}
+                      <th style={thStyle()}>Cantidad</th>
+                      <th style={thStyle()}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editLines.map((l, idx) => {
+                      const max = maxForLine(idx);
+                      const dstLabel = [l.destino?.distrito, l.destino?.barrio, l.destino?.direccion].filter(Boolean).join(" · ");
+                      return (
+                        <tr key={l.key} style={{ borderTop: "1px solid rgba(15,23,42,0.06)" }}>
+                          <td style={tdStyle()}>{l.nombre}</td>
+                          <td style={tdStyle()}>{l.tamano || "—"}</td>
+                          {variosDestinos ? <td style={{ ...tdStyle(), fontSize: 12, color: "#1e3a8a" }}>{dstLabel || "—"}</td> : null}
+                          <td style={tdStyle()}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <input
+                                type="number"
+                                min={1}
+                                max={max || undefined}
+                                value={l.cantidad}
+                                onChange={(e) => setLineQty(idx, e.target.value)}
+                                style={{ width: 90, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.18)", fontWeight: 900, textAlign: "center", color: "#0f172a" }}
+                              />
+                              <span style={{ fontSize: 11, fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>máx {max}</span>
+                            </div>
+                          </td>
+                          <td style={tdStyle()}>
+                            <button
+                              type="button"
+                              onClick={() => removeLine(idx)}
+                              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)", color: "#991b1b", fontWeight: 900, cursor: "pointer", fontSize: 12 }}
+                            >
+                              Quitar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {editLines.length === 0 ? (
+                      <tr>
+                        <td colSpan={variosDestinos ? 5 : 4} style={{ ...tdStyle(), color: "#991b1b" }}>
+                          El pedido no puede quedarse sin líneas. Añade al menos un producto.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                {!addOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => { setAddOpen(true); setAddProductId(""); setAddTam(""); setAddQty("1"); }}
+                    style={{ padding: "10px 16px", borderRadius: 12, border: "1px dashed rgba(16,185,129,0.5)", background: "rgba(16,185,129,0.06)", color: "#065f46", fontWeight: 900, cursor: "pointer", fontSize: 13 }}
+                  >
+                    + Añadir producto
+                  </button>
+                ) : (
+                  <div style={{ padding: 14, borderRadius: 14, border: "1px solid rgba(15,23,42,0.12)", background: "#f8fafc" }}>
+                    <div style={{ fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>Añadir producto (solo con stock)</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <select value={addCat} onChange={(e) => { setAddCat(e.target.value); setAddSub(""); setAddProductId(""); setAddTam(""); }} style={selMini}>
+                        <option value="">Todas las categorías</option>
+                        {addCats.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <select value={addSub} onChange={(e) => { setAddSub(e.target.value); setAddProductId(""); setAddTam(""); }} style={selMini}>
+                        <option value="">Todas las subcategorías</option>
+                        {addSubs.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <input value={addSearch} onChange={(e) => setAddSearch(e.target.value)} placeholder="Buscar producto…" style={{ ...selMini, marginTop: 10 }} />
+                    <select value={addProductId} onChange={(e) => { setAddProductId(e.target.value); setAddTam(""); }} style={{ ...selMini, marginTop: 10 }}>
+                      <option value="">— Elige un producto ({addFiltered.length}) —</option>
+                      {addFiltered.slice(0, 300).map((p) => <option key={p.id} value={p.id}>{_prodNombre(p)}</option>)}
+                    </select>
+                    {addProductObj ? (
+                      <div style={{ display: "grid", gridTemplateColumns: variosDestinos ? "1fr 1fr 1fr" : "1fr 1fr", gap: 10, marginTop: 10 }}>
+                        <select value={addTam} onChange={(e) => setAddTam(e.target.value)} style={selMini}>
+                          <option value="">Tamaño…</option>
+                          {addSizes.map((t) => {
+                            const d = Math.max(0, poolFor(addProductObj.id, t) - editUsedByKey(addProductObj.id, t));
+                            return <option key={t} value={t} disabled={d <= 0}>{t} ({d} disp.)</option>;
+                          })}
+                        </select>
+                        <input type="number" min={1} max={addDisp || undefined} value={addQty} onChange={(e) => setAddQty(e.target.value)} placeholder="Cantidad" style={selMini} />
+                        {variosDestinos ? (
+                          <select value={addDestIdx} onChange={(e) => setAddDestIdx(Number(e.target.value))} style={selMini}>
+                            {destinosList.map((d, i) => <option key={i} value={i}>{d.label}</option>)}
+                          </select>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {addProductObj && addTam ? (
+                      <div style={{ marginTop: 6, fontSize: 12, fontWeight: 800, color: addDisp > 0 ? "#64748b" : "#991b1b" }}>
+                        Disponibles: {addDisp}
+                      </div>
+                    ) : null}
+                    <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+                      <button type="button" onClick={() => setAddOpen(false)} style={btnGhostMini}>Cancelar</button>
+                      <button
+                        type="button"
+                        onClick={confirmAdd}
+                        disabled={!addProductObj || !addTam || addDisp <= 0}
+                        style={{ ...btnGhostMini, border: "none", background: (!addProductObj || !addTam || addDisp <= 0) ? "#cbd5e1" : "#0f766e", color: "#fff", cursor: (!addProductObj || !addTam || addDisp <= 0) ? "not-allowed" : "pointer" }}
+                      >
+                        Añadir
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : items.length === 0 ? (
             <div style={{ color: "#64748b", fontWeight: 700 }}>Este pedido no tiene líneas.</div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -668,7 +1090,44 @@ function DetallePedidoModal({ pedido, onClose, canApprove = false, onPedidoUpdat
             (a) There are still RESERVA items AND the user can approve →
                 show the batch-decision UI: motivo input + Confirmar.
             (b) Otherwise → show the PDF download (when applicable). */}
-        {canApprove && pendingCount > 0 ? (
+        {editing ? (
+          <div
+            style={{
+              padding: "14px 22px",
+              borderTop: "1px solid rgba(15,23,42,0.08)",
+              background: "#f8fafc",
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 200, fontSize: 12.5, color: "#64748b", fontWeight: 700 }}>
+              Edita cantidades (tope = stock disponible) o añade productos. Al guardar, el pedido vuelve a quedar en reserva para decidirlo.
+            </span>
+            <button type="button" onClick={cancelEdit} disabled={savingEdit} style={btnGhostMini}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={saveEdit}
+              disabled={savingEdit || editLines.length === 0}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 12,
+                border: "none",
+                background: savingEdit || editLines.length === 0 ? "rgba(148,163,184,0.5)" : "#0f766e",
+                color: "#fff",
+                fontWeight: 900,
+                fontSize: 13,
+                cursor: savingEdit || editLines.length === 0 ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {savingEdit ? "Guardando…" : "Guardar cambios"}
+            </button>
+          </div>
+        ) : canApprove && pendingCount > 0 ? (
           <div
             style={{
               padding: "14px 22px",
@@ -841,6 +1300,7 @@ function MessageBanner({ msg, onClose }) {
 export default function Aprobaciones() {
   const { me } = useOutletContext();
   const [pedidos, setPedidos] = useState([]);
+  const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
@@ -880,8 +1340,9 @@ export default function Aprobaciones() {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await getPedidos();
-      setPedidos(safeArray(data));
+      const [peds, prods] = await Promise.all([getPedidos(), getProductos().catch(() => [])]);
+      setPedidos(safeArray(peds));
+      setProductos(safeArray(prods));
     } catch (e) {
       showTimedMessage(e?.response?.data?.detail || e?.message || "Error cargando aprobaciones");
     } finally {
@@ -1216,6 +1677,7 @@ export default function Aprobaciones() {
 
       <DetallePedidoModal
         pedido={detallePedido}
+        productos={productos}
         onClose={() => setDetallePedido(null)}
         canApprove={canApprove}
         onPedidoUpdated={(updated) => {
