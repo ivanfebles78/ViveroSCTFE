@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getPedidos, getProductos, updatePedido, aprobarPedido, denegarPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf } from "../api/api";
+import { getPedidos, getProductos, updatePedido, aprobarPedido, denegarPedido, reabrirPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf } from "../api/api";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
 
@@ -239,7 +239,7 @@ const DESTINO_COLORS = [
 ];
 const destinoColorAt = (i) => DESTINO_COLORS[((i % DESTINO_COLORS.length) + DESTINO_COLORS.length) % DESTINO_COLORS.length];
 
-function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = false, onPedidoUpdated, onMessage }) {
+function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = false, canReopen = false, onPedidoUpdated, onMessage }) {
   // Pending decisions: { [item.id]: "aprobar" | "denegar" }.  Lives only
   // in the modal — nothing hits the DB until the manager presses
   // "Confirmar decisiones".  Closing the modal discards them.
@@ -258,6 +258,7 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
   // Copia de trabajo de las líneas mientras se edita.
   const [editLines, setEditLines] = useState([]); // [{key, producto_id, tamano, nombre, cantidad, destino, matriculas}]
   const [savingEdit, setSavingEdit] = useState(false);
+  const [reabriendo, setReabriendo] = useState(false);
   // Panel "Añadir producto".
   const [addOpen, setAddOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
@@ -471,6 +472,29 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
   const tipoPedido = (pedido?.tipo || "salida").toString().trim().toLowerCase();
   const editable =
     canApprove && estadoNormPedido === "RESERVA" && tipoPedido === "salida" && !mod;
+
+  // Reapertura (solo admin): devuelve a RESERVA un pedido denegado/cancelado/
+  // caducado sin material servido, para poder revisarlo y aprobarlo de nuevo.
+  const algoServido = items.some((it) => Number(it.cantidad_servida || 0) > 0);
+  const reabrible =
+    canReopen && ["DENEGADO", "CANCELADO", "CADUCADO"].includes(estadoNormPedido) && !algoServido;
+  const reabrir = async () => {
+    if (reabriendo) return;
+    if (!window.confirm(
+      `¿Reabrir el pedido #${pedido.id}?\n\n` +
+      "Volverá a estado RESERVA (pendiente) para poder revisarlo y aprobarlo de nuevo."
+    )) return;
+    setReabriendo(true);
+    try {
+      const updated = await reabrirPedido(pedido.id);
+      if (onPedidoUpdated) onPedidoUpdated(updated);
+      if (onMessage) onMessage(`Pedido #${pedido.id} reabierto: vuelve a estar pendiente de decisión.`);
+    } catch (e) {
+      if (onMessage) onMessage(e?.response?.data?.detail || e?.message || "No se pudo reabrir el pedido.");
+    } finally {
+      setReabriendo(false);
+    }
+  };
 
   // Lista de destinos del pedido (para asignar los productos añadidos).
   const destinosList = (() => {
@@ -705,21 +729,42 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 14,
-              fontWeight: 900,
-              cursor: "pointer",
-              background: "#f59e0b",
-              color: "#111827",
-              border: "2px solid #000",
-              boxShadow: "0 8px 18px rgba(0,0,0,0.18)",
-            }}
-          >
-            Cerrar
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {reabrible ? (
+              <button
+                onClick={reabrir}
+                disabled={reabriendo}
+                title="Reabrir el pedido: vuelve a RESERVA para poder revisarlo y aprobarlo (solo admin)"
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 14,
+                  fontWeight: 900,
+                  cursor: reabriendo ? "wait" : "pointer",
+                  background: "#0f766e",
+                  color: "#fff",
+                  border: "2px solid #0b5a54",
+                  boxShadow: "0 8px 18px rgba(0,0,0,0.18)",
+                }}
+              >
+                {reabriendo ? "Reabriendo…" : "↩ Reabrir pedido"}
+              </button>
+            ) : null}
+            <button
+              onClick={onClose}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 14,
+                fontWeight: 900,
+                cursor: "pointer",
+                background: "#f59e0b",
+                color: "#111827",
+                border: "2px solid #000",
+                boxShadow: "0 8px 18px rgba(0,0,0,0.18)",
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
 
         <div style={{ padding: "16px 22px", overflow: "auto" }}>
@@ -1428,6 +1473,7 @@ export default function Aprobaciones() {
 
   const role = me?.rol || me?.role;
   const canApprove = role === "admin" || role === "manager";
+  const esAdmin = role === "admin";
 
   return (
     <div style={{ width: "100%" }}>
@@ -1680,6 +1726,7 @@ export default function Aprobaciones() {
         productos={productos}
         onClose={() => setDetallePedido(null)}
         canApprove={canApprove}
+        canReopen={esAdmin}
         onPedidoUpdated={(updated) => {
           // Keep the modal in sync with the freshly-returned pedido and
           // refresh the parent list so the table reflects the new state.

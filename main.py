@@ -2578,6 +2578,57 @@ def denegar_pedido(
     return _pedido_to_dict(pedido, warnings=warnings)
 
 
+@app.post("/pedidos/{pedido_id}/reabrir", response_model=PedidoOut)
+def reabrir_pedido(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Reabre (SOLO admin) un pedido DENEGADO / CANCELADO / CADUCADO devolviéndolo
+    a RESERVA, para poder revisarlo y volver a decidirlo. No se permite si el
+    pedido ya tiene material servido."""
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+    estado = (pedido.estado or "").upper()
+    reabribles = {"DENEGADO", "CANCELADO", "CADUCADO"}
+    if estado not in reabribles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Solo se pueden reabrir pedidos denegados, cancelados o caducados (estado actual: {estado}).",
+        )
+
+    items = getattr(pedido, "items", None) or []
+    if not items:
+        raise HTTPException(status_code=400, detail="El pedido no tiene líneas.")
+    if any(float(getattr(it, "cantidad_servida", 0) or 0) > 0 for it in items):
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede reabrir: el pedido ya tiene material servido.",
+        )
+
+    # Vuelve todo a RESERVA y limpia la decisión previa.
+    for it in items:
+        it.estado_item = "RESERVA"
+    pedido.estado = "RESERVA"
+    for attr in (
+        "denegado_por", "denegado_at", "motivo_denegacion",
+        "aprobado_por", "aprobado_at", "served_at", "served_by",
+        "leido_at", "leido_por", "aceptado_at", "aceptado_por",
+        "fecha_estimada_entrega", "comentario_proveedor",
+    ):
+        if hasattr(pedido, attr):
+            setattr(pedido, attr, None)
+    # Renueva la caducidad para que no vuelva a caducar de inmediato.
+    if hasattr(pedido, "fecha_caducidad"):
+        pedido.fecha_caducidad = datetime.utcnow().date() + timedelta(days=15)
+
+    db.commit()
+    db.refresh(pedido)
+    return _pedido_to_dict(pedido)
+
+
 @app.post("/pedidos/{pedido_id}/decidir", response_model=PedidoOut)
 def decidir_pedido(
     pedido_id: int,
