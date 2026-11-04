@@ -835,7 +835,7 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
     { slug: "tutores", label: "Tutores 2,4", porArbol: "3 uds" },
     { slug: "travesanos", label: "Travesaños", porArbol: "3 uds" },
     { slug: "clavos", label: "Clavos dulces", porArbol: "12 uds" },
-    { slug: "cinta", label: "Cinta de entutorar", porArbol: "2,5 uds" },
+    { slug: "cinta", label: "Cinta de entutorar", porArbol: "1 ud" },
     { slug: "hebillas", label: "Hebillas", porArbol: "3 uds" },
   ];
   const _normCat = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();

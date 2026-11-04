@@ -47,7 +47,7 @@ const COMPLEMENTOS_ARBOL = [
   { id: "tutores", label: "Tutores 2,4", needles: ["tutor"], prefer: ["2,4"], porArbol: 3, decimals: false },
   { id: "travesanos", label: "Travesaños 2,4", needles: ["travesan"], prefer: ["2,4"], porArbol: 3, decimals: false },
   { id: "clavos", label: "Clavos dulces", needles: ["clavo", "dulce"], prefer: [], porArbol: 12, decimals: false },
-  { id: "cinta", label: "Cinta de entutorar", needles: ["cinta", "entutor"], prefer: [], porArbol: 2.5, decimals: true },
+  { id: "cinta", label: "Cinta de entutorar", needles: ["cinta", "entutor"], prefer: [], porArbol: 1, decimals: false },
   { id: "hebillas", label: "Hebillas 5 cm", needles: ["hebilla"], prefer: ["5"], porArbol: 3, decimals: false },
 ];
 
