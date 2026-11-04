@@ -42,6 +42,10 @@ class Producto(Base):
     es_interno = Column(Boolean, nullable=False, default=False)
     # Precio unitario en euros (coste de referencia del producto). Opcional.
     precio = Column(Numeric(10, 2), nullable=True)
+    # Etiqueta para el pack de complementos de árbol (UTE). Identifica QUÉ
+    # producto del catálogo es cada complemento, sin depender de su nombre.
+    # Valores: tutores | travesanos | clavos | cinta | hebillas (o NULL).
+    complemento_arbol = Column(String(30), nullable=True)
 
 
 class CaducidadConfig(Base):

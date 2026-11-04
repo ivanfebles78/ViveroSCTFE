@@ -830,6 +830,54 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
     }
   };
 
+  // ── Complementos de árbol (pack UTE): etiqueta por producto ──
+  const COMPLEMENTO_SLOTS = [
+    { slug: "tutores", label: "Tutores 2,4", porArbol: "3 uds" },
+    { slug: "travesanos", label: "Travesaños", porArbol: "3 uds" },
+    { slug: "clavos", label: "Clavos dulces", porArbol: "12 uds" },
+    { slug: "cinta", label: "Cinta de entutorar", porArbol: "2,5 uds" },
+    { slug: "hebillas", label: "Hebillas", porArbol: "3 uds" },
+  ];
+  const _normCat = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const ferreteriaProds = useMemo(
+    () =>
+      (Array.isArray(productos) ? productos : [])
+        .filter((p) => _normCat(p.categoria) === "ferreteria")
+        .sort((a, b) =>
+          String(a.nombre_cientifico || a.nombre_natural || "").localeCompare(
+            String(b.nombre_cientifico || b.nombre_natural || ""), "es"
+          )
+        ),
+    [productos]
+  );
+  const prodDeSlot = (slug) =>
+    (Array.isArray(productos) ? productos : []).find(
+      (p) => String(p.complemento_arbol || "").toLowerCase() === slug
+    ) || null;
+  const [compBusy, setCompBusy] = useState(false);
+  const setComplementoSlot = async (slug, nuevoId) => {
+    setCompBusy(true);
+    setErr("");
+    try {
+      const actual = prodDeSlot(slug);
+      const nuevoIdNum = nuevoId ? Number(nuevoId) : null;
+      // Quita la etiqueta del producto anterior (si lo había y cambia).
+      if (actual && actual.id !== nuevoIdNum) {
+        await updateProducto(actual.id, { complemento_arbol: "" });
+      }
+      // Asigna la etiqueta al nuevo producto (o deja el slot vacío).
+      if (nuevoIdNum) {
+        await updateProducto(nuevoIdNum, { complemento_arbol: slug });
+      }
+      showMsg("Complemento actualizado.");
+      onChanged && (await onChanged());
+    } catch (e) {
+      showErr(fmtErr(e));
+    } finally {
+      setCompBusy(false);
+    }
+  };
+
   const removeProduct = async (p) => {
     if (!window.confirm(`¿Eliminar el producto "${p.nombre_cientifico}"? Esta acción no se puede deshacer.`)) {
       return;
@@ -1017,6 +1065,9 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
           <button onClick={() => setTab("listado")} style={tabBtnS(tab === "listado")}>Listado</button>
           <button onClick={() => setTab("nuevo")} style={tabBtnS(tab === "nuevo")}>Nuevo producto</button>
           <button onClick={() => setTab("importar")} style={tabBtnS(tab === "importar")}>Importar CSV/Excel</button>
+          {esAdmin ? (
+            <button onClick={() => setTab("complementos")} style={tabBtnS(tab === "complementos")}>🌳 Complementos árbol</button>
+          ) : null}
         </div>
 
         {msg ? (
@@ -1384,6 +1435,56 @@ function GestionProductosModal({ open, productos, esAdmin = false, onClose, onCh
                   ) : null}
                 </div>
               ) : null}
+            </div>
+          )}
+
+          {tab === "complementos" && esAdmin && (
+            <div>
+              <div style={{ padding: 14, borderRadius: 12, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.08)", marginBottom: 14 }}>
+                <div style={{ fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>🌳 Pack de complementos de árbol (UTE)</div>
+                <div style={{ color: "#475569", fontWeight: 700, fontSize: 14, lineHeight: 1.5 }}>
+                  Asocia cada complemento al <b>producto concreto del catálogo</b> (así no depende del nombre).
+                  Cuando la UTE añade un árbol a un pedido, se le ofrece este pack —
+                  <b> solo si hay stock de todos</b>. Las cantidades son por árbol.
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                {COMPLEMENTO_SLOTS.map((slot) => {
+                  const actual = prodDeSlot(slot.slug);
+                  // La lista incluye ferretería + (por si acaso) el producto ya asignado.
+                  const opciones = [...ferreteriaProds];
+                  if (actual && !opciones.some((p) => p.id === actual.id)) opciones.unshift(actual);
+                  return (
+                    <div key={slot.slug} style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr auto", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 10, background: "white", border: "1px solid rgba(15,23,42,0.08)" }}>
+                      <div>
+                        <div style={{ fontWeight: 900, color: "#0f172a" }}>{slot.label}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b" }}>{slot.porArbol} por árbol</div>
+                      </div>
+                      <select
+                        value={actual ? String(actual.id) : ""}
+                        disabled={compBusy}
+                        onChange={(e) => setComplementoSlot(slot.slug, e.target.value)}
+                        style={{ ...inputS, width: "100%" }}
+                      >
+                        <option value="">— Sin asignar —</option>
+                        {opciones.map((p) => (
+                          <option key={p.id} value={String(p.id)}>
+                            {p.nombre_cientifico || p.nombre_natural || `#${p.id}`}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: actual ? "#065f46" : "#991b1b", whiteSpace: "nowrap" }}>
+                        {actual ? "✓ Asignado" : "Sin asignar"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 12, fontSize: 12.5, color: "#64748b", fontWeight: 700 }}>
+                Si algún complemento queda <b>sin asignar</b>, el pack no se ofrecerá hasta completarlo
+                (mientras tanto, el sistema intenta localizarlos por nombre como respaldo).
+              </div>
             </div>
           )}
         </div>

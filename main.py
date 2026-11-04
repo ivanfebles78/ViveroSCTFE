@@ -75,6 +75,8 @@ def _ensure_schema() -> None:
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS comentario_proveedor TEXT",
         # IDs/matrículas por unidad (árboles/palmeras) en las líneas de pedido.
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS matriculas TEXT",
+        # Etiqueta de complemento de árbol (pack UTE) por producto.
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS complemento_arbol VARCHAR(30)",
     ]
     # IMPORTANTE: cada sentencia en SU PROPIA transacción. Si todas comparten
     # una, un fallo en PostgreSQL aborta la transacción entera y NINGUNA columna
@@ -1671,6 +1673,8 @@ def get_productos(
             "disponible_by_size": disponible_by_size,
             "alertas_caducidad": alertas_caducidad,
             "lotes": lotes,
+            # La UTE necesita esta etiqueta para localizar los complementos de árbol.
+            "complemento_arbol": getattr(p, "complemento_arbol", None),
         }
 
         if rol_user != "empresa_externa":
@@ -1716,6 +1720,22 @@ def actualizar_producto_interno(
 # =============================
 # PRODUCTOS - CRUD
 # =============================
+# Slugs válidos para la etiqueta de complemento de árbol.
+_COMPLEMENTO_ARBOL_SLUGS = {"tutores", "travesanos", "clavos", "cinta", "hebillas"}
+
+
+def _norm_complemento_arbol(v: Optional[str]) -> Optional[str]:
+    """Normaliza/valida el slug de complemento. "" o None → None."""
+    if v is None:
+        return None
+    s = str(v).strip().lower()
+    if s == "":
+        return None
+    if s not in _COMPLEMENTO_ARBOL_SLUGS:
+        raise HTTPException(status_code=400, detail=f"Complemento de árbol inválido: {v}")
+    return s
+
+
 class ProductoCreate(BaseModel):
     nombre_cientifico: str
     nombre_natural: Optional[str] = None
@@ -1724,6 +1744,7 @@ class ProductoCreate(BaseModel):
     stock_minimo: int = 0
     es_interno: bool = False
     precio: Optional[float] = None
+    complemento_arbol: Optional[str] = None
 
 
 class ProductoUpdate(BaseModel):
@@ -1734,6 +1755,7 @@ class ProductoUpdate(BaseModel):
     stock_minimo: Optional[int] = None
     es_interno: Optional[bool] = None
     precio: Optional[float] = None
+    complemento_arbol: Optional[str] = None
 
 
 def _producto_dict(p: Producto) -> dict:
@@ -1747,6 +1769,7 @@ def _producto_dict(p: Producto) -> dict:
         "stock_minimo": int(p.stock_minimo or 0),
         "es_interno": bool(getattr(p, "es_interno", False)),
         "precio": float(precio) if precio is not None else None,
+        "complemento_arbol": getattr(p, "complemento_arbol", None),
     }
 
 
@@ -1779,6 +1802,7 @@ def crear_producto(
         stock_minimo=int(payload.stock_minimo or 0),
         es_interno=bool(payload.es_interno),
         precio=payload.precio,
+        complemento_arbol=_norm_complemento_arbol(payload.complemento_arbol),
     )
     db.add(p)
     db.commit()
@@ -1832,6 +1856,8 @@ def actualizar_producto(
         if payload.precio < 0:
             raise HTTPException(status_code=400, detail="El precio no puede ser negativo")
         producto.precio = payload.precio
+    if payload.complemento_arbol is not None:
+        producto.complemento_arbol = _norm_complemento_arbol(payload.complemento_arbol)
 
     db.commit()
     db.refresh(producto)

@@ -60,8 +60,14 @@ const _nombreIncluye = (p, needle) => _nombreProd(p).includes(_cNorm(needle));
 const _esArbol = (p) => _cNorm(p?.subcategoria) === "arbol";
 
 // Devuelve el producto del catálogo que corresponde a un complemento, o null.
+// Prioridad: etiqueta `complemento_arbol` (identificador robusto, lo marca el
+// admin). Si ningún producto está etiquetado para ese slot, cae al emparejado
+// por nombre (respaldo mientras no se etiqueten).
 function _buscarComplemento(productos, item) {
-  const cands = (Array.isArray(productos) ? productos : []).filter(
+  const lista = Array.isArray(productos) ? productos : [];
+  const etiquetado = lista.find((p) => _cNorm(p?.complemento_arbol) === item.id);
+  if (etiquetado) return etiquetado;
+  const cands = lista.filter(
     (p) => _esFerreteria(p.categoria) && item.needles.every((n) => _nombreIncluye(p, n))
   );
   if (cands.length === 0) return null;
