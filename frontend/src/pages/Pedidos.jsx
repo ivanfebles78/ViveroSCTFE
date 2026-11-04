@@ -57,7 +57,10 @@ const _esFerreteria = (cat) => _cNorm(cat) === "ferreteria";
 const _nombreProd = (p) =>
   _cNorm([p?.nombre_cientifico, p?.nombre_natural, p?.nombre].filter(Boolean).join(" "));
 const _nombreIncluye = (p, needle) => _nombreProd(p).includes(_cNorm(needle));
-const _esArbol = (p) => _cNorm(p?.subcategoria) === "arbol";
+const _esArbol = (p) => {
+  const s = _cNorm(p?.subcategoria);
+  return s === "arbol" || s === "arboles" || s.startsWith("arbol");
+};
 
 // Devuelve el producto del catálogo que corresponde a un complemento, o null.
 // Prioridad: etiqueta `complemento_arbol` (identificador robusto, lo marca el
