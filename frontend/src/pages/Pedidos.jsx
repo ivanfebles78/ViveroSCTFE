@@ -808,6 +808,8 @@ function PedidoModal({
   const [nota, setNota] = useState("");
   // Oferta de complementos al añadir un árbol: { grupoId, nArboles, arbolNombre, items[] } o null.
   const [complementosOffer, setComplementosOffer] = useState(null);
+  // Aviso (modal) cuando el pack NO se puede ofrecer: lista de lo que falta, o null.
+  const [complementosAviso, setComplementosAviso] = useState(null);
 
   useEffect(() => {
     if (!open) {
@@ -823,6 +825,7 @@ function PedidoModal({
       setGruposColapsados({});
       setNota("");
       setComplementosOffer(null);
+      setComplementosAviso(null);
     }
   }, [open]);
 
@@ -1115,7 +1118,7 @@ function PedidoModal({
       if (r.ok) {
         setComplementosOffer(r);
       } else if (r.faltan && r.faltan.length) {
-        setLocalError("No se ofreció el pack de complementos — falta: " + r.faltan.join(", ") + ".");
+        setComplementosAviso(r.faltan);
       }
     }
   };
@@ -1217,6 +1220,31 @@ function PedidoModal({
               </button>
               <button type="button" onClick={aceptarComplementos} style={{ padding: "10px 18px", borderRadius: 12, border: "none", background: "#0f766e", color: "#fff", fontWeight: 900, cursor: "pointer" }}>
                 Añadir complementos
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {complementosAviso ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div style={{ width: "min(480px, 96vw)", background: "#fff", borderRadius: 20, boxShadow: "0 30px 80px rgba(2,6,23,0.35)", overflow: "hidden" }}>
+            <div style={{ padding: "18px 22px", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: "#92400e" }}>⚠️ Pack de complementos no disponible</div>
+              <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 13 }}>
+                El árbol se ha añadido, pero no se puede ofrecer el pack de complementos porque falta:
+              </div>
+            </div>
+            <div style={{ padding: "16px 22px" }}>
+              <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 6 }}>
+                {complementosAviso.map((f, i) => (
+                  <li key={i} style={{ fontWeight: 800, color: "#0f172a" }}>{f}</li>
+                ))}
+              </ul>
+            </div>
+            <div style={{ padding: "14px 22px", borderTop: "1px solid rgba(15,23,42,0.08)", display: "flex", justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setComplementosAviso(null)} style={{ padding: "10px 18px", borderRadius: 12, border: "none", background: "#0f766e", color: "#fff", fontWeight: 900, cursor: "pointer" }}>
+                Entendido
               </button>
             </div>
           </div>
