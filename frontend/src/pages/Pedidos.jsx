@@ -1045,24 +1045,33 @@ function PedidoModal({
 
   const canSubmit = !saving && hasAnyProduct && allGruposValid && stockValid;
 
-  // Calcula el pack de complementos para N árboles. Devuelve null si falta algún
-  // producto o no hay stock suficiente de alguno (→ no se ofrece el pack).
+  // Calcula el pack de complementos para N árboles. Devuelve { ok, ... }:
+  // ok=true con los items si están los 5 con stock; ok=false con `faltan`
+  // (lista legible) si falta alguno (sin asignar o sin stock) → no se oferta.
   const resolveComplementos = (nArboles, grupoId, arbolNombre) => {
     const n = Math.max(0, Math.floor(Number(nArboles) || 0));
-    if (n <= 0) return null;
+    if (n <= 0) return { ok: false, faltan: [] };
     const items = [];
+    const faltan = [];
     for (const c of COMPLEMENTOS_ARBOL) {
       const prod = _buscarComplemento(productos, c);
-      if (!prod) return null;
+      if (!prod) {
+        faltan.push(`${c.label} (sin producto asignado)`);
+        continue;
+      }
       const tamano = getFormatoOptions(getProductFormatoConfig(prod))[0] || "unidades";
       const key = lineKey(prod.id, tamano);
       const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
       const restante = disponible - totalAsignado(key);
       const required = c.decimals ? c.porArbol * n : Math.round(c.porArbol * n);
-      if (restante < required) return null;
+      if (restante < required) {
+        faltan.push(`${c.label} (stock ${restante} < ${required})`);
+        continue;
+      }
       items.push({ id: c.id, label: c.label, prod, tamano, key, required, restante, decimals: c.decimals });
     }
-    return { grupoId, nArboles: n, arbolNombre, items };
+    if (faltan.length) return { ok: false, faltan };
+    return { ok: true, grupoId, nArboles: n, arbolNombre, items };
   };
 
   // Añade al grupo los complementos de la oferta aceptada.
@@ -1095,13 +1104,15 @@ function PedidoModal({
     addToGrupo(activeGrupo._id, productoId, tamano, qty);
     setQtyInput((prev) => ({ ...prev, [key]: "" }));
 
-    // UTE: al añadir un árbol, ofrecer el pack de complementos (si hay stock de
-    // TODOS). Si falta cualquiera, no se abre el modal.
-    if (esEmpresaExterna) {
-      const prodAdded = productos.find((p) => p.id === productoId);
-      if (prodAdded && _esArbol(prodAdded)) {
-        const offer = resolveComplementos(qty, activeGrupo._id, getScientificProductDisplayName(prodAdded));
-        if (offer) setComplementosOffer(offer);
+    // Al añadir un ÁRBOL, ofrecer el pack de complementos (si hay stock de TODOS).
+    // Si falta alguno, no se abre el modal pero se avisa de qué falta.
+    const prodAdded = productos.find((p) => p.id === productoId);
+    if (prodAdded && _esArbol(prodAdded)) {
+      const r = resolveComplementos(qty, activeGrupo._id, getScientificProductDisplayName(prodAdded));
+      if (r.ok) {
+        setComplementosOffer(r);
+      } else if (r.faltan && r.faltan.length) {
+        setLocalError("No se ofreció el pack de complementos — falta: " + r.faltan.join(", ") + ".");
       }
     }
   };
