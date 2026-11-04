@@ -38,6 +38,41 @@ function nombreLineaDev(it) {
   return it?.producto_nombre_cientifico || it?.producto_nombre || it?.producto_nombre_natural || `línea ${it?.id}`;
 }
 
+// ── Complementos de árbol (UTE) ─────────────────────────────────────────
+// Al añadir un árbol se ofrece un pack de ferretería. Cantidades POR ÁRBOL.
+// Los productos se localizan en el catálogo por categoría «Ferretería» +
+// palabras clave (needles). Si hay varios candidatos, se prefiere el que
+// además contenga las palabras de `prefer` (p. ej. "2,4").
+const COMPLEMENTOS_ARBOL = [
+  { id: "tutores", label: "Tutores 2,4", needles: ["tutor"], prefer: ["2,4"], porArbol: 3, decimals: false },
+  { id: "travesanos", label: "Travesaños 2,4", needles: ["travesan"], prefer: ["2,4"], porArbol: 3, decimals: false },
+  { id: "clavos", label: "Clavos dulces", needles: ["clavo", "dulce"], prefer: [], porArbol: 12, decimals: false },
+  { id: "cinta", label: "Cinta de entutorar", needles: ["cinta", "entutor"], prefer: [], porArbol: 2.5, decimals: true },
+  { id: "hebillas", label: "Hebillas 5 cm", needles: ["hebilla"], prefer: ["5"], porArbol: 3, decimals: false },
+];
+
+const _cNorm = (s) =>
+  String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\./g, ",").trim();
+const _esFerreteria = (cat) => _cNorm(cat) === "ferreteria";
+const _nombreProd = (p) =>
+  _cNorm([p?.nombre_cientifico, p?.nombre_natural, p?.nombre].filter(Boolean).join(" "));
+const _nombreIncluye = (p, needle) => _nombreProd(p).includes(_cNorm(needle));
+const _esArbol = (p) => _cNorm(p?.subcategoria) === "arbol";
+
+// Devuelve el producto del catálogo que corresponde a un complemento, o null.
+function _buscarComplemento(productos, item) {
+  const cands = (Array.isArray(productos) ? productos : []).filter(
+    (p) => _esFerreteria(p.categoria) && item.needles.every((n) => _nombreIncluye(p, n))
+  );
+  if (cands.length === 0) return null;
+  if (cands.length === 1) return cands[0];
+  if (item.prefer && item.prefer.length) {
+    const pref = cands.filter((p) => item.prefer.every((n) => _nombreIncluye(p, n)));
+    if (pref.length) return pref[0];
+  }
+  return cands[0];
+}
+
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
 const ESTADO_FILTERS = [
@@ -762,6 +797,8 @@ function PedidoModal({
   // Comentarios/anotaciones que la empresa externa adjunta al pedido; los ve
   // quien aprueba y quien sirve, y salen en el PDF impreso.
   const [nota, setNota] = useState("");
+  // Oferta de complementos al añadir un árbol: { grupoId, nArboles, arbolNombre, items[] } o null.
+  const [complementosOffer, setComplementosOffer] = useState(null);
 
   useEffect(() => {
     if (!open) {
@@ -776,6 +813,7 @@ function PedidoModal({
       setActiveGrupoId(g._id);
       setGruposColapsados({});
       setNota("");
+      setComplementosOffer(null);
     }
   }, [open]);
 
@@ -1001,6 +1039,36 @@ function PedidoModal({
 
   const canSubmit = !saving && hasAnyProduct && allGruposValid && stockValid;
 
+  // Calcula el pack de complementos para N árboles. Devuelve null si falta algún
+  // producto o no hay stock suficiente de alguno (→ no se ofrece el pack).
+  const resolveComplementos = (nArboles, grupoId, arbolNombre) => {
+    const n = Math.max(0, Math.floor(Number(nArboles) || 0));
+    if (n <= 0) return null;
+    const items = [];
+    for (const c of COMPLEMENTOS_ARBOL) {
+      const prod = _buscarComplemento(productos, c);
+      if (!prod) return null;
+      const tamano = getFormatoOptions(getProductFormatoConfig(prod))[0] || "unidades";
+      const key = lineKey(prod.id, tamano);
+      const disponible = Math.max(0, Number(stockByProductSize.get(key) || 0));
+      const restante = disponible - totalAsignado(key);
+      const required = c.decimals ? c.porArbol * n : Math.round(c.porArbol * n);
+      if (restante < required) return null;
+      items.push({ id: c.id, label: c.label, prod, tamano, key, required, restante, decimals: c.decimals });
+    }
+    return { grupoId, nArboles: n, arbolNombre, items };
+  };
+
+  // Añade al grupo los complementos de la oferta aceptada.
+  const aceptarComplementos = () => {
+    if (!complementosOffer) return;
+    const { grupoId, items } = complementosOffer;
+    for (const it of items) {
+      addToGrupo(grupoId, it.prod.id, it.tamano, it.required);
+    }
+    setComplementosOffer(null);
+  };
+
   const addToCart = (productoId, tamano) => {
     setLocalError("");
     const key = lineKey(productoId, tamano);
@@ -1020,6 +1088,16 @@ function PedidoModal({
 
     addToGrupo(activeGrupo._id, productoId, tamano, qty);
     setQtyInput((prev) => ({ ...prev, [key]: "" }));
+
+    // UTE: al añadir un árbol, ofrecer el pack de complementos (si hay stock de
+    // TODOS). Si falta cualquiera, no se abre el modal.
+    if (esEmpresaExterna) {
+      const prodAdded = productos.find((p) => p.id === productoId);
+      if (prodAdded && _esArbol(prodAdded)) {
+        const offer = resolveComplementos(qty, activeGrupo._id, getScientificProductDisplayName(prodAdded));
+        if (offer) setComplementosOffer(offer);
+      }
+    }
   };
 
   const submitPedido = async () => {
@@ -1095,6 +1173,36 @@ function PedidoModal({
         padding: 22,
       }}
     >
+      {complementosOffer ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.55)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
+          <div style={{ width: "min(520px, 96vw)", background: "#fff", borderRadius: 20, boxShadow: "0 30px 80px rgba(2,6,23,0.35)", overflow: "hidden" }}>
+            <div style={{ padding: "18px 22px", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>🌳 Añadir complementos</div>
+              <div style={{ marginTop: 4, color: "#64748b", fontWeight: 700, fontSize: 13 }}>
+                Has añadido {complementosOffer.nArboles} {complementosOffer.nArboles === 1 ? "árbol" : "árboles"}
+                {complementosOffer.arbolNombre ? ` (${complementosOffer.arbolNombre})` : ""}. ¿Añadimos el pack de complementos asociado?
+              </div>
+            </div>
+            <div style={{ padding: "16px 22px", display: "grid", gap: 8 }}>
+              {complementosOffer.items.map((it) => (
+                <div key={it.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)" }}>
+                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{it.label}</span>
+                  <span style={{ fontWeight: 900, color: "#065f46" }}>{formatCantidad(it.required)} {it.tamano}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "14px 22px", borderTop: "1px solid rgba(15,23,42,0.08)", display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setComplementosOffer(null)} style={{ padding: "10px 18px", borderRadius: 12, border: "1px solid rgba(15,23,42,0.18)", background: "#fff", color: "#0f172a", fontWeight: 900, cursor: "pointer" }}>
+                No, gracias
+              </button>
+              <button type="button" onClick={aceptarComplementos} style={{ padding: "10px 18px", borderRadius: 12, border: "none", background: "#0f766e", color: "#fff", fontWeight: 900, cursor: "pointer" }}>
+                Añadir complementos
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div
         style={{
           width: "min(1760px, 98vw)",
