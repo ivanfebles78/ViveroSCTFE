@@ -1652,7 +1652,12 @@ export default function Aprobaciones() {
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-                        <span style={badge(estado)}>{estadoLabel(estado)}</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={badge(estado)}>{estadoLabel(estado)}</span>
+                          {p.bloqueado ? (
+                            <span title="Materiales bloqueados: reserva con caducidad de 1 año" style={{ fontSize: 16 }}>🔒</span>
+                          ) : null}
+                        </span>
                       </td>
 
                       <td
