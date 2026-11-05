@@ -780,6 +780,7 @@ function PedidoModal({
   onSubmit,
   saving,
   esEmpresaExterna = false,
+  puedeBloquear = false,
 }) {
   const [search, setSearch] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
@@ -810,6 +811,8 @@ function PedidoModal({
   const [complementosOffer, setComplementosOffer] = useState(null);
   // Aviso (modal) cuando el pack NO se puede ofrecer: lista de lo que falta, o null.
   const [complementosAviso, setComplementosAviso] = useState(null);
+  // "Bloquear materiales" (solo manager/admin): caducidad de 1 año.
+  const [bloquearMateriales, setBloquearMateriales] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -826,6 +829,7 @@ function PedidoModal({
       setNota("");
       setComplementosOffer(null);
       setComplementosAviso(null);
+      setBloquearMateriales(false);
     }
   }, [open]);
 
@@ -1176,6 +1180,8 @@ function PedidoModal({
       barrio_destino: primero.barrio,
       direccion_destino: String(primero.direccion || "").trim(),
       nota: String(nota || "").trim() || null,
+      // Bloqueo de materiales (solo lo honra el backend para manager/admin).
+      bloquear_materiales: puedeBloquear && bloquearMateriales,
     });
   };
 
@@ -1776,6 +1782,27 @@ function PedidoModal({
               }}
             />
           </div>
+
+          {puedeBloquear ? (
+            <div style={{ ...cardStyle(), marginTop: 14, padding: 14, border: bloquearMateriales ? "1px solid rgba(180,83,9,0.45)" : undefined, background: bloquearMateriales ? "rgba(245,158,11,0.06)" : undefined }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={bloquearMateriales}
+                  onChange={(e) => setBloquearMateriales(e.target.checked)}
+                  style={{ width: 20, height: 20, marginTop: 2, flexShrink: 0 }}
+                />
+                <span>
+                  <span style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>🔒 Bloquear materiales</span>
+                  <span style={{ display: "block", marginTop: 4, fontSize: 12.5, color: "#64748b", fontWeight: 700 }}>
+                    Reserva el material durante <strong>1 año</strong> (en vez de 15 días), p. ej. para una obra futura.
+                    Si pasado el año no se ha servido, el pedido caduca y el material vuelve a estar disponible.
+                    Para desbloquearlo antes, cancela el pedido.
+                  </span>
+                </span>
+              </label>
+            </div>
+          ) : null}
 
           {localError ? (
             <div
@@ -3437,6 +3464,14 @@ export default function Pedidos() {
                         >
                           {p.tipo === "reposicion" ? "Reposición" : "Salida"}
                         </span>
+                        {p.bloqueado ? (
+                          <span
+                            title="Materiales bloqueados: reserva con caducidad de 1 año"
+                            style={{ display: "inline-flex", marginLeft: 6, padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, background: "rgba(180,83,9,0.12)", color: "#92400e", border: "1px solid rgba(180,83,9,0.30)" }}
+                          >
+                            🔒 Bloqueado
+                          </span>
+                        ) : null}
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
@@ -3731,7 +3766,8 @@ export default function Pedidos() {
         stockByProductSize={stockByProductSize}
         onSubmit={handleCreatePedidoFromModal}
         saving={savingNewPedido}
-        esEmpresaExterna={role === "empresa_externa"}
+        esEmpresaExterna={["empresa_externa", "manager", "admin"].includes(role)}
+        puedeBloquear={["manager", "admin"].includes(role)}
       />
 
       <ImprimirPedidosModal

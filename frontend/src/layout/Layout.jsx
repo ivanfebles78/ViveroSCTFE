@@ -195,7 +195,7 @@ function getVisibleNavItems(role) {
 
   if (role === "manager") {
     return NAV_ITEMS.filter((i) =>
-      ["/dashboard", "/productos", "/movimientos", "/aprobaciones", "/informes"].includes(i.to)
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/aprobaciones", "/informes"].includes(i.to)
     );
   }
 
@@ -289,6 +289,7 @@ function isPathAllowedForRole(pathname, role) {
       "/dashboard",
       "/productos",
       "/movimientos",
+      "/pedidos",
       "/aprobaciones",
       "/informes",
       "/lotes",

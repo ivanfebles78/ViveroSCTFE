@@ -77,6 +77,8 @@ def _ensure_schema() -> None:
         "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS matriculas TEXT",
         # Etiqueta de complemento de árbol (pack UTE) por producto.
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS complemento_arbol VARCHAR(30)",
+        # Bloqueo de materiales (manager/admin): caducidad de 1 año.
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS bloqueado BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     # IMPORTANTE: cada sentencia en SU PROPIA transacción. Si todas comparten
     # una, un fallo en PostgreSQL aborta la transacción entera y NINGUNA columna
@@ -209,6 +211,9 @@ class PedidoCreate(BaseModel):
     barrio_destino: Optional[str] = None
     direccion_destino: Optional[str] = None
     tipo: Optional[str] = "salida"
+    # "Bloquear materiales" (solo manager/admin): caducidad de 1 año en vez de 15
+    # días. Si lo envía otro rol, se ignora.
+    bloquear_materiales: Optional[bool] = False
 
 
 # =============================
@@ -1368,6 +1373,7 @@ def _pedido_to_dict(
         "estado": getattr(pedido, "estado", None),
         "tipo": getattr(pedido, "tipo", "salida") or "salida",
         "fecha_caducidad": getattr(pedido, "fecha_caducidad", None),
+        "bloqueado": bool(getattr(pedido, "bloqueado", False)),
         "solicitante_username": getattr(pedido, "solicitante_username", None),
         "nota": getattr(pedido, "nota", None),
         "distrito_destino": getattr(pedido, "distrito_destino", None),
@@ -2197,9 +2203,18 @@ def create_pedido(
                 )
             solicitado_local[key] = ya_pedido + float(item.cantidad)
 
-    # Caducidad de pedido: TODOS los pedidos caducan a los 15 días (máximo)
-    # desde su creación. Si nadie los gestiona/recoge en ese plazo, se liberan.
-    fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=15)
+    # "Bloquear materiales": solo manager/admin, y solo en pedidos de salida.
+    # Reserva el material con caducidad de 1 AÑO en vez de 15 días (p. ej. para
+    # una obra futura). Para cualquier otro rol o tipo, se ignora.
+    bloqueo = (
+        bool(getattr(payload, "bloquear_materiales", False))
+        and user_role in ("manager", "admin")
+        and tipo_pedido == "salida"
+    )
+
+    # Caducidad: por defecto 15 días desde la creación; con "bloqueo" = 1 año.
+    # Si nadie gestiona/recoge en ese plazo, el material se libera.
+    fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=365 if bloqueo else 15)
 
     pedido = Pedido(
         solicitante_username=current_user.username,
@@ -2210,6 +2225,7 @@ def create_pedido(
         barrio_destino=payload.barrio_destino if tipo_pedido == "salida" else None,
         direccion_destino=payload.direccion_destino if tipo_pedido == "salida" else None,
         fecha_caducidad=fecha_cad_pedido,
+        bloqueado=bloqueo,
     )
     db.add(pedido)
     db.flush()

@@ -139,6 +139,10 @@ class Pedido(Base):
 
     # Caducidad del propio pedido (p.ej. empresa_externa: 15 días)
     fecha_caducidad = Column(Date, nullable=True)
+    # "Bloqueo de materiales" (solo manager/admin): reserva con caducidad de 1 año
+    # en vez de 15 días (material para una obra futura). Informativo/visual; la
+    # reserva real la da fecha_caducidad.
+    bloqueado = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # --- Flujo del proveedor (solo pedidos de reposición) ---
     # "Leído": el proveedor abre el detalle del pedido aprobado.

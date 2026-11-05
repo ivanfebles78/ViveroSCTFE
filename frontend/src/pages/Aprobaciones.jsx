@@ -726,6 +726,11 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
                 {pedido.tipo === "reposicion" ? "Reposición" : "Salida"}
               </span>
               <span style={badge(pedido.estado)}>{estadoLabel(pedido.estado)}</span>
+              {pedido.bloqueado ? (
+                <span title="Materiales bloqueados: reserva con caducidad de 1 año" style={{ display: "inline-flex", marginLeft: 8, padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, background: "rgba(180,83,9,0.12)", color: "#92400e", border: "1px solid rgba(180,83,9,0.30)" }}>
+                  🔒 Bloqueado
+                </span>
+              ) : null}
             </div>
           </div>
 
