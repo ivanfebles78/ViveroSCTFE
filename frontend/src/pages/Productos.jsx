@@ -1504,6 +1504,7 @@ export default function Productos() {
   const [subcategoriaSel, setSubcategoriaSel] = useState("ALL");
   const [soloConImagen, setSoloConImagen] = useState(false);
   const [soloConStock, setSoloConStock] = useState(false);
+  const [soloReservado, setSoloReservado] = useState(false);
 
   const [pedirProducto, setPedirProducto] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1576,8 +1577,9 @@ export default function Productos() {
       const okSub = subcategoriaSel === "ALL" || s === subcategoriaSel;
       const okImg = !soloConImagen || idsConImagen.has(p.id);
       const okStock = !soloConStock || Number(p.disponible ?? 0) > 0;
+      const okReservado = !soloReservado || Number(p.reservado ?? 0) > 0;
 
-      if (!okCat || !okSub || !okImg || !okStock) return false;
+      if (!okCat || !okSub || !okImg || !okStock || !okReservado) return false;
       if (!qn) return true;
 
       const hay =
@@ -1589,7 +1591,7 @@ export default function Productos() {
 
       return hay;
     });
-  }, [productos, q, categoriaSel, subcategoriaSel, soloConImagen, soloConStock, idsConImagen]);
+  }, [productos, q, categoriaSel, subcategoriaSel, soloConImagen, soloConStock, soloReservado, idsConImagen]);
 
   const rol = me?.rol || me?.role;
   const esEmpresaExterna = rol === "empresa_externa";
@@ -1862,6 +1864,7 @@ export default function Productos() {
               setSubcategoriaSel("ALL");
               setSoloConImagen(false);
               setSoloConStock(false);
+              setSoloReservado(false);
             }}
             style={{
               padding: "10px 12px",
@@ -1930,6 +1933,34 @@ export default function Productos() {
             style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#10b981" }}
           />
           📦 Mostrar solo productos con stock disponible
+        </label>
+      )}
+
+      {!loading && (
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 12,
+            marginLeft: 10,
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: soloReservado ? "2px solid #10b981" : "1px solid #e5e7eb",
+            background: soloReservado ? "rgba(16,185,129,0.10)" : "#f8fafc",
+            cursor: "pointer",
+            fontWeight: 800,
+            color: soloReservado ? "#065f46" : "#334155",
+            userSelect: "none",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={soloReservado}
+            onChange={(e) => setSoloReservado(e.target.checked)}
+            style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#10b981" }}
+          />
+          🔒 Mostrar solo productos con stock reservado
         </label>
       )}
 
