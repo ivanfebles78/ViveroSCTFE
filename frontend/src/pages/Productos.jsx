@@ -1503,6 +1503,7 @@ export default function Productos() {
   const [categoriaSel, setCategoriaSel] = useState("ALL");
   const [subcategoriaSel, setSubcategoriaSel] = useState("ALL");
   const [soloConImagen, setSoloConImagen] = useState(false);
+  const [soloConStock, setSoloConStock] = useState(false);
 
   const [pedirProducto, setPedirProducto] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1574,8 +1575,9 @@ export default function Productos() {
       const okCat = categoriaSel === "ALL" || c === categoriaSel;
       const okSub = subcategoriaSel === "ALL" || s === subcategoriaSel;
       const okImg = !soloConImagen || idsConImagen.has(p.id);
+      const okStock = !soloConStock || Number(p.stock ?? 0) > 0;
 
-      if (!okCat || !okSub || !okImg) return false;
+      if (!okCat || !okSub || !okImg || !okStock) return false;
       if (!qn) return true;
 
       const hay =
@@ -1587,7 +1589,7 @@ export default function Productos() {
 
       return hay;
     });
-  }, [productos, q, categoriaSel, subcategoriaSel, soloConImagen, idsConImagen]);
+  }, [productos, q, categoriaSel, subcategoriaSel, soloConImagen, soloConStock, idsConImagen]);
 
   const rol = me?.rol || me?.role;
   const esEmpresaExterna = rol === "empresa_externa";
@@ -1859,6 +1861,7 @@ export default function Productos() {
               setCategoriaSel("ALL");
               setSubcategoriaSel("ALL");
               setSoloConImagen(false);
+              setSoloConStock(false);
             }}
             style={{
               padding: "10px 12px",
@@ -1899,6 +1902,34 @@ export default function Productos() {
             style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#10b981" }}
           />
           🖼️ Mostrar solo productos con imagen
+        </label>
+      )}
+
+      {!loading && (
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 12,
+            marginLeft: 10,
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: soloConStock ? "2px solid #10b981" : "1px solid #e5e7eb",
+            background: soloConStock ? "rgba(16,185,129,0.10)" : "#f8fafc",
+            cursor: "pointer",
+            fontWeight: 800,
+            color: soloConStock ? "#065f46" : "#334155",
+            userSelect: "none",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={soloConStock}
+            onChange={(e) => setSoloConStock(e.target.checked)}
+            style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#10b981" }}
+          />
+          📦 Mostrar solo productos con stock
         </label>
       )}
 
