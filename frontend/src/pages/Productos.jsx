@@ -1575,7 +1575,7 @@ export default function Productos() {
       const okCat = categoriaSel === "ALL" || c === categoriaSel;
       const okSub = subcategoriaSel === "ALL" || s === subcategoriaSel;
       const okImg = !soloConImagen || idsConImagen.has(p.id);
-      const okStock = !soloConStock || Number(p.stock ?? 0) > 0;
+      const okStock = !soloConStock || Number(p.disponible ?? 0) > 0;
 
       if (!okCat || !okSub || !okImg || !okStock) return false;
       if (!qn) return true;
@@ -1929,7 +1929,7 @@ export default function Productos() {
             onChange={(e) => setSoloConStock(e.target.checked)}
             style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#10b981" }}
           />
-          📦 Mostrar solo productos con stock
+          📦 Mostrar solo productos con stock disponible
         </label>
       )}
 
