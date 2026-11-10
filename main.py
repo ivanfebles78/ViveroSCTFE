@@ -2664,21 +2664,22 @@ def denegar_pedido(
 def reabrir_pedido(
     pedido_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager"])),
 ):
-    """Reabre (SOLO admin) un pedido DENEGADO / CANCELADO / CADUCADO devolviéndolo
-    a RESERVA, para poder revisarlo y volver a decidirlo. No se permite si el
-    pedido ya tiene material servido."""
+    """Reabre (admin o manager) un pedido ya decidido —DENEGADO / CANCELADO /
+    CADUCADO / APROBADO / APROBADO_PARCIAL— devolviéndolo a RESERVA, para poder
+    revisarlo y volver a decidirlo. No se permite si el pedido ya tiene material
+    servido."""
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado.")
 
     estado = (pedido.estado or "").upper()
-    reabribles = {"DENEGADO", "CANCELADO", "CADUCADO"}
+    reabribles = {"DENEGADO", "CANCELADO", "CADUCADO", "APROBADO", "APROBADO_PARCIAL"}
     if estado not in reabribles:
         raise HTTPException(
             status_code=400,
-            detail=f"Solo se pueden reabrir pedidos denegados, cancelados o caducados (estado actual: {estado}).",
+            detail=f"Solo se pueden reabrir pedidos ya decididos (denegados, cancelados, caducados o aprobados). Estado actual: {estado}.",
         )
 
     items = getattr(pedido, "items", None) or []

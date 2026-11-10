@@ -477,7 +477,7 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
   // caducado sin material servido, para poder revisarlo y aprobarlo de nuevo.
   const algoServido = items.some((it) => Number(it.cantidad_servida || 0) > 0);
   const reabrible =
-    canReopen && ["DENEGADO", "CANCELADO", "CADUCADO"].includes(estadoNormPedido) && !algoServido;
+    canReopen && ["DENEGADO", "CANCELADO", "CADUCADO", "APROBADO", "APROBADO_PARCIAL"].includes(estadoNormPedido) && !algoServido;
   const reabrir = async () => {
     if (reabriendo) return;
     if (!window.confirm(
@@ -739,7 +739,7 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
               <button
                 onClick={reabrir}
                 disabled={reabriendo}
-                title="Reabrir el pedido: vuelve a RESERVA para poder revisarlo y aprobarlo (solo admin)"
+                title="Reabrir el pedido: vuelve a RESERVA para poder revisarlo y volver a decidirlo"
                 style={{
                   padding: "10px 16px",
                   borderRadius: 14,
@@ -1478,7 +1478,6 @@ export default function Aprobaciones() {
 
   const role = me?.rol || me?.role;
   const canApprove = role === "admin" || role === "manager";
-  const esAdmin = role === "admin";
 
   return (
     <div style={{ width: "100%" }}>
@@ -1736,7 +1735,7 @@ export default function Aprobaciones() {
         productos={productos}
         onClose={() => setDetallePedido(null)}
         canApprove={canApprove}
-        canReopen={esAdmin}
+        canReopen={canApprove}
         onPedidoUpdated={(updated) => {
           // Keep the modal in sync with the freshly-returned pedido and
           // refresh the parent list so the table reflects the new state.
