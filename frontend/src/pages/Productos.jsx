@@ -178,32 +178,50 @@ const ProductoRow = memo(function ProductoRow({
 });
 
 
-function FichaSection({ title, children }) {
+// ── Ficha de producto: helpers de diseño ──────────────────────────────
+function FichaCard({ color, icon, title, right, children }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.3, color: "#64748b", marginBottom: 6 }}>{title}</div>
-      {children}
+    <div style={{ marginBottom: 14, borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", borderLeft: `5px solid ${color}`, background: "#fff", overflow: "hidden", boxShadow: "0 1px 3px rgba(2,6,23,0.05)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: `${color}14`, borderBottom: `1px solid ${color}26` }}>
+        <span style={{ fontSize: 15 }}>{icon}</span>
+        <span style={{ fontWeight: 900, color, fontSize: 12.5, textTransform: "uppercase", letterSpacing: 0.5 }}>{title}</span>
+        {right != null ? <span style={{ marginLeft: "auto" }}>{right}</span> : null}
+      </div>
+      <div style={{ padding: 14 }}>{children}</div>
     </div>
   );
 }
-function FichaRow({ k, v }) {
+function FichaKV({ k, v }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid rgba(15,23,42,0.05)" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "6px 0", borderBottom: "1px solid rgba(15,23,42,0.05)" }}>
       <span style={{ color: "#64748b", fontWeight: 700 }}>{k}</span>
       <span style={{ fontWeight: 800, color: "#0f172a", textAlign: "right" }}>{v}</span>
+    </div>
+  );
+}
+function FichaStat({ label, value, color }) {
+  return (
+    <div style={{ flex: "1 1 110px", minWidth: 100, padding: "12px 14px", borderRadius: 12, background: `${color}12`, border: `1px solid ${color}33`, textAlign: "center" }}>
+      <div style={{ fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.3, color }}>{label}</div>
+      <div style={{ marginTop: 3, fontSize: 22, fontWeight: 900, color: "#0f172a", lineHeight: 1.1 }}>{value}</div>
     </div>
   );
 }
 function FichaMuted({ children }) {
   return <div style={{ color: "#94a3b8", fontWeight: 700, fontSize: 13 }}>{children}</div>;
 }
-function fichaTipoPill(tipo) {
+// Color/icono por tipo de movimiento.
+const MOV_TIPO = {
+  entrada: { color: "#059669", icon: "⬇", label: "Entrada" },
+  salida: { color: "#dc2626", icon: "⬆", label: "Salida" },
+  traslado: { color: "#2563eb", icon: "↔", label: "Traslado" },
+};
+function movMeta(tipo) {
   const t = String(tipo || "").toLowerCase();
-  const base = { display: "inline-flex", padding: "2px 8px", borderRadius: 999, fontWeight: 900, fontSize: 11, textTransform: "capitalize" };
-  if (t.includes("entrada")) return { ...base, background: "rgba(16,185,129,0.14)", color: "#065f46" };
-  if (t.includes("salida")) return { ...base, background: "rgba(239,68,68,0.12)", color: "#991b1b" };
-  if (t.includes("traslado")) return { ...base, background: "rgba(59,130,246,0.12)", color: "#1e3a8a" };
-  return { ...base, background: "rgba(100,116,139,0.14)", color: "#334155" };
+  if (t.includes("entrada")) return MOV_TIPO.entrada;
+  if (t.includes("salida")) return MOV_TIPO.salida;
+  if (t.includes("traslado")) return MOV_TIPO.traslado;
+  return { color: "#64748b", icon: "•", label: tipo || "—" };
 }
 
 function FichaProductoModal({ producto, esEmpresaExterna = false, onClose }) {
@@ -232,80 +250,121 @@ function FichaProductoModal({ producto, esEmpresaExterna = false, onClose }) {
   const disponible = Number(p.disponible ?? 0);
   const distribucion = data?.distribucion || [];
   const movimientos = data?.movimientos || [];
-  const fmtFecha = (v) => { if (!v) return "—"; const d = new Date(v); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("es-ES"); };
-  const movOD = (m) => {
-    const org = [m.zona_origen, m.tamano_origen].filter(Boolean).join(" ") || m.origen_tipo || "—";
-    const dstExt = [m.distrito_destino, m.barrio_destino, m.direccion_destino].filter(Boolean).join(" · ");
-    const dst = [m.zona_destino, m.tamano_destino].filter(Boolean).join(" ") || dstExt || m.destino_tipo || "—";
-    return { org, dst };
+  const fmtFechaHora = (v) => {
+    if (!v) return "—";
+    let s = String(v);
+    if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s += "Z";
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const lugar = (tipo, zona, tamano, ext) => {
+    const t = String(tipo || "");
+    if (t.toLowerCase() === "vivero") {
+      return ["Vivero", zona ? `Zona ${zona}` : null, tamano || null].filter(Boolean).join(" · ");
+    }
+    return [t || "—", ext || null].filter(Boolean).join(" · ");
   };
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.6)", backdropFilter: "blur(4px)", zIndex: 1400, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(1000px, 96vw)", maxHeight: "92vh", background: "#fff", borderRadius: 20, overflow: "hidden", boxShadow: "0 30px 80px rgba(2,6,23,0.4)", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 20px", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(1040px, 96vw)", maxHeight: "92vh", background: "#f1f5f9", borderRadius: 22, overflow: "hidden", boxShadow: "0 30px 80px rgba(2,6,23,0.45)", display: "flex", flexDirection: "column" }}>
+        {/* Cabecera con color de marca */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 22px", background: "linear-gradient(100deg, #0f5132 0%, #14663f 55%, #0ea5e9 160%)" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 22, fontWeight: 900, fontStyle: "italic", color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{productScientificName(p)}</div>
-            <div style={{ color: "#64748b", fontWeight: 700 }}>{productCommonName(p)}</div>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,0.75)" }}>Ficha de producto</div>
+            <div style={{ fontSize: 23, fontWeight: 900, fontStyle: "italic", color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{productScientificName(p)}</div>
+            <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ color: "#dcfce7", fontWeight: 700, fontSize: 13 }}>{productCommonName(p)}</span>
+              {p.categoria ? <span style={{ padding: "2px 9px", borderRadius: 999, background: "rgba(255,255,255,0.18)", color: "#fff", fontWeight: 800, fontSize: 11 }}>{p.categoria}{p.subcategoria ? ` · ${p.subcategoria}` : ""}</span> : null}
+            </div>
           </div>
-          <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 12, border: "1px solid rgba(15,23,42,0.14)", background: "#f8fafc", color: "#334155", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>Cerrar</button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Cerrar"
+            style={{ flexShrink: 0, padding: "9px 16px", borderRadius: 12, border: "2px solid rgba(255,255,255,0.35)", background: "#ef4444", color: "#fff", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap", boxShadow: "0 6px 16px rgba(239,68,68,0.35)" }}
+          >
+            ✕ Cerrar
+          </button>
         </div>
 
         <div style={{ padding: 18, display: "flex", gap: 18, flexWrap: "wrap", overflowY: "auto" }}>
           {imgUrl ? (
-            <div style={{ flex: "1 1 320px", minWidth: 260, alignSelf: "flex-start", background: "#0f172a", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+            <div style={{ flex: "1 1 320px", minWidth: 260, alignSelf: "flex-start", background: "#0f172a", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, boxShadow: "0 10px 30px rgba(2,6,23,0.12)" }}>
               <img src={imgUrl} alt={productScientificName(p)} style={{ maxWidth: "100%", maxHeight: "68vh", borderRadius: 10, display: "block" }} />
             </div>
           ) : null}
 
           <div style={{ flex: "2 1 360px", minWidth: 280 }}>
-            <FichaSection title="Datos">
-              <FichaRow k="Nombre científico" v={p.nombre_cientifico || "—"} />
-              <FichaRow k="Nombre común" v={p.nombre_natural || "—"} />
-              <FichaRow k="Categoría" v={p.categoria || "—"} />
-              <FichaRow k="Subcategoría" v={p.subcategoria || "—"} />
-            </FichaSection>
+            <FichaCard color="#2563eb" icon="📋" title="Datos">
+              <FichaKV k="Nombre científico" v={p.nombre_cientifico || "—"} />
+              <FichaKV k="Nombre común" v={p.nombre_natural || "—"} />
+              <FichaKV k="Categoría" v={p.categoria || "—"} />
+              <FichaKV k="Subcategoría" v={p.subcategoria || "—"} />
+            </FichaCard>
 
-            <FichaSection title="Stock">
-              <FichaRow k="Stock total" v={formatCantidadConUnidad(stock, unidad) || "0"} />
-              {!esEmpresaExterna ? <FichaRow k="Reservado" v={reservado > 0 ? formatCantidadConUnidad(reservado, unidad) : "—"} /> : null}
-              {!esEmpresaExterna ? <FichaRow k="Disponible" v={formatCantidadConUnidad(disponible, unidad) || "0"} /> : null}
-            </FichaSection>
+            <FichaCard color="#0f766e" icon="📦" title="Stock">
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <FichaStat label="Stock total" value={formatCantidadConUnidad(stock, unidad) || "0"} color="#334155" />
+                {!esEmpresaExterna ? <FichaStat label="Reservado" value={reservado > 0 ? formatCantidadConUnidad(reservado, unidad) : "—"} color="#b45309" /> : null}
+                {!esEmpresaExterna ? <FichaStat label="Disponible" value={formatCantidadConUnidad(disponible, unidad) || "0"} color="#047857" /> : null}
+              </div>
+            </FichaCard>
 
             {!esEmpresaExterna ? (
-              <FichaSection title="Distribución">
+              <FichaCard color="#7c3aed" icon="📍" title="Distribución" right={distribucion.length ? <span style={{ fontSize: 11, fontWeight: 900, color: "#7c3aed" }}>{distribucion.length} ubic.</span> : null}>
                 {loading ? <FichaMuted>Cargando…</FichaMuted> : distribucion.length === 0 ? <FichaMuted>Sin stock en ninguna zona.</FichaMuted> : (
-                  <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {distribucion.map((d, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)", fontWeight: 700, color: "#334155" }}>
-                        <span style={{ fontWeight: 900, color: "#0f172a" }}>{formatCantidad(d.cantidad)} {unidad}</span>
-                        <span>· {d.tamano || "—"}</span>
-                        <span>· Zona {d.zona || "—"}</span>
+                      <div key={i} style={{ display: "inline-flex", alignItems: "baseline", gap: 6, padding: "8px 12px", borderRadius: 10, background: "rgba(124,58,237,0.07)", border: "1px solid rgba(124,58,237,0.20)" }}>
+                        <span style={{ fontWeight: 900, color: "#5b21b6", fontSize: 16 }}>{formatCantidad(d.cantidad)}</span>
+                        <span style={{ fontWeight: 700, color: "#6d28d9", fontSize: 12 }}>{unidad}</span>
+                        <span style={{ fontWeight: 800, color: "#334155", fontSize: 12.5 }}>· {d.tamano || "—"}</span>
+                        <span style={{ fontWeight: 900, color: "#0f172a", fontSize: 12.5 }}>· Zona {d.zona || "—"}</span>
                       </div>
                     ))}
                   </div>
                 )}
-              </FichaSection>
+              </FichaCard>
             ) : null}
 
             {!esEmpresaExterna ? (
-              <FichaSection title={`Movimientos${movimientos.length ? ` (${movimientos.length})` : ""}`}>
+              <FichaCard color="#b45309" icon="🔄" title="Movimientos" right={movimientos.length ? <span style={{ fontSize: 11, fontWeight: 900, color: "#b45309" }}>{movimientos.length}</span> : null}>
                 {loading ? <FichaMuted>Cargando…</FichaMuted> : error ? <FichaMuted>{error}</FichaMuted> : movimientos.length === 0 ? <FichaMuted>Sin movimientos registrados.</FichaMuted> : (
-                  <div style={{ display: "grid", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+                  <div style={{ display: "grid", gap: 8, maxHeight: 320, overflowY: "auto", paddingRight: 2 }}>
                     {movimientos.map((m) => {
-                      const od = movOD(m);
+                      const meta = movMeta(m.tipo_movimiento);
+                      const extDst = [m.distrito_destino, m.barrio_destino, m.direccion_destino].filter(Boolean).join(" · ");
+                      const origen = lugar(m.origen_tipo, m.zona_origen, m.tamano_origen, null);
+                      const destino = lugar(m.destino_tipo, m.zona_destino, m.tamano_destino, extDst);
                       return (
-                        <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "#fff", border: "1px solid rgba(15,23,42,0.07)", flexWrap: "wrap" }}>
-                          <span style={fichaTipoPill(m.tipo_movimiento)}>{m.tipo_movimiento || "—"}</span>
-                          <span style={{ fontWeight: 900, color: "#0f172a" }}>{formatCantidad(m.cantidad)}</span>
-                          <span style={{ color: "#64748b", fontWeight: 700, fontSize: 12.5 }}>{od.org} → {od.dst}</span>
-                          <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>{fmtFecha(m.fecha_movimiento)}</span>
+                        <div key={m.id} style={{ borderRadius: 12, border: "1px solid rgba(15,23,42,0.08)", borderLeft: `4px solid ${meta.color}`, background: "#fff", padding: "10px 12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, background: `${meta.color}18`, color: meta.color, fontWeight: 900, fontSize: 11.5 }}>
+                              <span>{meta.icon}</span>{meta.label}
+                            </span>
+                            <span style={{ fontWeight: 900, color: "#0f172a", fontSize: 15 }}>{formatCantidadConUnidad(m.cantidad, unidad)}</span>
+                            <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>{fmtFechaHora(m.fecha_movimiento)}</span>
+                          </div>
+                          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 12.5, fontWeight: 700 }}>
+                            <span style={{ color: "#64748b" }}>De</span>
+                            <span style={{ color: "#0f172a" }}>{origen}</span>
+                            <span style={{ color: meta.color, fontWeight: 900 }}>→</span>
+                            <span style={{ color: "#64748b" }}>A</span>
+                            <span style={{ color: "#0f172a" }}>{destino}</span>
+                          </div>
+                          {(m.created_by || m.observaciones) ? (
+                            <div style={{ marginTop: 5, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11.5, color: "#64748b", fontWeight: 600 }}>
+                              {m.created_by ? <span>👤 {m.created_by}</span> : null}
+                              {m.observaciones ? <span style={{ fontStyle: "italic" }}>📝 {m.observaciones}</span> : null}
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
                   </div>
                 )}
-              </FichaSection>
+              </FichaCard>
             ) : null}
           </div>
         </div>
