@@ -8,6 +8,7 @@ import {
   updateProducto,
   deleteProducto,
   importarProductos,
+  getFichaProducto,
 } from "../api/api";
 import { formatCantidad, formatCantidadConUnidad } from "../utils/numero";
 import {
@@ -16,7 +17,7 @@ import {
   getFormatoOptions,
 } from "../utils/formato";
 import VerPlanta from "../components/VerPlanta";
-import { usePlantsWithImage } from "../utils/plantImages";
+import { usePlantsWithImage, usePlantImage } from "../utils/plantImages";
 
 const TAMANOS = ["Semillero", "M12", "M20", "M35"];
 
@@ -55,6 +56,7 @@ const ProductoRow = memo(function ProductoRow({
   puedePedirMas,
   onToggleInterno,
   onPedirMas,
+  onVerFicha,
 }) {
   const stock = Number(p.stock ?? 0);
   const min = p.stock_minimo;
@@ -70,10 +72,26 @@ const ProductoRow = memo(function ProductoRow({
   return (
     <tr style={low ? { color: "crimson", fontWeight: 800 } : undefined}>
       <td>
-        <div style={{ fontWeight: 900 }}>
-          <VerPlanta nombreCientifico={p.nombre_cientifico} nombreNatural={p.nombre_natural} variant="link" stopPropagation={false}>
-            {productScientificName(p)}
-          </VerPlanta>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 900 }}>{productScientificName(p)}</span>
+          <button
+            type="button"
+            onClick={() => onVerFicha && onVerFicha(p)}
+            title="Ver ficha del producto (stock, distribución, movimientos e imagen)"
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid rgba(29,78,216,0.30)",
+              background: "rgba(59,130,246,0.08)",
+              color: "#1d4ed8",
+              fontWeight: 900,
+              fontSize: 12,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Ficha producto
+          </button>
         </div>
       </td>
       <td>
@@ -159,6 +177,142 @@ const ProductoRow = memo(function ProductoRow({
   );
 });
 
+
+function FichaSection({ title, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: 0.3, color: "#64748b", marginBottom: 6 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+function FichaRow({ k, v }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid rgba(15,23,42,0.05)" }}>
+      <span style={{ color: "#64748b", fontWeight: 700 }}>{k}</span>
+      <span style={{ fontWeight: 800, color: "#0f172a", textAlign: "right" }}>{v}</span>
+    </div>
+  );
+}
+function FichaMuted({ children }) {
+  return <div style={{ color: "#94a3b8", fontWeight: 700, fontSize: 13 }}>{children}</div>;
+}
+function fichaTipoPill(tipo) {
+  const t = String(tipo || "").toLowerCase();
+  const base = { display: "inline-flex", padding: "2px 8px", borderRadius: 999, fontWeight: 900, fontSize: 11, textTransform: "capitalize" };
+  if (t.includes("entrada")) return { ...base, background: "rgba(16,185,129,0.14)", color: "#065f46" };
+  if (t.includes("salida")) return { ...base, background: "rgba(239,68,68,0.12)", color: "#991b1b" };
+  if (t.includes("traslado")) return { ...base, background: "rgba(59,130,246,0.12)", color: "#1e3a8a" };
+  return { ...base, background: "rgba(100,116,139,0.14)", color: "#334155" };
+}
+
+function FichaProductoModal({ producto, esEmpresaExterna = false, onClose }) {
+  const p = producto;
+  const imgUrl = usePlantImage(p?.nombre_cientifico);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!p) { setData(null); return; }
+    let cancel = false;
+    setLoading(true); setError(""); setData(null);
+    getFichaProducto(p.id)
+      .then((d) => { if (!cancel) setData(d); })
+      .catch((e) => { if (!cancel) setError(e?.response?.data?.detail || e?.message || "No se pudo cargar la ficha."); })
+      .finally(() => { if (!cancel) setLoading(false); });
+    return () => { cancel = true; };
+  }, [p?.id]);
+
+  if (!p) return null;
+
+  const unidad = getUnidadProducto(p);
+  const stock = Number(p.stock ?? 0);
+  const reservado = Number(p.reservado ?? 0);
+  const disponible = Number(p.disponible ?? 0);
+  const distribucion = data?.distribucion || [];
+  const movimientos = data?.movimientos || [];
+  const fmtFecha = (v) => { if (!v) return "—"; const d = new Date(v); return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("es-ES"); };
+  const movOD = (m) => {
+    const org = [m.zona_origen, m.tamano_origen].filter(Boolean).join(" ") || m.origen_tipo || "—";
+    const dstExt = [m.distrito_destino, m.barrio_destino, m.direccion_destino].filter(Boolean).join(" · ");
+    const dst = [m.zona_destino, m.tamano_destino].filter(Boolean).join(" ") || dstExt || m.destino_tipo || "—";
+    return { org, dst };
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.6)", backdropFilter: "blur(4px)", zIndex: 1400, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(1000px, 96vw)", maxHeight: "92vh", background: "#fff", borderRadius: 20, overflow: "hidden", boxShadow: "0 30px 80px rgba(2,6,23,0.4)", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 20px", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, fontStyle: "italic", color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{productScientificName(p)}</div>
+            <div style={{ color: "#64748b", fontWeight: 700 }}>{productCommonName(p)}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 12, border: "1px solid rgba(15,23,42,0.14)", background: "#f8fafc", color: "#334155", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>Cerrar</button>
+        </div>
+
+        <div style={{ padding: 18, display: "flex", gap: 18, flexWrap: "wrap", overflowY: "auto" }}>
+          {imgUrl ? (
+            <div style={{ flex: "1 1 320px", minWidth: 260, alignSelf: "flex-start", background: "#0f172a", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+              <img src={imgUrl} alt={productScientificName(p)} style={{ maxWidth: "100%", maxHeight: "68vh", borderRadius: 10, display: "block" }} />
+            </div>
+          ) : null}
+
+          <div style={{ flex: "2 1 360px", minWidth: 280 }}>
+            <FichaSection title="Datos">
+              <FichaRow k="Nombre científico" v={p.nombre_cientifico || "—"} />
+              <FichaRow k="Nombre común" v={p.nombre_natural || "—"} />
+              <FichaRow k="Categoría" v={p.categoria || "—"} />
+              <FichaRow k="Subcategoría" v={p.subcategoria || "—"} />
+            </FichaSection>
+
+            <FichaSection title="Stock">
+              <FichaRow k="Stock total" v={formatCantidadConUnidad(stock, unidad) || "0"} />
+              {!esEmpresaExterna ? <FichaRow k="Reservado" v={reservado > 0 ? formatCantidadConUnidad(reservado, unidad) : "—"} /> : null}
+              {!esEmpresaExterna ? <FichaRow k="Disponible" v={formatCantidadConUnidad(disponible, unidad) || "0"} /> : null}
+            </FichaSection>
+
+            {!esEmpresaExterna ? (
+              <FichaSection title="Distribución">
+                {loading ? <FichaMuted>Cargando…</FichaMuted> : distribucion.length === 0 ? <FichaMuted>Sin stock en ninguna zona.</FichaMuted> : (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {distribucion.map((d, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "#f8fafc", border: "1px solid rgba(15,23,42,0.06)", fontWeight: 700, color: "#334155" }}>
+                        <span style={{ fontWeight: 900, color: "#0f172a" }}>{formatCantidad(d.cantidad)} {unidad}</span>
+                        <span>· {d.tamano || "—"}</span>
+                        <span>· Zona {d.zona || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </FichaSection>
+            ) : null}
+
+            {!esEmpresaExterna ? (
+              <FichaSection title={`Movimientos${movimientos.length ? ` (${movimientos.length})` : ""}`}>
+                {loading ? <FichaMuted>Cargando…</FichaMuted> : error ? <FichaMuted>{error}</FichaMuted> : movimientos.length === 0 ? <FichaMuted>Sin movimientos registrados.</FichaMuted> : (
+                  <div style={{ display: "grid", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+                    {movimientos.map((m) => {
+                      const od = movOD(m);
+                      return (
+                        <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "#fff", border: "1px solid rgba(15,23,42,0.07)", flexWrap: "wrap" }}>
+                          <span style={fichaTipoPill(m.tipo_movimiento)}>{m.tipo_movimiento || "—"}</span>
+                          <span style={{ fontWeight: 900, color: "#0f172a" }}>{formatCantidad(m.cantidad)}</span>
+                          <span style={{ color: "#64748b", fontWeight: 700, fontSize: 12.5 }}>{od.org} → {od.dst}</span>
+                          <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>{fmtFecha(m.fecha_movimiento)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </FichaSection>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function PedirMasModal({ open, producto, onClose, onAddToCart, saving }) {
   // El modal "pedir más" usa la lógica de formato/cantidad por categoría
@@ -1510,6 +1664,7 @@ export default function Productos() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [gestionOpen, setGestionOpen] = useState(false);
+  const [fichaProducto, setFichaProducto] = useState(null);
 
   // Cesta de reposición: vive solo en memoria (al cerrar la pestaña se pierde).
   // Cada item lleva el producto_id, el formato/tamaño concreto, la cantidad y
@@ -2009,6 +2164,7 @@ export default function Productos() {
                     puedePedirMas={puedePedirMas}
                     onToggleInterno={toggleEsInterno}
                     onPedirMas={openPedirMas}
+                    onVerFicha={setFichaProducto}
                   />
                 ))
               )}
@@ -2051,6 +2207,12 @@ export default function Productos() {
         esAdmin={(me?.rol || me?.role) === "admin"}
         onClose={() => setGestionOpen(false)}
         onChanged={load}
+      />
+
+      <FichaProductoModal
+        producto={fichaProducto}
+        esEmpresaExterna={esEmpresaExterna}
+        onClose={() => setFichaProducto(null)}
       />
     </div>
   );

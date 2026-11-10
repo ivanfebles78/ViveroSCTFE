@@ -137,6 +137,12 @@ export const importarProductos = async (file) => {
 
 // ---------------- MOVIMIENTOS ----------------
 
+// Ficha de producto: distribución por zona/tamaño + movimientos del producto.
+export const getFichaProducto = async (productoId) => {
+  const { data } = await api.get(`/productos/${productoId}/ficha`);
+  return data;
+};
+
 export const getMovimientos = async () => {
   const { data } = await api.get("/movimientos");
   return data;

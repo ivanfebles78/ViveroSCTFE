@@ -1870,6 +1870,72 @@ def actualizar_producto(
     return _producto_dict(producto)
 
 
+@app.get("/productos/{producto_id}/ficha")
+def ficha_producto(
+    producto_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
+):
+    """Ficha de un producto: distribución del stock por zona/tamaño y su historial
+    de movimientos. La empresa externa no ve ni distribución ni movimientos."""
+    p = db.query(Producto).filter(Producto.id == producto_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    rol = (current_user.rol or "").strip().lower()
+    if rol == "empresa_externa":
+        return {"distribucion": [], "movimientos": []}
+
+    # Distribución: inventario físico por zona + tamaño (suma), solo con cantidad > 0.
+    inv_rows = (
+        db.query(
+            InventarioLote.zona,
+            InventarioLote.tamano,
+            func.sum(InventarioLote.cantidad_disponible).label("cantidad"),
+        )
+        .filter(InventarioLote.producto_id == producto_id)
+        .filter(InventarioLote.cantidad_disponible > 0)
+        .group_by(InventarioLote.zona, InventarioLote.tamano)
+        .all()
+    )
+    distribucion = [
+        {"zona": z, "tamano": t, "cantidad": float(c or 0)}
+        for (z, t, c) in inv_rows
+        if float(c or 0) > 0
+    ]
+    distribucion.sort(key=lambda d: (str(d["zona"] or ""), str(d["tamano"] or "")))
+
+    # Movimientos del producto (más recientes primero; límite razonable).
+    movs = (
+        db.query(Movimiento)
+        .filter(Movimiento.producto_id == producto_id)
+        .order_by(Movimiento.id.desc())
+        .limit(300)
+        .all()
+    )
+    movimientos = [
+        {
+            "id": m.id,
+            "tipo_movimiento": m.tipo_movimiento,
+            "cantidad": float(m.cantidad or 0),
+            "origen_tipo": m.origen_tipo,
+            "destino_tipo": m.destino_tipo,
+            "zona_origen": m.zona_origen,
+            "zona_destino": m.zona_destino,
+            "tamano_origen": m.tamano_origen,
+            "tamano_destino": m.tamano_destino,
+            "fecha_movimiento": m.fecha_movimiento,
+            "distrito_destino": m.distrito_destino,
+            "barrio_destino": m.barrio_destino,
+            "direccion_destino": m.direccion_destino,
+            "observaciones": getattr(m, "observaciones", None),
+            "created_by": getattr(m, "created_by", None),
+        }
+        for m in movs
+    ]
+    return {"distribucion": distribucion, "movimientos": movimientos}
+
+
 @app.delete("/productos/{producto_id}")
 def eliminar_producto(
     producto_id: int,

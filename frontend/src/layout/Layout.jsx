@@ -836,7 +836,7 @@ function AlertBellIcon({ hasUnread }) {
   );
 }
 
-function NotificationModal({ open, onClose, notifications, onMarkAsRead }) {
+function NotificationModal({ open, onClose, notifications, onMarkAsRead, onMarkAllAsRead }) {
   if (!open) return null;
 
   return (
@@ -881,9 +881,28 @@ function NotificationModal({ open, onClose, notifications, onMarkAsRead }) {
             </div>
           </div>
 
-          <button onClick={onClose} style={closeButtonStyle()}>
-            Cerrar
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {notifications.length > 0 && onMarkAllAsRead ? (
+              <button
+                onClick={onMarkAllAsRead}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(16,185,129,0.35)",
+                  background: "rgba(16,185,129,0.10)",
+                  color: "#065f46",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ✓ Marcar todas como leídas
+              </button>
+            ) : null}
+            <button onClick={onClose} style={closeButtonStyle()}>
+              Cerrar
+            </button>
+          </div>
         </div>
 
         <div style={{ padding: 22, overflowY: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1627,6 +1646,14 @@ export default function Layout() {
     );
   };
 
+  const markAllNotificationsAsRead = () => {
+    setReadNotificationIds((prev) => {
+      const ids = new Set(prev);
+      for (const n of unreadNotifications) ids.add(n.id);
+      return Array.from(ids);
+    });
+  };
+
   const userRole = me?.rol || me?.role || "";
   const isAdmin = userRole === "admin";
   const sidebarWidth = 220;
@@ -1989,6 +2016,7 @@ export default function Layout() {
           open={notificationsOpen}
           onClose={() => setNotificationsOpen(false)}
           notifications={unreadNotifications}
+          onMarkAllAsRead={markAllNotificationsAsRead}
           onMarkAsRead={markNotificationAsRead}
         />
       )}
