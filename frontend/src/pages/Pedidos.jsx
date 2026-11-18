@@ -2138,10 +2138,12 @@ function PedidoDetalleCellOld({
                         ) : null;
                       })()}
                       {it.tiene_ficha ? (
-                        <button type="button" onClick={() => verFichaPedido(it.id)}
-                          style={{ marginTop: 2, padding: "2px 8px", borderRadius: 6, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>
-                          📎 Ver ficha
-                        </button>
+                        <div style={{ marginTop: 6 }}>
+                          <button type="button" onClick={() => verFichaPedido(it.id)}
+                            style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>
+                            📎 Ver ficha
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                     <div style={{ textAlign: "center", fontWeight: 900, color: "#334155" }}>

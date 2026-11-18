@@ -1036,10 +1036,12 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
                             <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textDecoration: "none" }}>{it.producto_nombre_natural}</div>
                           ) : null}
                           {it.tiene_ficha ? (
-                            <button type="button" onClick={() => verFichaPedido(it.id)}
-                              style={{ marginTop: 3, padding: "2px 8px", borderRadius: 6, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 11, cursor: "pointer", textDecoration: "none" }}>
-                              📎 Ver ficha
-                            </button>
+                            <div style={{ marginTop: 6 }}>
+                              <button type="button" onClick={() => verFichaPedido(it.id)}
+                                style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 11, cursor: "pointer", textDecoration: "none" }}>
+                                📎 Ver ficha
+                              </button>
+                            </div>
                           ) : null}
                           {/* IDs/matrículas por unidad (árboles/palmeras UTE).
                               Solo lectura: las consulta el manager al aprobar. */}
