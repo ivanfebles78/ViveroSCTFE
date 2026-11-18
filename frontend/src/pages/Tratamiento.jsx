@@ -226,7 +226,9 @@ export default function Tratamiento() {
   const cargar = async () => {
     setLoading(true); setError("");
     try {
-      const data = await getTratamientos({ estado: fEstado, q: fQ, subcategoria: fSub, desde: fDesde, hasta: fHasta });
+      // La búsqueda por producto (fQ) se aplica en vivo en el cliente para poder
+      // mostrar el tratamiento COMPLETO cuando cualquiera de sus líneas coincide.
+      const data = await getTratamientos({ estado: fEstado, subcategoria: fSub, desde: fDesde, hasta: fHasta });
       setSolicitudes(data || []);
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || "No se pudieron cargar los tratamientos.");
@@ -244,6 +246,19 @@ export default function Tratamiento() {
     rows.forEach((r) => { if (r.subcategoria) set.add(r.subcategoria); });
     return [...set].sort();
   }, [rows]);
+
+  // Búsqueda por producto EN VIVO (sin acentos, sin mayúsculas). Un tratamiento
+  // aparece si CUALQUIERA de sus líneas coincide, y se muestra entero.
+  const norm = (v) => (v || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const visibleSolicitudes = useMemo(() => {
+    const term = norm(fQ).trim();
+    if (!term) return solicitudes;
+    return solicitudes.filter((s) =>
+      (s.items || []).some(
+        (it) => norm(it.nombre_cientifico).includes(term) || norm(it.nombre_natural).includes(term)
+      )
+    );
+  }, [solicitudes, fQ]);
 
   const limpiarFiltros = () => {
     setFEstado(""); setFQ(""); setFSub(""); setFDesde(""); setFHasta("");
@@ -344,13 +359,13 @@ export default function Tratamiento() {
       {/* LISTA AGRUPADA POR TRATAMIENTO */}
       {loading ? (
         <div style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", padding: 20, color: "#64748b" }}>Cargando…</div>
-      ) : solicitudes.length === 0 ? (
+      ) : visibleSolicitudes.length === 0 ? (
         <div style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", padding: 20, color: "#94a3b8", fontWeight: 600 }}>
           No hay tratamientos que mostrar.
         </div>
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
-          {solicitudes.map((s) => {
+          {visibleSolicitudes.map((s) => {
             const est = (s.estado || "").toUpperCase();
             return (
               <div key={s.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.1)", overflow: "hidden" }}>
