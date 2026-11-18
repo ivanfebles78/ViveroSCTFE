@@ -5,6 +5,7 @@ import {
   getFitosanitariosDisponibles,
   crearTratamiento,
   aplicarTratamiento,
+  eliminarTratamiento,
   verFichaTratamiento,
 } from "../api/api";
 import { formatCantidad } from "../utils/numero";
@@ -207,6 +208,7 @@ export default function Tratamiento() {
   const role = me?.rol || me?.role;
   const puedeSolicitar = role === "empresa_externa" || role === "admin";
   const puedeAplicar = role === "gestor_vivero" || role === "admin";
+  const isAdmin = role === "admin";
 
   const [solicitudes, setSolicitudes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -263,6 +265,22 @@ export default function Tratamiento() {
   const verFicha = async (itemId) => {
     try { await verFichaTratamiento(itemId); }
     catch (e) { setError(e?.response?.data?.detail || "No se pudo abrir la ficha."); }
+  };
+
+  const eliminar = async (s) => {
+    const aplicado = (s.estado || "").toUpperCase() === "APLICADO";
+    const aviso = aplicado
+      ? `¿Eliminar el tratamiento #${s.id}? Al estar APLICADO, el material consumido volverá al stock.`
+      : `¿Eliminar el tratamiento #${s.id}? Esta acción no se puede deshacer.`;
+    if (!window.confirm(aviso)) return;
+    try {
+      await eliminarTratamiento(s.id);
+      setOk(`Tratamiento #${s.id} eliminado${aplicado ? " y stock repuesto" : ""}.`);
+      setTimeout(() => setOk(""), 5000);
+      cargar();
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || "No se pudo eliminar el tratamiento.");
+    }
   };
 
   const th = { textAlign: "left", padding: "10px 12px", fontSize: 12, fontWeight: 900, color: "#475569", textTransform: "uppercase", letterSpacing: 0.3, borderBottom: "2px solid #e2e8f0" };
@@ -323,59 +341,88 @@ export default function Tratamiento() {
         <button type="button" onClick={limpiarFiltros} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(15,23,42,0.15)", background: "#f8fafc", fontWeight: 800, cursor: "pointer" }}>Limpiar</button>
       </div>
 
-      {/* TABLA */}
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-          <thead>
-            <tr>
-              <th style={th}>Fecha</th>
-              <th style={th}>Nombre común</th>
-              <th style={th}>Nombre científico</th>
-              <th style={th}>Categoría</th>
-              <th style={th}>Subcategoría</th>
-              <th style={th}>Cantidad</th>
-              <th style={th}>Estado</th>
-              <th style={th}>Ficha</th>
-              <th style={th}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td style={td} colSpan={9}>Cargando…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td style={{ ...td, color: "#94a3b8" }} colSpan={9}>No hay tratamientos que mostrar.</td></tr>
-            ) : rows.map((r) => (
-              <tr key={r.item_id}>
-                <td style={td}>{fmtFecha(r.fecha)}</td>
-                <td style={td}>{r.nombre_natural || "—"}</td>
-                <td style={{ ...td, fontStyle: "italic" }}>{r.nombre_cientifico || "—"}</td>
-                <td style={td}>{r.categoria || "—"}</td>
-                <td style={td}>{r.subcategoria || "—"}</td>
-                <td style={{ ...td, fontWeight: 800 }}>{formatCantidad(r.cantidad)}</td>
-                <td style={td}><EstadoBadge estado={r.estado} /></td>
-                <td style={td}>
-                  {r.tiene_ficha ? (
-                    <button type="button" onClick={() => verFicha(r.item_id)}
-                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                      📎 Ver ficha
-                    </button>
-                  ) : <span style={{ color: "#94a3b8" }}>—</span>}
-                </td>
-                <td style={td}>
-                  {puedeAplicar && (r.estado || "").toUpperCase() === "APROBADO" ? (
-                    <button type="button" onClick={() => aplicar(r.solicitud_id)}
-                      style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                      Aplicar
-                    </button>
-                  ) : (r.estado || "").toUpperCase() === "DENEGADO" && r.motivo ? (
-                    <span title={r.motivo} style={{ color: "#991b1b", fontSize: 12, fontWeight: 700 }}>Motivo ⓘ</span>
-                  ) : <span style={{ color: "#cbd5e1" }}>—</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* LISTA AGRUPADA POR TRATAMIENTO */}
+      {loading ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", padding: 20, color: "#64748b" }}>Cargando…</div>
+      ) : solicitudes.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.08)", padding: 20, color: "#94a3b8", fontWeight: 600 }}>
+          No hay tratamientos que mostrar.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          {solicitudes.map((s) => {
+            const est = (s.estado || "").toUpperCase();
+            return (
+              <div key={s.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid rgba(15,23,42,0.1)", overflow: "hidden" }}>
+                {/* Cabecera del tratamiento */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 16px", background: "#f8fafc", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 900, color: "#0f172a", fontSize: 16 }}>Tratamiento #{s.id}</span>
+                    <EstadoBadge estado={s.estado} />
+                    <span style={{ color: "#64748b", fontWeight: 600, fontSize: 13 }}>{fmtFecha(s.created_at)}</span>
+                    <span style={{ color: "#64748b", fontWeight: 600, fontSize: 13 }}>· {s.creado_por || "—"}</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 12 }}>· {(s.items || []).length} producto(s)</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {puedeAplicar && est === "APROBADO" ? (
+                      <button type="button" onClick={() => aplicar(s.id)}
+                        style={{ padding: "7px 14px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                        Aplicar
+                      </button>
+                    ) : null}
+                    {isAdmin ? (
+                      <button type="button" onClick={() => eliminar(s)}
+                        style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid #DC2626", background: "#fff", color: "#991B1B", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                        🗑 Eliminar
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Motivo de denegación, si aplica */}
+                {est === "DENEGADO" && s.motivo_denegacion ? (
+                  <div style={{ padding: "8px 16px", background: "#FEE2E2", color: "#991B1B", fontSize: 13, fontWeight: 700 }}>
+                    Motivo de denegación: {s.motivo_denegacion}
+                  </div>
+                ) : null}
+
+                {/* Líneas del tratamiento */}
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Nombre común</th>
+                      <th style={th}>Nombre científico</th>
+                      <th style={th}>Categoría</th>
+                      <th style={th}>Subcategoría</th>
+                      <th style={th}>Cantidad</th>
+                      <th style={th}>Ficha</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(s.items || []).map((it) => (
+                      <tr key={it.item_id}>
+                        <td style={td}>{it.nombre_natural || "—"}</td>
+                        <td style={{ ...td, fontStyle: "italic" }}>{it.nombre_cientifico || "—"}</td>
+                        <td style={td}>{it.categoria || "—"}</td>
+                        <td style={td}>{it.subcategoria || "—"}</td>
+                        <td style={{ ...td, fontWeight: 800 }}>{formatCantidad(it.cantidad)}</td>
+                        <td style={td}>
+                          {it.tiene_ficha ? (
+                            <button type="button" onClick={() => verFicha(it.item_id)}
+                              style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                              📎 Ver ficha
+                            </button>
+                          ) : <span style={{ color: "#94a3b8" }}>—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {modalOpen ? (
         <SolicitarTratamientoModal

@@ -188,6 +188,11 @@ export const aplicarTratamiento = async (id) => {
   return data;
 };
 
+export const eliminarTratamiento = async (id) => {
+  const { data } = await api.delete(`/tratamientos/${id}`);
+  return data;
+};
+
 // Abre la ficha adjunta de una línea en una pestaña nueva.
 export const verFichaTratamiento = async (itemId) => {
   const resp = await api.get(`/tratamientos/items/${itemId}/ficha`, { responseType: "blob" });

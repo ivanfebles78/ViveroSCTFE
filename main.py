@@ -5782,3 +5782,77 @@ def descargar_ficha_tratamiento(
         media_type=(item.ficha_tipo or "application/octet-stream"),
         headers={"Content-Disposition": f'inline; filename="{nombre}"'},
     )
+
+
+def _reponer_stock_producto(db: Session, producto_id: int, cantidad: float, uuids_hint=None) -> None:
+    """Devuelve `cantidad` al stock de un producto. Si existe algún lote del
+    producto (preferentemente uno de los que se consumieron), suma ahí; si no,
+    crea un lote nuevo. Usado al eliminar un tratamiento ya aplicado."""
+    cant = float(cantidad or 0)
+    if cant <= 0:
+        return
+    inv = None
+    # Preferimos reponer sobre uno de los lotes originalmente consumidos.
+    for u in (uuids_hint or []):
+        if not u:
+            continue
+        inv = (
+            db.query(InventarioLote)
+            .filter(InventarioLote.producto_id == producto_id, InventarioLote.uuid_lote == u)
+            .first()
+        )
+        if inv:
+            break
+    if inv is None:
+        inv = (
+            db.query(InventarioLote)
+            .filter(InventarioLote.producto_id == producto_id)
+            .order_by(InventarioLote.id.asc())
+            .first()
+        )
+    if inv is not None:
+        inv.cantidad_disponible = float(inv.cantidad_disponible or 0) + cant
+    else:
+        db.add(InventarioLote(
+            uuid_lote=str(uuid.uuid4()),
+            producto_id=producto_id,
+            zona=None,
+            tamano=None,
+            cantidad_disponible=cant,
+        ))
+
+
+@app.delete("/tratamientos/{solicitud_id}")
+def eliminar_tratamiento(
+    solicitud_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin"])),
+):
+    """Elimina una solicitud de tratamiento (solo admin). Si estaba APLICADA, el
+    material consumido vuelve al stock (se repone y se registra un movimiento de
+    entrada para la trazabilidad)."""
+    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
+
+    if (s.estado or "").upper() == "APLICADO":
+        ahora = datetime.utcnow()
+        for item in (s.items or []):
+            aplicada = float(item.cantidad_aplicada or 0)
+            if aplicada <= 0:
+                continue
+            _reponer_stock_producto(db, item.producto_id, aplicada)
+            db.add(Movimiento(
+                producto_id=item.producto_id,
+                tipo_movimiento="entrada",
+                origen_tipo="tratamiento",
+                destino_tipo="vivero",
+                cantidad=aplicada,
+                observaciones=f"Reposición por eliminación de tratamiento (solicitud #{s.id})",
+                fecha_movimiento=ahora,
+                created_by=current_user.username,
+            ))
+
+    db.delete(s)
+    db.commit()
+    return {"ok": True}

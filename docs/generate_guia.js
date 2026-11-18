@@ -373,7 +373,7 @@ function coverPage() {
       alignment: AlignmentType.CENTER,
       children: [
         new TextRun({ text: "─── ", size: 28, color: COLORS.primary }),
-        new TextRun({ text: "Versión 1.1", size: 24, bold: true, color: COLORS.primary }),
+        new TextRun({ text: "Versión 1.2", size: 24, bold: true, color: COLORS.primary }),
         new TextRun({ text: " ───", size: 28, color: COLORS.primary }),
       ],
       spacing: { before: 400, after: 120 },
@@ -463,8 +463,11 @@ function introduccion() {
       "Si lees este documento en Word o en PDF, los títulos del índice son enlaces clicables. Mantén pulsada la tecla Ctrl y haz clic en cualquier entrada para saltar a la sección correspondiente.",
     ]),
     spacer(160),
-    h2("Novedades de la versión 1.1"),
+    h2("Novedades de las versiones 1.1 y 1.2"),
     p("Esta edición recoge las funcionalidades incorporadas al sistema desde la primera versión. Encontrarás cada una explicada en su módulo, marcada con un cuadro morado ✨ NOVEDAD."),
+    novedad("Nuevo en la versión 1.2", [
+      "• Módulo de Tratamientos fitosanitarios: solicitud (empresa externa/admin) con ficha obligatoria por línea, aprobación del manager desde Aprobaciones y aplicación del gestor del vivero, con reserva del material y caducidad a 15 días (sección 4.13).",
+    ]),
     novedad("Resumen de lo nuevo", [
       "• Ficha de producto: ventana con datos, stock, distribución por zonas y movimientos (sección 4.2).",
       "• Filtros rápidos de stock disponible y stock reservado en el inventario (4.2).",
@@ -1468,6 +1471,82 @@ function moduloConexiones() {
   ];
 }
 
+function moduloTratamiento() {
+  return [
+    h2("4.13 Tratamientos fitosanitarios"),
+    p(
+      "El módulo de Tratamiento gestiona el consumo de productos fitosanitarios mediante un flujo de solicitud, aprobación y aplicación, análogo al de los pedidos. Lo ven el administrador, la empresa externa, el manager y el gestor del vivero."
+    ),
+    spacer(120),
+    h3("El flujo de un tratamiento"),
+    new Table({
+      width: { size: PAGE.contentWidth, type: WidthType.DXA },
+      columnWidths: [2200, 2300, 4860],
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: [
+            headerCell("Estado", 2200),
+            headerCell("Quién actúa", 2300),
+            headerCell("Significado", 4860),
+          ],
+        }),
+        new TableRow({ children: [
+          cell("RESERVA", { width: 2200, bold: true, bgColor: COLORS.yellowBg }),
+          cell("Empresa externa o admin solicita", { width: 2300 }),
+          cell("La solicitud queda pendiente de aprobación. El fitosanitario queda reservado y deja de contar como disponible.", { width: 4860 }),
+        ] }),
+        new TableRow({ children: [
+          cell("APROBADO", { width: 2200, bold: true, bgColor: COLORS.blueBg }),
+          cell("Manager o admin aprueba", { width: 2300 }),
+          cell("La solicitud es válida y queda pendiente de aplicar. Se fija una caducidad de 15 días.", { width: 4860 }),
+        ] }),
+        new TableRow({ children: [
+          cell("DENEGADO", { width: 2200, bold: true, bgColor: COLORS.redBg }),
+          cell("Manager o admin deniega", { width: 2300 }),
+          cell("La solicitud se rechaza con un motivo obligatorio y se libera la reserva.", { width: 4860 }),
+        ] }),
+        new TableRow({ children: [
+          cell("APLICADO", { width: 2200, bold: true, bgColor: COLORS.greenBg }),
+          cell("Gestor del vivero o admin aplica", { width: 2300 }),
+          cell("El tratamiento se ejecuta: se descuenta el material del stock y se genera un movimiento de salida.", { width: 4860 }),
+        ] }),
+        new TableRow({ children: [
+          cell("CANCELADO", { width: 2200, bold: true, bgColor: COLORS.greyBg }),
+          cell("Sistema (automático)", { width: 2300 }),
+          cell("Una solicitud aprobada que no se aplica en 15 días se cancela y libera la reserva.", { width: 4860 }),
+        ] }),
+      ],
+    }),
+    spacer(160),
+    h3("4.13.1 Solicitar un tratamiento (empresa externa o admin)"),
+    numbered("Accede a “Tratamiento” y pulsa “Solicitar tratamiento”."),
+    numbered("En el modal, elige un producto fitosanitario de la columna izquierda (muestra la cantidad disponible)."),
+    numbered("Indica la cantidad en el centro y pulsa “Añadir”. Repite para añadir más productos."),
+    numbered("Para cada línea, pulsa “Adjuntar ficha” y selecciona el documento (obligatorio por línea)."),
+    numbered("Cuando todas las líneas tengan su ficha, pulsa “Enviar solicitud”."),
+    spacer(120),
+    warning("La ficha es obligatoria", [
+      "No se puede enviar una solicitud de tratamiento si alguna de sus líneas no tiene su ficha adjunta. El documento se guarda con la solicitud y puede descargarse después con el botón “Ver ficha”.",
+    ]),
+    spacer(120),
+    h3("4.13.2 Aprobar o denegar (manager o admin)"),
+    p(
+      "Las solicitudes pendientes aparecen en el módulo de Aprobaciones, en el apartado “Solicitudes de tratamiento pendientes”, junto a los pedidos. Desde ahí el manager puede ver la ficha de cada línea y aprobar o denegar la solicitud (indicando un motivo al denegar)."
+    ),
+    spacer(120),
+    h3("4.13.3 Aplicar el tratamiento (gestor del vivero o admin)"),
+    numbered("Localiza en la tabla de Tratamiento la solicitud en estado APROBADO."),
+    numbered("Pulsa “Aplicar”."),
+    numbered("Confirma. El material se descuenta del stock y se registra un movimiento de salida; la solicitud pasa a APLICADO."),
+    spacer(120),
+    info("Reserva y disponibilidad", [
+      "Mientras una solicitud está en RESERVA o APROBADO, su cantidad de fitosanitario queda reservada y no aparece como disponible para otras solicitudes. Al denegarse, cancelarse o aplicarse, la reserva se libera (al aplicarse, además, el stock se descuenta de verdad).",
+    ]),
+    pageBreak(),
+  ];
+}
+
 function buenasPracticas() {
   return [
     h1("5. Buenas prácticas"),
@@ -1776,7 +1855,7 @@ const doc = new Document({
           children: [
             new Paragraph({
               children: [
-                new TextRun({ text: "Versión 1.1", size: 18, color: COLORS.textMuted }),
+                new TextRun({ text: "Versión 1.2", size: 18, color: COLORS.textMuted }),
                 new TextRun({ text: "\t" }),
                 new TextRun({ text: "Página ", size: 18, color: COLORS.textMuted }),
                 new TextRun({ children: [PageNumber.CURRENT], size: 18, color: COLORS.textMuted }),
@@ -1808,6 +1887,7 @@ const doc = new Document({
         ...moduloMapa(),
         ...moduloUsuarios(),
         ...moduloConexiones(),
+        ...moduloTratamiento(),
         ...buenasPracticas(),
         ...faq(),
         ...soporte(),
