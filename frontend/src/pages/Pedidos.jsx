@@ -3650,7 +3650,7 @@ export default function Pedidos() {
                           lineHeight: 1.3,
                         }}
                       >
-                        {p?.tipo === "reposicion" ? (
+                        {(p?.tipo === "reposicion" || p?.tratamiento_interno) ? (
                           <span style={{ fontWeight: 900, color: "#065f46" }}>Vivero</span>
                         ) : (() => {
                           // Si el pedido reparte en varios destinos distintos
