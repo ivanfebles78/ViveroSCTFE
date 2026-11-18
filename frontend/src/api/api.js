@@ -193,6 +193,18 @@ export const eliminarTratamiento = async (id) => {
   return data;
 };
 
+export const descargarTratamientoPdf = async (id) => {
+  const resp = await api.get(`/tratamientos/${id}/pdf`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `tratamiento_${id}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 // Abre la ficha adjunta de una línea en una pestaña nueva.
 export const verFichaTratamiento = async (itemId) => {
   const resp = await api.get(`/tratamientos/items/${itemId}/ficha`, { responseType: "blob" });

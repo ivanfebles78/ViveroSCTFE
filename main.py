@@ -13,7 +13,7 @@ import traceback
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from pdf_pedido import generar_pdf_pedido
+from pdf_pedido import generar_pdf_pedido, generar_pdf_tratamiento
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 from passlib.context import CryptContext
@@ -5856,3 +5856,35 @@ def eliminar_tratamiento(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/tratamientos/{solicitud_id}/pdf")
+def descargar_tratamiento_pdf(
+    solicitud_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(list(TRATAMIENTO_ROLES_VER))),
+):
+    """PDF imprimible de un tratamiento. Disponible una vez APROBADO (o aplicado).
+    La empresa externa solo puede descargar los suyos."""
+    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
+
+    estado = (s.estado or "").upper()
+    if estado not in ("APROBADO", "APLICADO"):
+        raise HTTPException(
+            status_code=400,
+            detail="El PDF del tratamiento solo está disponible una vez aprobado.",
+        )
+
+    rol = (current_user.rol or "").strip().lower()
+    if rol == "empresa_externa" and (s.creado_por or "") != (current_user.username or ""):
+        raise HTTPException(status_code=403, detail="No puedes descargar este tratamiento.")
+
+    pdf_bytes = generar_pdf_tratamiento(s)
+    filename = f"tratamiento_{s.id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

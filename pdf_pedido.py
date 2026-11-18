@@ -493,3 +493,111 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
 
     doc.build(story)
     return buf.getvalue()
+
+
+def generar_pdf_tratamiento(solicitud) -> bytes:
+    """PDF imprimible de una solicitud de tratamiento fitosanitario (para que la
+    empresa externa lo lleve al vivero). `solicitud` es la instancia ORM
+    SolicitudTratamiento con .items (y cada item con .producto) cargados."""
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+        title=f"Tratamiento #{getattr(solicitud, 'id', '?')}",
+        author="ViverApp",
+    )
+
+    styles = getSampleStyleSheet()
+    style_title = ParagraphStyle("TTitulo", parent=styles["Title"], fontSize=20, textColor=COLOR_PRIMARIO, spaceAfter=4, alignment=0)
+    style_subtitle = ParagraphStyle("TSub", parent=styles["Normal"], fontSize=10, textColor=COLOR_GRIS, spaceAfter=12)
+    style_h2 = ParagraphStyle("TH2", parent=styles["Heading2"], fontSize=12, textColor=COLOR_SECUNDARIO, spaceBefore=10, spaceAfter=4)
+    style_body = ParagraphStyle("TBody", parent=styles["Normal"], fontSize=10, textColor=COLOR_SECUNDARIO, leading=14)
+    style_small = ParagraphStyle("TSmall", parent=styles["Normal"], fontSize=8.5, textColor=COLOR_GRIS)
+
+    story = []
+    story.append(Paragraph(f"Tratamiento fitosanitario #{getattr(solicitud, 'id', '—')}", style_title))
+    story.append(Paragraph("Ayuntamiento de Santa Cruz de Tenerife · ViverApp", style_subtitle))
+    story.append(HRFlowable(width="100%", thickness=1, color=COLOR_BORDE))
+    story.append(Spacer(1, 10))
+
+    def _c(v):
+        return str(v if (v is not None and str(v) != "") else "—")
+
+    info = [
+        ["Estado", _c(getattr(solicitud, "estado", "")), "Creado", _fmt_fecha(getattr(solicitud, "created_at", None))],
+        ["Solicitante", _c(getattr(solicitud, "creado_por", "")), "Aprobado", _fmt_fecha(getattr(solicitud, "aprobado_at", None))],
+        ["Aprobado por", _c(getattr(solicitud, "aprobado_por", "")), "Caducidad", _fmt_fecha(getattr(solicitud, "fecha_caducidad", None))],
+    ]
+    t_info = Table(info, colWidths=[30 * mm, 55 * mm, 28 * mm, 62 * mm])
+    t_info.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), COLOR_GRIS_FONDO),
+        ("BACKGROUND", (2, 0), (2, -1), COLOR_GRIS_FONDO),
+        ("TEXTCOLOR", (0, 0), (0, -1), COLOR_GRIS),
+        ("TEXTCOLOR", (2, 0), (2, -1), COLOR_GRIS),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+        ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+        ("FONTNAME", (3, 0), (3, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
+    ]))
+    story.append(t_info)
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"Destino: {DIRECCION_VIVERO}", style_small))
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Productos del tratamiento", style_h2))
+    items = getattr(solicitud, "items", []) or []
+    if not items:
+        story.append(Paragraph("Sin productos en el tratamiento.", style_body))
+    else:
+        header = ["Nombre común", "Nombre científico", "Categoría", "Subcategoría", "Cantidad"]
+        filas = [header]
+        for it in items:
+            prod = getattr(it, "producto", None)
+            unidad = _unidad_para_categoria(getattr(prod, "categoria", None) if prod else None, None)
+            cant_txt = _fmt_cantidad(getattr(it, "cantidad", 0))
+            if unidad:
+                cant_txt = f"{cant_txt} {unidad}"
+            filas.append([
+                _c(getattr(prod, "nombre_natural", None) if prod else None),
+                _c(getattr(prod, "nombre_cientifico", None) if prod else None),
+                _c(getattr(prod, "categoria", None) if prod else None),
+                _c(getattr(prod, "subcategoria", None) if prod else None),
+                cant_txt,
+            ])
+        t = Table(filas, colWidths=[38 * mm, 48 * mm, 28 * mm, 30 * mm, 26 * mm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARIO),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("ALIGN", (4, 0), (4, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("GRID", (0, 0), (-1, -1), 0.4, COLOR_BORDE),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, COLOR_GRIS_FONDO]),
+        ]))
+        story.append(t)
+
+    story.append(Spacer(1, 16))
+    story.append(Paragraph(
+        "Documento generado por ViverApp. Presenta este tratamiento aprobado en el vivero para su aplicación.",
+        style_small,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()

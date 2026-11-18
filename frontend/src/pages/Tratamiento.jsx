@@ -7,6 +7,7 @@ import {
   aplicarTratamiento,
   eliminarTratamiento,
   verFichaTratamiento,
+  descargarTratamientoPdf,
 } from "../api/api";
 import { formatCantidad } from "../utils/numero";
 
@@ -282,6 +283,11 @@ export default function Tratamiento() {
     catch (e) { setError(e?.response?.data?.detail || "No se pudo abrir la ficha."); }
   };
 
+  const imprimirPdf = async (id) => {
+    try { await descargarTratamientoPdf(id); }
+    catch (e) { setError(e?.response?.data?.detail || "No se pudo descargar el PDF."); }
+  };
+
   const eliminar = async (s) => {
     const aplicado = (s.estado || "").toUpperCase() === "APLICADO";
     const aviso = aplicado
@@ -379,6 +385,12 @@ export default function Tratamiento() {
                     <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 12 }}>· {(s.items || []).length} producto(s)</span>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {(est === "APROBADO" || est === "APLICADO") ? (
+                      <button type="button" onClick={() => imprimirPdf(s.id)}
+                        style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                        🖨 Imprimir PDF
+                      </button>
+                    ) : null}
                     {puedeAplicar && est === "APROBADO" ? (
                       <button type="button" onClick={() => aplicar(s.id)}
                         style={{ padding: "7px 14px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>

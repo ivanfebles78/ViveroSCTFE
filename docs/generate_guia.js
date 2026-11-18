@@ -1543,6 +1543,19 @@ function moduloTratamiento() {
     info("Reserva y disponibilidad", [
       "Mientras una solicitud está en RESERVA o APROBADO, su cantidad de fitosanitario queda reservada y no aparece como disponible para otras solicitudes. Al denegarse, cancelarse o aplicarse, la reserva se libera (al aplicarse, además, el stock se descuenta de verdad).",
     ]),
+    spacer(120),
+    h3("4.13.4 Eliminar un tratamiento (admin)"),
+    p(
+      "El administrador puede eliminar una solicitud de tratamiento con el botón “Eliminar” de su cabecera. Si el tratamiento ya estaba APLICADO, el material consumido vuelve automáticamente al stock y se registra un movimiento de entrada para que quede traza de la reposición."
+    ),
+    warning("La eliminación es permanente", [
+      "Eliminar un tratamiento borra la solicitud y sus fichas adjuntas. Hazlo solo cuando sea necesario. La reposición de stock únicamente se produce si el tratamiento estaba aplicado.",
+    ]),
+    spacer(120),
+    h3("4.13.5 Cómo se muestra la tabla"),
+    p(
+      "Los tratamientos se agrupan por solicitud, igual que los pedidos: cada tratamiento es una tarjeta con su cabecera (número, estado, fecha y solicitante) y, debajo, la lista de productos fitosanitarios que incluye. Las acciones (aplicar, eliminar) y el motivo de denegación aparecen en la cabecera del tratamiento."
+    ),
     pageBreak(),
   ];
 }
