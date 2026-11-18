@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { clearStoredToken, getStoredToken, getMe, getProductos, getZonaItems, getPedidos, marcarZonaInterna, authHeartbeat, authLogout } from "../api/api";
+import { clearStoredToken, getStoredToken, getMe, getProductos, getZonaItems, getPedidos, getTratamientos, marcarZonaInterna, authHeartbeat, authLogout } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
 import zonasDefault from "../components/vivero/zonasConfig";
 import ZoneEditor from "../components/vivero/ZoneEditor";
@@ -1477,6 +1477,9 @@ export default function Layout() {
   const [mapOpen, setMapOpen] = useState(false);
   const [productos, setProductos] = useState([]);
   const [pedidosUsuario, setPedidosUsuario] = useState([]);
+  // Nº de tratamientos APROBADO pendientes de aplicar (badge del menú para
+  // gestor del vivero / admin).
+  const [tratAplicarCount, setTratAplicarCount] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState(() =>
@@ -1552,7 +1555,16 @@ export default function Layout() {
       const data = await getPedidos();
       setPedidosUsuario(Array.isArray(data) ? data : []);
     } catch { /* noop */ }
-  }, [me, esEmpresaExternaRol]);
+    // Tratamientos pendientes de aplicar (badge): solo para quien los aplica.
+    if (rolActual === "gestor_vivero" || rolActual === "admin") {
+      try {
+        const trat = await getTratamientos({ estado: "APROBADO" });
+        setTratAplicarCount(Array.isArray(trat) ? trat.length : 0);
+      } catch { /* noop */ }
+    } else {
+      setTratAplicarCount(0);
+    }
+  }, [me, esEmpresaExternaRol, rolActual]);
 
   useEffect(() => {
     refreshBadgeData();
@@ -1627,8 +1639,12 @@ export default function Layout() {
   // Badge counts per nav route — recomputed whenever pedidos, role or
   // seen-map change.  Cheap (filter over an in-memory array).
   const navBadgeCounts = useMemo(() => {
-    return computeBadgeCounts(rolActual, pedidosUsuario, seenPedidos, me?.username);
-  }, [rolActual, pedidosUsuario, seenPedidos, me?.username]);
+    const base = computeBadgeCounts(rolActual, pedidosUsuario, seenPedidos, me?.username);
+    if (tratAplicarCount > 0) {
+      return { ...base, "/tratamiento": tratAplicarCount };
+    }
+    return base;
+  }, [rolActual, pedidosUsuario, seenPedidos, me?.username, tratAplicarCount]);
 
   const allNotifications = useMemo(() => {
     if (esEmpresaExternaRol) {
