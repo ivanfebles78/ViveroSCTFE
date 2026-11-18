@@ -440,7 +440,7 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
     [it?.distrito_destino, it?.barrio_destino, it?.direccion_destino].filter(Boolean).join(" · ");
 
   const destino =
-    pedido?.tipo === "reposicion"
+    (pedido?.tipo === "reposicion" || pedido?.tratamiento_interno)
       ? "Vivero"
       : [pedido?.distrito_destino, pedido?.barrio_destino, pedido?.direccion_destino]
           .filter(Boolean)
@@ -450,7 +450,7 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
   const destinosUnicos = Array.from(
     new Set(items.map(destinoDeItem).filter(Boolean))
   );
-  const variosDestinos = pedido?.tipo !== "reposicion" && destinosUnicos.length > 1;
+  const variosDestinos = pedido?.tipo !== "reposicion" && !pedido?.tratamiento_interno && destinosUnicos.length > 1;
 
   // Agrupa las líneas por destino (en orden de aparición) para mostrarlas
   // agrupadas visualmente, manteniendo la decisión por línea.
@@ -717,13 +717,13 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
                   borderRadius: 999,
                   fontSize: 12,
                   fontWeight: 900,
-                  background: pedido.tipo === "reposicion" ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
-                  color: pedido.tipo === "reposicion" ? "#92400e" : "#1e3a8a",
+                  background: pedido.tratamiento_interno ? "rgba(124,58,237,0.12)" : pedido.tipo === "reposicion" ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
+                  color: pedido.tratamiento_interno ? "#5b21b6" : pedido.tipo === "reposicion" ? "#92400e" : "#1e3a8a",
                   border: "1px solid rgba(15,23,42,0.08)",
                   marginRight: 8,
                 }}
               >
-                {pedido.tipo === "reposicion" ? "Reposición" : "Salida"}
+                {pedido.tratamiento_interno ? "Tratamiento" : pedido.tipo === "reposicion" ? "Reposición" : "Salida"}
               </span>
               <span style={badge(pedido.estado)}>{estadoLabel(pedido.estado)}</span>
               {pedido.bloqueado ? (
@@ -1642,12 +1642,12 @@ export default function Aprobaciones() {
                             borderRadius: 999,
                             fontSize: 12,
                             fontWeight: 900,
-                            background: (p.tipo === "reposicion") ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
-                            color: (p.tipo === "reposicion") ? "#92400e" : "#1e3a8a",
+                            background: p.tratamiento_interno ? "rgba(124,58,237,0.12)" : (p.tipo === "reposicion") ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
+                            color: p.tratamiento_interno ? "#5b21b6" : (p.tipo === "reposicion") ? "#92400e" : "#1e3a8a",
                             border: "1px solid rgba(15,23,42,0.08)",
                           }}
                         >
-                          {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                          {p.tratamiento_interno ? "Tratamiento" : p.tipo === "reposicion" ? "Reposición" : "Salida"}
                         </span>
                       </td>
 

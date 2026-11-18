@@ -229,9 +229,12 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
     story = []
 
     # ===== Cabecera =====
+    _tipo_pedido_label = (
+        "Tratamiento" if bool(getattr(pedido, "tratamiento_interno", False))
+        else (getattr(pedido, "tipo", "") or "salida").capitalize()
+    )
     story.append(Paragraph(
-        f"Pedido #{getattr(pedido, 'id', '—')} · "
-        f"{(getattr(pedido, 'tipo', '') or 'salida').capitalize()}",
+        f"Pedido #{getattr(pedido, 'id', '—')} · {_tipo_pedido_label}",
         style_title,
     ))
     story.append(Paragraph(
@@ -247,7 +250,7 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
 
     info_crono = [
         ["Estado", _c(getattr(pedido, "estado", "")), "Creado", _fmt_fecha(getattr(pedido, "created_at", None))],
-        ["Tipo", _c(getattr(pedido, "tipo", "")).capitalize(), "Aprobado", _fmt_fecha(getattr(pedido, "aprobado_at", None))],
+        ["Tipo", _tipo_pedido_label, "Aprobado", _fmt_fecha(getattr(pedido, "aprobado_at", None))],
         ["Solicitante", _c(getattr(pedido, "solicitante_username", "") or getattr(pedido, "created_by", "")), "Servido", _fmt_fecha(getattr(pedido, "served_at", None))],
         ["Aprobado por", _c(getattr(pedido, "aprobado_por", "")), "Denegado", _fmt_fecha(getattr(pedido, "denegado_at", None))],
         ["Servido por", _c(getattr(pedido, "served_by", "")), "Caducidad", _fmt_fecha(getattr(pedido, "fecha_caducidad", None))],
@@ -287,7 +290,7 @@ def generar_pdf_pedido(pedido, viewer_role: Optional[str] = None) -> bytes:
         ]
 
     def _destino_de_item(it) -> str:
-        if tipo == "reposicion":
+        if tipo == "reposicion" or bool(getattr(pedido, "tratamiento_interno", False)):
             return DIRECCION_VIVERO
         partes = [
             getattr(it, "distrito_destino", None) or getattr(pedido, "distrito_destino", None) or "",

@@ -443,7 +443,7 @@ async function renderPedidoEnPdf(doc, pedido, mapProdName, isFirst, logoDataUrl)
   doc.line(14, 48, pageWidth - 14, 48);
 
   const estado = String(pedido.estado || "—").toUpperCase();
-  const tipo = pedido.tipo === "reposicion" ? "Reposición" : "Salida";
+  const tipo = pedido.tratamiento_interno ? "Tratamiento" : pedido.tipo === "reposicion" ? "Reposición" : "Salida";
   const solicitante = formatUsername(
     pedido.solicitante_username || pedido.solicitante || pedido.created_by || ""
   ) || "—";
@@ -2667,8 +2667,8 @@ function ImprimirPedidosModal({ open, pedidos, mapProdName, onClose }) {
                       style={{ width: 18, height: 18, cursor: "pointer" }}
                     />
                     <div style={{ fontWeight: 900 }}>#{p.id}</div>
-                    <div style={{ fontWeight: 800, color: p.tipo === "reposicion" ? "#92400e" : "#1e3a8a" }}>
-                      {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                    <div style={{ fontWeight: 800, color: p.tratamiento_interno ? "#5b21b6" : p.tipo === "reposicion" ? "#92400e" : "#1e3a8a" }}>
+                      {p.tratamiento_interno ? "Tratamiento" : p.tipo === "reposicion" ? "Reposición" : "Salida"}
                     </div>
                     <div>{fmtFechaES(p.created_at)}</div>
                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -3592,12 +3592,12 @@ export default function Pedidos() {
                             borderRadius: 999,
                             fontSize: 12,
                             fontWeight: 900,
-                            background: (p.tipo === "reposicion") ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
-                            color: (p.tipo === "reposicion") ? "#92400e" : "#1e3a8a",
+                            background: p.tratamiento_interno ? "rgba(124,58,237,0.12)" : (p.tipo === "reposicion") ? "rgba(245,158,11,0.12)" : "rgba(59,130,246,0.10)",
+                            color: p.tratamiento_interno ? "#5b21b6" : (p.tipo === "reposicion") ? "#92400e" : "#1e3a8a",
                             border: "1px solid rgba(15,23,42,0.08)",
                           }}
                         >
-                          {p.tipo === "reposicion" ? "Reposición" : "Salida"}
+                          {p.tratamiento_interno ? "Tratamiento" : p.tipo === "reposicion" ? "Reposición" : "Salida"}
                         </span>
                         {p.bloqueado ? (
                           <span
@@ -3605,14 +3605,6 @@ export default function Pedidos() {
                             style={{ display: "inline-flex", marginLeft: 6, padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, background: "rgba(180,83,9,0.12)", color: "#92400e", border: "1px solid rgba(180,83,9,0.30)" }}
                           >
                             🔒 Bloqueado
-                          </span>
-                        ) : null}
-                        {p.tratamiento_interno ? (
-                          <span
-                            title="Tratamiento interno del vivero: se aplica consumiendo el stock"
-                            style={{ display: "inline-flex", marginLeft: 6, padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, background: "rgba(124,58,237,0.12)", color: "#5b21b6", border: "1px solid rgba(124,58,237,0.30)" }}
-                          >
-                            🧪 Tratamiento interno
                           </span>
                         ) : null}
                       </td>
