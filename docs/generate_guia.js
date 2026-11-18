@@ -25,6 +25,7 @@ const {
   HeadingLevel,
   TabStopType,
   TabStopPosition,
+  ImageRun,
 } = require("docx");
 
 // =====================================================
@@ -43,6 +44,8 @@ const COLORS = {
   redBorder: "DC2626",
   blueBg: "DBEAFE",
   blueBorder: "2563EB",
+  purpleBg: "EDE9FE",
+  purpleBorder: "7C3AED",
   greyBg: "F5F5F4",
   greyBorder: "D6D3D1",
   textMuted: "5F6F66",
@@ -192,6 +195,36 @@ const success = (title, content) =>
 const info = (title, content) =>
   callout("ℹ️", title, Array.isArray(content) ? content : [content], COLORS.blueBg, "1E40AF");
 
+const novedad = (title, content) =>
+  callout("✨", `NOVEDAD · ${title}`, Array.isArray(content) ? content : [content], COLORS.purpleBg, "5B21B6");
+
+// Imagen real centrada con pie de figura
+const figure = (fileName, widthPx, heightPx, caption) => {
+  const nodes = [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new ImageRun({
+          type: "png",
+          data: fs.readFileSync(path.join(__dirname, fileName)),
+          transformation: { width: widthPx, height: heightPx },
+        }),
+      ],
+      spacing: { before: 80, after: 40 },
+    }),
+  ];
+  if (caption) {
+    nodes.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: caption, italics: true, size: 18, color: COLORS.textMuted })],
+        spacing: { before: 0, after: 120 },
+      })
+    );
+  }
+  return nodes;
+};
+
 // Image placeholder block
 const imagePlaceholder = (label, description) => {
   return new Table({
@@ -340,10 +373,17 @@ function coverPage() {
       alignment: AlignmentType.CENTER,
       children: [
         new TextRun({ text: "─── ", size: 28, color: COLORS.primary }),
-        new TextRun({ text: "Versión 1.0", size: 24, bold: true, color: COLORS.primary }),
+        new TextRun({ text: "Versión 1.1", size: 24, bold: true, color: COLORS.primary }),
         new TextRun({ text: " ───", size: 28, color: COLORS.primary }),
       ],
-      spacing: { before: 400, after: 200 },
+      spacing: { before: 400, after: 120 },
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new TextRun({ text: "Actualizada en noviembre de 2026", size: 20, color: COLORS.textMuted }),
+      ],
+      spacing: { before: 0, after: 200 },
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -421,6 +461,22 @@ function introduccion() {
     spacer(120),
     tip("Sugerencia de navegación", [
       "Si lees este documento en Word o en PDF, los títulos del índice son enlaces clicables. Mantén pulsada la tecla Ctrl y haz clic en cualquier entrada para saltar a la sección correspondiente.",
+    ]),
+    spacer(160),
+    h2("Novedades de la versión 1.1"),
+    p("Esta edición recoge las funcionalidades incorporadas al sistema desde la primera versión. Encontrarás cada una explicada en su módulo, marcada con un cuadro morado ✨ NOVEDAD."),
+    novedad("Resumen de lo nuevo", [
+      "• Ficha de producto: ventana con datos, stock, distribución por zonas y movimientos (sección 4.2).",
+      "• Filtros rápidos de stock disponible y stock reservado en el inventario (4.2).",
+      "• Estado APROBADO_PARCIAL y reapertura de pedidos ya decididos, incluidos aprobados (4.4).",
+      "• Bloqueo de materiales con reserva de 1 año para manager y admin (4.4).",
+      "• Pack de complementos para árboles en pedidos de empresa externa (4.4).",
+      "• Matrículas / identificadores por unidad en árboles y palmeras (4.3 y 4.4).",
+      "• Flujo del proveedor en reposición: Leído / Aceptado / Retrasado (4.4).",
+      "• El manager puede editar cantidades y añadir productos a un pedido en reserva (4.4).",
+      "• Marcar todas las notificaciones como leídas y avisos permanentes (4.8).",
+      "• Informe de conexiones de usuarios y desbloqueo directo de cuentas (4.11 y 4.12).",
+      "• Restablecimiento de contraseña por correo y política de contraseña más robusta (3 y 4.11).",
     ]),
     pageBreak(),
   ];
@@ -537,12 +593,18 @@ function rolesYPermisos() {
           ["Registrar movimientos", "✔", "—", "✔", "✔", "—"],
           ["Crear pedidos propios", "✔", "✔", "✔", "✔", "✔"],
           ["Aprobar/denegar pedidos", "✔", "✔", "—", "—", "—"],
+          ["Editar pedido en RESERVA", "✔", "✔", "—", "—", "—"],
+          ["Reabrir pedidos ya decididos", "✔", "✔", "—", "—", "—"],
+          ["Bloquear materiales (1 año)", "✔", "✔", "—", "—", "—"],
           ["Servir pedidos", "✔", "—", "✔", "✔", "—"],
           ["Gestionar préstamos", "✔", "✔", "✔", "✔", "—"],
           ["Ver trazabilidad por lote", "✔", "✔", "✔", "✔", "—"],
           ["Consultar informes", "✔", "✔", "✔", "Parcial", "—"],
+          ["Ver ficha de producto", "✔", "✔", "✔", "✔", "Limitado"],
           ["Configurar caducidad", "✔", "—", "—", "—", "—"],
           ["Gestionar usuarios", "✔", "—", "—", "—", "—"],
+          ["Desbloquear cuentas", "✔", "—", "—", "—", "—"],
+          ["Ver informe de conexiones", "✔", "—", "—", "—", "—"],
           ["Ver mapa del vivero", "✔", "✔", "✔", "✔", "—"],
         ].map(
           (row) =>
@@ -569,7 +631,7 @@ function rolesYPermisos() {
     pRich([bold("Qué puede ver: "), text("absolutamente todo el sistema, incluyendo configuración técnica.")]),
     pRich([
       bold("Qué puede hacer: "),
-      text("crear y desactivar usuarios, asignar roles, definir reglas de caducidad por categoría/subcategoría/tamaño, ajustar parámetros globales y consultar todos los informes."),
+      text("crear y desactivar usuarios, asignar roles, definir reglas de caducidad por categoría/subcategoría/tamaño, desbloquear cuentas directamente, consultar el informe de conexiones, ajustar parámetros globales y consultar todos los informes."),
     ]),
     pRich([
       bold("Qué NO puede hacer: "),
@@ -581,18 +643,21 @@ function rolesYPermisos() {
     ]),
     spacer(120),
     h3("2.2 Manager"),
-    pRich([bold("Qué puede ver: "), text("dashboard, inventario, movimientos, pedidos, informes y mapa.")]),
+    pRich([bold("Qué puede ver: "), text("dashboard, inventario, movimientos, pedidos, aprobaciones, informes y mapa.")]),
     pRich([
       bold("Qué puede hacer: "),
-      text("aprobar o denegar pedidos, consultar informes y monitorizar indicadores. Crea pedidos propios cuando es necesario."),
+      text("aprobar o denegar pedidos, consultar informes y monitorizar indicadores. Crea pedidos propios desde la pestaña “Pedidos” igual que una empresa externa. Sobre un pedido en RESERVA puede editar cantidades y añadir productos antes de decidirlo. Puede reabrir pedidos ya decididos (incluidos los aprobados, si no tienen material servido) y bloquear materiales con reserva de 1 año."),
     ]),
     pRich([
       bold("Qué NO puede hacer: "),
-      text("no edita el catálogo ni gestiona usuarios. No registra movimientos físicos."),
+      text("no edita el catálogo ni gestiona usuarios. No registra movimientos físicos ni sirve pedidos."),
     ]),
     pRich([
       bold("Caso de uso típico: "),
-      text("revisar cada lunes los pedidos pendientes, aprobar los válidos y denegar con motivo aquellos que no procedan."),
+      text("revisar cada lunes los pedidos pendientes, ajustar cantidades si procede, aprobar los válidos y denegar con motivo aquellos que no procedan."),
+    ]),
+    novedad("Nuevas capacidades del manager", [
+      "El manager ya no se limita a aprobar o denegar: ahora tiene su propia pestaña de Pedidos, puede ajustar un pedido en reserva antes de decidirlo, reabrir pedidos (sección 4.4) y marcar materiales como bloqueados durante 1 año.",
     ]),
     spacer(120),
     h3("2.3 Gestor de vivero"),
@@ -690,6 +755,10 @@ function navegacionGeneral() {
       "Tras varios intentos fallidos consecutivos, la cuenta se bloquea temporalmente. Si te bloqueas, contacta con un administrador para que la desbloquee desde la gestión de usuarios.",
     ]),
     spacer(120),
+    novedad("Si olvidas tu contraseña", [
+      "Desde la pantalla de acceso puedes pedir un restablecimiento indicando tu correo: recibirás un enlace para establecer una nueva contraseña tú mismo, sin esperar al administrador. El campo de contraseña incluye un botón para mostrar u ocultar lo que escribes, y se admite el símbolo “@”.",
+    ]),
+    spacer(120),
     h2("Cerrar sesión"),
     p(
       "Pulsa el botón “Salir” situado en la parte superior derecha. Es importante cerrar sesión al terminar, especialmente si compartes equipo con otros usuarios."
@@ -762,6 +831,23 @@ function moduloInventario() {
       "Captura mostrando la tabla de productos con columnas id, nombre científico, nombre natural, categoría, subcategoría, stock y stock mínimo."
     ),
     spacer(160),
+    h3("Filtros rápidos de stock"),
+    p("Además de la búsqueda y los desplegables de categoría, dispones de dos casillas para acotar el listado:"),
+    bulletRich([bold("Mostrar solo productos con stock disponible: "), text("deja a la vista únicamente los productos cuyo stock disponible (ya descontadas reservas y stock con fecha futura) es mayor que cero.")]),
+    bulletRich([bold("Mostrar solo productos con stock reservado: "), text("muestra solo los productos que tienen material reservado por pedidos pendientes.")]),
+    spacer(120),
+    h3("Ficha de producto"),
+    p(
+      "Desde el botón “Ficha producto” situado junto al nombre de cada producto se abre una ventana con toda su información reunida:"
+    ),
+    bullet("Datos: nombre científico, nombre común, categoría y subcategoría."),
+    bullet("Stock: total, reservado y disponible."),
+    bullet("Distribución: cuántas unidades hay de cada tamaño y en qué zona."),
+    bullet("Movimientos: historial reciente (entrada/salida/traslado) con cantidad, origen → destino, fecha, usuario y observaciones."),
+    novedad("Ficha de producto", [
+      "La ficha reúne de un vistazo el estado completo de un producto, con la imagen a un lado y los datos organizados por secciones de color. Las empresas externas ven una versión limitada (sin distribución interna ni movimientos).",
+    ]),
+    spacer(120),
     h3("Crear un producto (solo Admin)"),
     numbered("Pulsa el botón “Nuevo producto”."),
     numbered("Rellena los campos obligatorios: nombre científico, categoría y subcategoría."),
@@ -848,6 +934,65 @@ function moduloMovimientos() {
     info("Cambio de tamaño", [
       "Cuando una planta crece y pasa de M12 a M20, registra un traslado interno con tamaño origen M12 y tamaño destino M20. El UUID se conserva.",
     ]),
+    spacer(160),
+    h3("4.3.4 Reglas de disponibilidad por tamaño"),
+    p(
+      "Para las plantas, el tamaño de maceta determina si un lote puede SALIR del vivero hacia un destino externo. Estas reglas se aplican tanto al registrar una salida directa como al crear un pedido de salida."
+    ),
+    new Table({
+      width: { size: PAGE.contentWidth, type: WidthType.DXA },
+      columnWidths: [3360, 6000],
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: [
+            headerCell("Tipo de planta", 3360),
+            headerCell("Tamaños que SÍ pueden salir", 6000),
+          ],
+        }),
+        ...[
+          ["Semillero (cualquier tipo)", "Ninguno: un semillero nunca puede salir del vivero"],
+          ["Árbol", "Solo M35"],
+          ["Palmera", "M20 o M35"],
+          ["Arbusto", "M20 o M35"],
+          ["Resto de plantas", "M12, M20 o M35 (nunca semillero)"],
+        ].map(
+          (row) =>
+            new TableRow({
+              children: [
+                cell(row[0], { width: 3360, bold: true, bgColor: COLORS.greyBg }),
+                cell(row[1], { width: 6000 }),
+              ],
+            })
+        ),
+      ],
+    }),
+    spacer(160),
+    warning("Qué NO limitan estas reglas", [
+      "Solo afectan a las SALIDAS a destino externo (entregas y pedidos). Las entradas al vivero, los traslados internos y las bajas de vivero admiten cualquier tamaño, incluidos los semilleros: así puedes registrar, reubicar o descartar material en cualquier fase de cultivo.",
+    ]),
+    spacer(120),
+    h3("4.3.5 Fecha de disponibilidad"),
+    p(
+      "Un lote puede tener una fecha de disponibilidad: hasta esa fecha cuenta como stock físico presente en el vivero, pero NO se ofrece como disponible para reservar ni pedir. Es útil, por ejemplo, para plantas que aún deben seguir creciendo antes de entregarse."
+    ),
+    info("No hay fecha por defecto", [
+      "La fecha de disponibilidad es siempre opcional y manual: solo se aplica a movimientos con destino Vivero y solo si tú la indicas. No existe una fecha automática por tipo de planta. Si no indicas ninguna, el lote queda disponible de inmediato. En un traslado interno sin fecha nueva, el lote destino hereda la fecha del origen.",
+    ]),
+    spacer(160),
+    h3("4.3.6 Resumen: ¿cuándo puede salir una planta?"),
+    p(
+      "Para que haya stock disponible y una planta pueda salir del vivero deben cumplirse las cuatro condiciones de la cadena: tiene que haber stock físico, el tamaño y tipo deben ser aptos, el lote no puede tener una fecha de disponibilidad futura y la cantidad no puede estar ya reservada por otros pedidos. Si falla cualquiera, el producto no se ofrece como disponible."
+    ),
+    ...figure(
+      "Disponibilidad_Salida_Vivero.png",
+      560,
+      461,
+      "Condiciones encadenadas para que un producto esté disponible para una salida del vivero."
+    ),
+    info("Salida directa frente a pedido", [
+      "Estas cuatro condiciones definen el “disponible” que el sistema ofrece para pedir y reservar. En un movimiento de salida directo, la condición de tamaño/tipo se aplica siempre, pero la fecha de disponibilidad futura no impide sacar stock que ya está físicamente en la zona.",
+    ]),
     spacer(120),
     imagePlaceholder(
       "Formulario de nuevo movimiento",
@@ -899,6 +1044,16 @@ function moduloPedidos() {
         }),
         new TableRow({
           children: [
+            cell("APROBADO_PARCIAL", { width: 2200, bold: true, bgColor: COLORS.blueBg }),
+            cell("Manager aprueba en parte", { width: 2300 }),
+            cell(
+              "El manager ha aprobado algunas líneas y denegado otras en una sola decisión. Las líneas aprobadas quedan pendientes de servir; las denegadas, rechazadas con motivo.",
+              { width: 4860 }
+            ),
+          ],
+        }),
+        new TableRow({
+          children: [
             cell("DENEGADO", { width: 2200, bold: true, bgColor: COLORS.redBg }),
             cell("Manager deniega", { width: 2300 }),
             cell(
@@ -942,12 +1097,17 @@ function moduloPedidos() {
     numbered("Añade una nota explicativa si el pedido tiene contexto especial (campaña, evento, urgencia)."),
     numbered("Guarda. El pedido entra en estado RESERVA y se notifica a los managers."),
     spacer(120),
-    h3("4.4.2 Aprobar o denegar (Manager)"),
+    h3("4.4.2 Aprobar, denegar o editar (Manager)"),
     numbered("Accede al módulo “Aprobaciones”."),
     numbered("Verás los pedidos en estado RESERVA, ordenados por fecha."),
-    numbered("Pulsa el icono ✔ para aprobar, ✗ para denegar."),
-    numbered("Si denegas, escribe un motivo claro: el solicitante lo verá."),
-    numbered("Una vez decidido, el pedido cambia de estado al instante."),
+    numbered("Si lo necesitas, abre el detalle y ajusta cantidades o añade productos (solo mientras el pedido está en RESERVA)."),
+    numbered("Decide línea por línea: puedes aprobar todo, denegar todo o aprobar unas líneas y denegar otras."),
+    numbered("Si deniegas una línea o el pedido, escribe un motivo claro: el solicitante lo verá."),
+    numbered("Al confirmar, el pedido pasa a APROBADO, DENEGADO o APROBADO_PARCIAL según tu decisión."),
+    spacer(120),
+    novedad("Editar y aprobar en parte", [
+      "El manager puede modificar un pedido en reserva antes de decidirlo (cambiar cantidades, añadir un producto que faltaba) y aprobar unas líneas mientras deniega otras. El resultado de una decisión mixta es el estado APROBADO_PARCIAL.",
+    ]),
     spacer(120),
     tip("Aprobaciones por lotes", [
       "Si tienes 30 pedidos pendientes los lunes, ordénalos por solicitante o por fecha y procésalos en bloque para no perder contexto.",
@@ -960,14 +1120,62 @@ function moduloPedidos() {
     numbered("Si la cantidad disponible en una zona es insuficiente, el sistema te permite repartir entre varias."),
     numbered("Confirma. El pedido pasa a SERVIDO y se generan los movimientos de salida automáticamente."),
     spacer(120),
-    warning("No se puede deshacer", [
-      "Una vez servido un pedido, el stock queda descontado. Si necesitas revertirlo, hay que registrar un movimiento de entrada manual con el motivo correspondiente.",
+    warning("Servir descuenta el stock", [
+      "Una vez servido un pedido, el stock queda descontado. Si parte del material regresa, regístralo como devolución de pedido servido (queda reflejada también en el PDF del pedido). Para un ajuste puntual también puedes registrar un movimiento de entrada manual con su motivo.",
     ]),
     spacer(120),
     h3("4.4.4 Pedidos de empresa externa"),
     p(
       "Las empresas externas crean sus propios pedidos desde una vista simplificada que solo muestra los productos disponibles para ellas. Sus pedidos tienen una caducidad automática de 15 días: si el manager no los aprueba en ese plazo, pasan a CADUCADO."
     ),
+    spacer(120),
+    h3("4.4.5 Reabrir un pedido ya decidido"),
+    p(
+      "A veces un pedido se deniega, se cancela o caduca por error, o un pedido aprobado necesita revisarse de nuevo. Admin y manager pueden reabrirlo para devolverlo a estado RESERVA y volver a decidirlo."
+    ),
+    numbered("Abre el detalle del pedido (denegado, cancelado, caducado, aprobado o parcialmente aprobado)."),
+    numbered("Pulsa “↩ Reabrir pedido”."),
+    numbered("Confirma. Todas las líneas vuelven a RESERVA, se limpian las decisiones previas y se renueva la caducidad."),
+    novedad("Reabrir también los aprobados", [
+      "Antes solo se podían reabrir pedidos denegados, cancelados o caducados, y solo el admin. Ahora también se reabren los APROBADOS y APROBADO_PARCIAL, y pueden hacerlo tanto admin como manager. Única condición: que el pedido no tenga material ya servido (si tiene algo servido, el botón no aparece).",
+    ]),
+    spacer(120),
+    h3("4.4.6 Bloqueo de materiales (reserva de 1 año)"),
+    p(
+      "Por defecto, el material de un pedido queda reservado 15 días. Admin y manager pueden marcar la casilla “Bloquear materiales” al crear un pedido de salida para ampliar esa reserva a 1 año, útil cuando el material queda comprometido para una obra o campaña a largo plazo."
+    ),
+    bullet("Un pedido con materiales bloqueados muestra un candado 🔒 junto a su estado en la lista de aprobaciones."),
+    bullet("Para liberar el material antes de tiempo, se cancela o anula el pedido."),
+    bullet("Si un pedido bloqueado se sirve en parte y caduca, el material ya servido se queda como servido y solo se libera lo no servido."),
+    spacer(120),
+    h3("4.4.7 Pack de complementos para árboles (empresa externa)"),
+    p(
+      "Cuando una empresa externa añade un árbol a su pedido, el sistema puede ofrecer automáticamente el pack de complementos necesarios para plantarlo (tutores, travesaños, clavos, cinta de entutorar, hebillas…)."
+    ),
+    numbered("Añade un árbol al pedido."),
+    numbered("El sistema comprueba si hay disponibilidad de cada complemento y, si la hay, ofrece el pack en una ventana."),
+    numbered("Acepta para incorporar los complementos al pedido, o continúa sin ellos."),
+    numbered("Si algún complemento no tiene stock suficiente, el sistema lo avisa en una ventana indicando cuál falta."),
+    info("Identificación de complementos", [
+      "Los complementos se identifican por una etiqueta del producto, no por su nombre, para que el pack funcione aunque cambien las denominaciones del catálogo.",
+    ]),
+    spacer(120),
+    h3("4.4.8 Matrículas / identificadores por unidad"),
+    p(
+      "En los pedidos de árboles y palmeras para empresa externa se pueden registrar matrículas o identificadores individuales por unidad. Estos identificadores acompañan al pedido y se muestran también al preparar el material en el módulo de Movimientos, para una trazabilidad unidad a unidad."
+    ),
+    spacer(120),
+    h3("4.4.9 Flujo del proveedor en reposición"),
+    p(
+      "En los pedidos de reposición dirigidos a un proveedor, este dispone de un flujo propio de seguimiento para que todos sepan en qué punto está el suministro."
+    ),
+    bulletRich([bold("Leído: "), text("el proveedor ha visto el pedido.")]),
+    bulletRich([bold("Aceptado: "), text("el proveedor confirma que lo servirá; puede añadir un comentario (por ejemplo, plazo o condiciones).")]),
+    bulletRich([bold("Retrasado: "), text("el proveedor avisa de que habrá demora.")]),
+    spacer(120),
+    info("Solicitudes de modificación", [
+      "Sobre un pedido ya aprobado puede tramitarse una solicitud de modificación, que vuelve a pasar por la decisión del responsable antes de aplicarse. Así se cambian cantidades sin perder el histórico de la aprobación original.",
+    ]),
     pageBreak(),
   ];
 }
@@ -1100,8 +1308,11 @@ function moduloAlertas() {
     spacer(160),
     h3("Marcar como leídas"),
     p(
-      "Pulsa cualquier notificación para marcarla como leída. El estado de leído/no leído se conserva en tu navegador (localStorage), por lo que puede diferir entre dispositivos."
+      "Pulsa cualquier notificación para marcarla como leída. También tienes el botón “✓ Marcar todas como leídas” para vaciar el badge de una vez cuando ya las has revisado. El estado de leído/no leído se conserva en tu navegador (localStorage), por lo que puede diferir entre dispositivos."
     ),
+    novedad("Marcar todas y avisos permanentes", [
+      "Ahora puedes marcar todas las notificaciones como leídas con un solo clic. Además, los mensajes importantes del panel se muestran como un aviso permanente (toast) siempre visible, en lugar de desaparecer en una esquina.",
+    ]),
     spacer(120),
     info("Empresa externa y notificaciones", [
       "Las empresas externas solo reciben notificaciones relativas a sus propios pedidos (caducidad de pedido, cambio de estado). No ven alertas de stock ni de caducidad de lote.",
@@ -1209,8 +1420,12 @@ function moduloUsuarios() {
     h3("Editar, desactivar y restablecer"),
     bullet("Edita un usuario para cambiar su email, rol o estado."),
     bullet("Desactiva un usuario en lugar de eliminarlo: conserva la trazabilidad de sus acciones pasadas."),
-    bullet("Restablece la contraseña con el botón “Reset password”. Comunícale la nueva al usuario."),
-    bullet("Desbloquea una cuenta tras intentos fallidos cambiando su estado de “bloqueado” a “activo”."),
+    bullet("Restablece la contraseña: el sistema envía al usuario un correo con un enlace para que él mismo establezca una nueva (el administrador no ve ni fija la contraseña)."),
+    bullet("Desbloquea una cuenta bloqueada por intentos fallidos directamente desde el panel, con un botón, sin necesidad de enviar correo."),
+    spacer(120),
+    novedad("Desbloqueo directo y reset por correo", [
+      "El administrador puede marcar una cuenta como desbloqueada desde la propia gestión de usuarios con un clic. El restablecimiento de contraseña se hace por correo (autoservicio del usuario mediante enlace), y la política de contraseñas es más robusta.",
+    ]),
     spacer(160),
     imagePlaceholder(
       "Listado de usuarios",
@@ -1220,6 +1435,35 @@ function moduloUsuarios() {
     warning("Buenas prácticas de seguridad", [
       "Nunca compartas usuarios entre personas (cada uno con el suyo). Audita la lista de usuarios al menos una vez al trimestre y desactiva los que ya no procedan. No reutilices nombres de usuario antiguos para personas nuevas.",
     ]),
+    pageBreak(),
+  ];
+}
+
+function moduloConexiones() {
+  return [
+    h2("4.12 Informe de conexiones (Admin)"),
+    p(
+      "El administrador dispone de un informe de conexiones que registra la actividad de acceso de los usuarios: cuándo inician sesión, su última actividad y cuándo cierran sesión. Ayuda a auditar quién ha entrado al sistema y a detectar accesos inusuales."
+    ),
+    spacer(120),
+    h3("Qué muestra"),
+    bullet("Usuario y rol de cada sesión."),
+    bullet("Hora de inicio de sesión."),
+    bullet("Última actividad registrada (mientras la sesión sigue viva)."),
+    bullet("Hora de cierre de sesión, cuando el usuario sale."),
+    spacer(120),
+    h3("Cómo acceder"),
+    numbered("Entra como administrador."),
+    numbered("Accede a la ruta “Conexiones” del panel de administración."),
+    numbered("Revisa el listado, ordenado por las conexiones más recientes."),
+    novedad("Informe de conexiones", [
+      "Es una funcionalidad nueva, exclusiva del administrador, que da visibilidad de los accesos al sistema (inicio y cierre de sesión de cada usuario).",
+    ]),
+    spacer(120),
+    imagePlaceholder(
+      "Informe de conexiones",
+      "Captura mostrando la tabla de conexiones con usuario, rol, inicio, última actividad y cierre de sesión."
+    ),
     pageBreak(),
   ];
 }
@@ -1273,11 +1517,11 @@ function faq() {
     },
     {
       q: "He olvidado mi contraseña.",
-      a: "Pide al administrador que la restablezca desde el módulo de gestión de usuarios. Te entregará una nueva contraseña temporal que deberás cambiar.",
+      a: "Desde la pantalla de acceso, usa la opción de restablecer contraseña indicando tu correo. Recibirás un enlace para establecer una nueva tú mismo. Si no recibes el correo, avisa al administrador.",
     },
     {
       q: "Mi cuenta está bloqueada.",
-      a: "Probablemente tras varios intentos fallidos. Pide al administrador que cambie tu estado de “bloqueado” a “activo”.",
+      a: "Probablemente tras varios intentos fallidos. Pide al administrador que la desbloquee: puede hacerlo con un clic desde la gestión de usuarios, sin necesidad de enviarte ningún correo.",
     },
     {
       q: "Un pedido aprobado no aparece para servir.",
@@ -1532,7 +1776,7 @@ const doc = new Document({
           children: [
             new Paragraph({
               children: [
-                new TextRun({ text: "Versión 1.0", size: 18, color: COLORS.textMuted }),
+                new TextRun({ text: "Versión 1.1", size: 18, color: COLORS.textMuted }),
                 new TextRun({ text: "\t" }),
                 new TextRun({ text: "Página ", size: 18, color: COLORS.textMuted }),
                 new TextRun({ children: [PageNumber.CURRENT], size: 18, color: COLORS.textMuted }),
@@ -1563,6 +1807,7 @@ const doc = new Document({
         ...moduloInformes(),
         ...moduloMapa(),
         ...moduloUsuarios(),
+        ...moduloConexiones(),
         ...buenasPracticas(),
         ...faq(),
         ...soporte(),

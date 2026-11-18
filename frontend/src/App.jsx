@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Productos from "./pages/Productos";
 import Movimientos from "./pages/Movimientos";
 import Pedidos from "./pages/Pedidos";
+import Tratamiento from "./pages/Tratamiento";
 import Aprobaciones from "./pages/Aprobaciones";
 import Informes from "./pages/Informes";
 import Lotetracking from "./pages/Lotetracking";
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/productos" element={<Productos />} />
             <Route path="/movimientos" element={<Movimientos />} />
             <Route path="/pedidos" element={<Pedidos />} />
+            <Route path="/tratamiento" element={<Tratamiento />} />
             <Route path="/aprobaciones" element={<Aprobaciones />} />
             <Route path="/informes" element={<Informes />} />
 			<Route path="/lotes" element={<Lotetracking />} />

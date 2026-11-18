@@ -143,6 +143,60 @@ export const getFichaProducto = async (productoId) => {
   return data;
 };
 
+// ---------------- TRATAMIENTOS (FITOSANITARIOS) ----------------
+
+export const getTratamientos = async (filtros = {}) => {
+  const params = {};
+  if (filtros.estado) params.estado = filtros.estado;
+  if (filtros.producto_id) params.producto_id = filtros.producto_id;
+  if (filtros.categoria) params.categoria = filtros.categoria;
+  if (filtros.subcategoria) params.subcategoria = filtros.subcategoria;
+  if (filtros.desde) params.desde = filtros.desde;
+  if (filtros.hasta) params.hasta = filtros.hasta;
+  if (filtros.q) params.q = filtros.q;
+  const { data } = await api.get("/tratamientos", { params });
+  return data;
+};
+
+export const getFitosanitariosDisponibles = async () => {
+  const { data } = await api.get("/tratamientos/fitosanitarios-disponibles");
+  return data;
+};
+
+// lineas: [{ producto_id, cantidad }]  (mismo orden que los ficheros)
+// fichas: [File, File, ...]  (una por línea, obligatoria)
+export const crearTratamiento = async (lineas, fichas) => {
+  const form = new FormData();
+  form.append("payload", JSON.stringify(lineas));
+  fichas.forEach((f) => form.append("fichas", f));
+  const { data } = await api.post("/tratamientos", form);
+  return data;
+};
+
+export const aprobarTratamiento = async (id) => {
+  const { data } = await api.post(`/tratamientos/${id}/aprobar`);
+  return data;
+};
+
+export const denegarTratamiento = async (id, motivo) => {
+  const { data } = await api.post(`/tratamientos/${id}/denegar`, { motivo });
+  return data;
+};
+
+export const aplicarTratamiento = async (id) => {
+  const { data } = await api.post(`/tratamientos/${id}/aplicar`);
+  return data;
+};
+
+// Abre la ficha adjunta de una línea en una pestaña nueva.
+export const verFichaTratamiento = async (itemId) => {
+  const resp = await api.get(`/tratamientos/items/${itemId}/ficha`, { responseType: "blob" });
+  const type = resp.data?.type || "application/octet-stream";
+  const url = window.URL.createObjectURL(new Blob([resp.data], { type }));
+  window.open(url, "_blank");
+  setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+};
+
 export const getMovimientos = async () => {
   const { data } = await api.get("/movimientos");
   return data;

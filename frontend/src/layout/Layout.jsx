@@ -176,6 +176,7 @@ const NAV_ITEMS = [
   { to: "/productos", label: "Productos" },
   { to: "/movimientos", label: "Movimientos" },
   { to: "/pedidos", label: "Pedidos" },
+  { to: "/tratamiento", label: "Tratamiento" },
   { to: "/aprobaciones", label: "Aprobaciones" },
   { to: "/informes", label: "Informes" },
 ];
@@ -195,19 +196,19 @@ function getVisibleNavItems(role) {
 
   if (role === "manager") {
     return NAV_ITEMS.filter((i) =>
-      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/aprobaciones", "/informes"].includes(i.to)
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/tratamiento", "/aprobaciones", "/informes"].includes(i.to)
     );
   }
 
   if (role === "gestor_vivero") {
     return NAV_ITEMS.filter((i) =>
-      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/informes"].includes(i.to)
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/tratamiento", "/informes"].includes(i.to)
     );
   }
 
   if (role === "empresa_externa") {
     return NAV_ITEMS.filter((i) =>
-      ["/productos", "/pedidos", "/informes"].includes(i.to)
+      ["/productos", "/pedidos", "/tratamiento", "/informes"].includes(i.to)
     );
   }
 
@@ -218,9 +219,10 @@ function getVisibleNavItems(role) {
   }
 
   // Observador: SOLO LECTURA de todo. Ve todos los módulos operativos igual
-  // que un admin, pero el backend le bloquea cualquier cambio.
+  // que un admin, pero el backend le bloquea cualquier cambio. No ve Tratamiento
+  // (módulo reservado a admin, empresa externa, manager y gestor del vivero).
   if (role === "observador") {
-    return NAV_ITEMS;
+    return NAV_ITEMS.filter((i) => i.to !== "/tratamiento");
   }
 
   return [];
@@ -248,6 +250,7 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
+      "/tratamiento",
       "/aprobaciones",
       "/informes",
       "/lotes",
@@ -290,6 +293,7 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
+      "/tratamiento",
       "/aprobaciones",
       "/informes",
       "/lotes",
@@ -303,6 +307,7 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
+      "/tratamiento",
       "/informes",
       "/lotes",
       "/vivero",
@@ -310,7 +315,7 @@ function isPathAllowedForRole(pathname, role) {
   }
 
   if (role === "empresa_externa") {
-    return ["/productos", "/pedidos", "/informes"].includes(pathname);
+    return ["/productos", "/pedidos", "/tratamiento", "/informes"].includes(pathname);
   }
 
   // Proveedor: solo /pedidos.
