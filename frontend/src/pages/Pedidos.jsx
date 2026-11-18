@@ -12,6 +12,9 @@ import {
   getProductos,
   getMovimientos,
   createPedido,
+  crearPedidoConFichas,
+  aplicarPedido,
+  verFichaPedido,
   updatePedido,
   cancelarPedido,
   eliminarPedido,
@@ -813,6 +816,10 @@ function PedidoModal({
   const [complementosAviso, setComplementosAviso] = useState(null);
   // "Bloquear materiales" (solo manager/admin): caducidad de 1 año.
   const [bloquearMateriales, setBloquearMateriales] = useState(false);
+  // Pedido con fitosanitario: ¿es un tratamiento interno del vivero? (destino
+  // Vivero, sin dirección) y ficha de tratamiento por línea fitosanitaria.
+  const [tratInterno, setTratInterno] = useState(true);
+  const [fichas, setFichas] = useState({}); // { [lineKey]: File }
 
   useEffect(() => {
     if (!open) {
@@ -830,6 +837,8 @@ function PedidoModal({
       setComplementosOffer(null);
       setComplementosAviso(null);
       setBloquearMateriales(false);
+      setTratInterno(true);
+      setFichas({});
     }
   }, [open]);
 
@@ -1053,7 +1062,37 @@ function PedidoModal({
     (g) => grupoAddressValid(g) && grupoLines(g).length > 0
   );
 
-  const canSubmit = !saving && hasAnyProduct && allGruposValid && stockValid;
+  // ── Fitosanitarios: ficha por línea + ¿tratamiento interno del vivero? ──
+  const _esFito = (prod) => {
+    const c = String(prod?.categoria || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    return c === "fitosanitario" || c === "fitosanitarios";
+  };
+  // Líneas fitosanitarias distintas en la cesta (dedupe por key producto+tamaño).
+  const fitoLines = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    for (const g of grupos) {
+      for (const line of grupoLines(g)) {
+        const prod = productos.find((p) => p.id === line.producto_id);
+        if (!_esFito(prod) || seen.has(line.key)) continue;
+        seen.add(line.key);
+        out.push({ ...line, nombreCientifico: prod?.nombre_cientifico, nombreComun: prod?.nombre_natural });
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grupos, productos]);
+  const hayFito = fitoLines.length > 0;
+  const esInterno = hayFito && tratInterno;
+  const fichasCompletas = fitoLines.every((l) => !!fichas[l.key]);
+
+  // Con tratamiento interno el destino es el Vivero: no se exige dirección.
+  const destinosValidos = esInterno
+    ? grupos.every((g) => grupoLines(g).length > 0)
+    : allGruposValid;
+
+  const canSubmit =
+    !saving && hasAnyProduct && destinosValidos && stockValid && (!hayFito || fichasCompletas);
 
   // Calcula el pack de complementos para N árboles. Devuelve { ok, ... }:
   // ok=true con los items si están los 5 con stock; ok=false con `faltan`
@@ -1143,25 +1182,34 @@ function PedidoModal({
         setLocalError("Cada destino debe tener al menos un producto.");
         return;
       }
-      if (!grupoAddressValid(g)) {
+      // Con tratamiento interno el destino es el Vivero: no se exige dirección.
+      if (!esInterno && !grupoAddressValid(g)) {
         setLocalError("Cada destino debe tener distrito, barrio y dirección.");
         return;
       }
+    }
+    if (hayFito && !fichasCompletas) {
+      setLocalError("Cada producto fitosanitario debe llevar su ficha de tratamiento adjunta.");
+      return;
     }
 
     // Una línea por (producto, destino): así al servir se genera un movimiento
     // por cada una con su dirección.
     const items = [];
+    const fichasArr = []; // una por cada línea fitosanitaria, en el orden de items
     for (const g of grupos) {
       for (const line of grupoLines(g)) {
+        const prod = productos.find((p) => p.id === line.producto_id);
         const item = {
           producto_id: line.producto_id,
           tamano: line.tamano,
           cantidad: line.cantidad,
-          distrito_destino: g.distrito,
-          barrio_destino: g.barrio,
-          direccion_destino: String(g.direccion || "").trim(),
         };
+        if (!esInterno) {
+          item.distrito_destino = g.distrito;
+          item.barrio_destino = g.barrio;
+          item.direccion_destino = String(g.direccion || "").trim();
+        }
         // Matrículas: recortadas al nº de unidades; solo se envían si hay alguna
         // con contenido (conservan su posición = unidad #1, #2, …).
         const n = Math.max(0, Math.floor(Number(line.cantidad) || 0));
@@ -1170,9 +1218,27 @@ function PedidoModal({
           .map((m) => String(m || "").trim());
         if (matArr.some((m) => m)) item.matriculas = matArr;
         items.push(item);
+        if (_esFito(prod)) fichasArr.push(fichas[line.key]);
       }
     }
     const primero = grupos[0];
+
+    // Si hay fitosanitarios, el pedido lleva fichas → endpoint multipart.
+    if (hayFito) {
+      await onSubmit({
+        __fichas: fichasArr,
+        items,
+        tratamiento_interno: esInterno,
+        nota: String(nota || "").trim() || null,
+        ...(esInterno ? {} : {
+          distrito_destino: primero.distrito,
+          barrio_destino: primero.barrio,
+          direccion_destino: String(primero.direccion || "").trim(),
+        }),
+      });
+      return;
+    }
+
     await onSubmit({
       items,
       // Destino a nivel de pedido = primer destino (compatibilidad/visualización).
@@ -1617,6 +1683,46 @@ function PedidoModal({
             <ModalStat label="Estado" value={canSubmit ? "Listo" : "Pendiente"} tone={canSubmit ? "success" : "warn"} />
           </div>
 
+          {hayFito ? (
+            <div style={{ ...cardStyle(), marginTop: 16, padding: 14, border: "1px solid rgba(124,58,237,0.35)" }}>
+              <div style={{ fontWeight: 900, color: "#5b21b6", fontSize: 14 }}>🧪 Tratamiento fitosanitario</div>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                Este pedido incluye productos fitosanitarios. Indica el tipo y adjunta la ficha de cada uno.
+              </div>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => setTratInterno(true)}
+                  style={{ padding: "8px 14px", borderRadius: 10, border: tratInterno ? "2px solid #7c3aed" : "1px solid rgba(15,23,42,0.15)", background: tratInterno ? "#ede9fe" : "#fff", color: "#5b21b6", fontWeight: 800, cursor: "pointer" }}>
+                  Tratamiento interno (al vivero)
+                </button>
+                <button type="button" onClick={() => setTratInterno(false)}
+                  style={{ padding: "8px 14px", borderRadius: 10, border: !tratInterno ? "2px solid #2563EB" : "1px solid rgba(15,23,42,0.15)", background: !tratInterno ? "#DBEAFE" : "#fff", color: "#1E40AF", fontWeight: 800, cursor: "pointer" }}>
+                  Salida externa
+                </button>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, color: tratInterno ? "#5b21b6" : "#1E40AF", fontWeight: 700 }}>
+                {tratInterno ? "Destino: Vivero (no hace falta indicar dirección)." : "Se tratará como un pedido de salida normal (indica el destino abajo)."}
+              </div>
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                {fitoLines.map((l) => (
+                  <div key={l.key} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "8px 10px", borderRadius: 10, background: "#faf9ff", border: "1px solid rgba(15,23,42,0.08)" }}>
+                    <span style={{ fontWeight: 800, color: "#0f172a", fontStyle: "italic" }}>{l.nombreCientifico}</span>
+                    {l.nombreComun ? <span style={{ fontSize: 12, color: "#64748b" }}>{l.nombreComun}</span> : null}
+                    <span style={{ fontWeight: 800, color: "#0f172a" }}>· {formatCantidad(l.cantidad)}</span>
+                    <label style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontWeight: 800, fontSize: 12,
+                      border: fichas[l.key] ? "1px solid #16A34A" : "1px dashed #94A3B8", background: fichas[l.key] ? "#DCFCE7" : "#fff", color: fichas[l.key] ? "#166534" : "#475569" }}>
+                      {fichas[l.key] ? `📎 ${fichas[l.key].name}` : "📎 Adjuntar ficha (obligatoria)"}
+                      <input type="file" style={{ display: "none" }} onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setFichas((prev) => ({ ...prev, [l.key]: f }));
+                      }} />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {!esInterno && (
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             {grupos.map((g, idx) => {
               const lines = grupoLines(g);
@@ -1764,6 +1870,16 @@ function PedidoModal({
               </button>
             )}
           </div>
+          )}
+
+          {esInterno ? (
+            <div style={{ ...cardStyle(), marginTop: 14, padding: 14, background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.25)" }}>
+              <div style={{ fontWeight: 900, color: "#5b21b6", fontSize: 14 }}>Destino: Vivero</div>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                Al ser un tratamiento interno, el material se aplica en el propio vivero. No hace falta indicar dirección.
+              </div>
+            </div>
+          ) : null}
 
           <div style={{ ...cardStyle(), marginTop: 14, padding: 14 }}>
             <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>Comentarios / anotaciones</div>
@@ -2014,7 +2130,19 @@ function PedidoDetalleCellOld({
                         textDecoration: isDenegado ? "line-through" : "none",
                       }}
                     >
-                      {nombre}
+                      <span style={{ fontStyle: "italic" }}>{nombre}</span>
+                      {(() => {
+                        const comun = it.producto_nombre_natural || it.nombre_natural || null;
+                        return comun && comun !== nombre ? (
+                          <span style={{ display: "block", fontWeight: 600, fontSize: 12, color: "#64748b" }}>{comun}</span>
+                        ) : null;
+                      })()}
+                      {it.tiene_ficha ? (
+                        <button type="button" onClick={() => verFichaPedido(it.id)}
+                          style={{ marginTop: 2, padding: "2px 8px", borderRadius: 6, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>
+                          📎 Ver ficha
+                        </button>
+                      ) : null}
                     </div>
                     <div style={{ textAlign: "center", fontWeight: 900, color: "#334155" }}>
                       {it.tamano || "—"}
@@ -3017,7 +3145,14 @@ export default function Pedidos() {
     setSavingNewPedido(true);
 
     try {
-      const created = await createPedido(payload);
+      let created;
+      if (payload && Array.isArray(payload.__fichas)) {
+        // Pedido con fitosanitarios: va por el endpoint multipart con fichas.
+        const { __fichas, ...opts } = payload;
+        created = await crearPedidoConFichas(opts, __fichas);
+      } else {
+        created = await createPedido(payload);
+      }
       setModalOpen(false);
       // El pedido recién creado entra en RESERVA. Si había un filtro de estado
       // activo (p.ej. "Aprobado"), el nuevo pedido no se vería. Reseteamos a
@@ -3472,6 +3607,14 @@ export default function Pedidos() {
                             🔒 Bloqueado
                           </span>
                         ) : null}
+                        {p.tratamiento_interno ? (
+                          <span
+                            title="Tratamiento interno del vivero: se aplica consumiendo el stock"
+                            style={{ display: "inline-flex", marginLeft: 6, padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, background: "rgba(124,58,237,0.12)", color: "#5b21b6", border: "1px solid rgba(124,58,237,0.30)" }}
+                          >
+                            🧪 Tratamiento interno
+                          </span>
+                        ) : null}
                       </td>
 
                       <td style={{ ...tdStyle(), borderTop: "1px solid rgba(15,23,42,0.10)", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
@@ -3677,6 +3820,37 @@ export default function Pedidos() {
                                 }}
                               >
                                 📄 PDF
+                              </button>
+                            );
+                          })()}
+
+                          {(() => {
+                            // Aplicar: solo tratamientos internos aprobados, por el
+                            // gestor del vivero o el admin. Descuenta el stock.
+                            const e = estadoNormalizado(estado);
+                            const puedeAplicar = (role === "gestor_vivero" || role === "admin")
+                              && p.tratamiento_interno && e === "APROBADO";
+                            if (!puedeAplicar) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!window.confirm(`¿Aplicar el tratamiento del pedido #${p.id}? Se descontará el material del stock.`)) return;
+                                  try {
+                                    await aplicarPedido(p.id);
+                                    showTimedMessage(`Tratamiento del pedido #${p.id} aplicado: material descontado.`, "success");
+                                    await refrescar();
+                                  } catch (err) {
+                                    showTimedMessage(err?.response?.data?.detail || err?.message || "No se pudo aplicar el tratamiento", "error");
+                                  }
+                                }}
+                                title="Aplicar el tratamiento interno (descuenta el stock)"
+                                style={{
+                                  padding: "8px 12px", borderRadius: 12, border: "none",
+                                  background: "#16A34A", color: "#fff", fontWeight: 900, cursor: "pointer", fontSize: 13,
+                                }}
+                              >
+                                🧪 Aplicar
                               </button>
                             );
                           })()}

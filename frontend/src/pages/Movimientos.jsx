@@ -347,6 +347,12 @@ function getMovimientoTipo(m) {
   const o = String(m?.origen_tipo || "").trim().toLowerCase();
   const d = String(m?.destino_tipo || "").trim().toLowerCase();
 
+  // Tratamiento interno del vivero (fitosanitario aplicado dentro del vivero):
+  // tipo de movimiento propio, no es una salida al exterior.
+  if (String(m?.tipo_movimiento || "").trim().toLowerCase() === "tratamiento" || d === "tratamiento") {
+    return "tratamiento";
+  }
+
   if (o === "vivero" && d === "vivero") return "traslado_interno";
 
   if (
@@ -367,6 +373,7 @@ function getTipoDisplayLabel(tipo) {
   if (t === "entrada") return "Entrada";
   if (t === "salida") return "Salida";
   if (t === "devolucion") return "Devolución";
+  if (t === "tratamiento") return "Tratamiento";
   return tipo || "—";
 }
 
@@ -381,6 +388,9 @@ function tipoTextStyle(tipo) {
   }
   if (t === "devolucion") {
     return { fontWeight: 900, color: "#92400e" };
+  }
+  if (t === "tratamiento") {
+    return { fontWeight: 900, color: "#5b21b6" };
   }
   return { fontWeight: 900, color: "#1e3a8a" };
 }

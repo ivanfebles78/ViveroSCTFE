@@ -143,71 +143,28 @@ export const getFichaProducto = async (productoId) => {
   return data;
 };
 
-// ---------------- TRATAMIENTOS (FITOSANITARIOS) ----------------
+// ---------------- PEDIDOS CON FICHA / TRATAMIENTO ----------------
 
-export const getTratamientos = async (filtros = {}) => {
-  const params = {};
-  if (filtros.estado) params.estado = filtros.estado;
-  if (filtros.producto_id) params.producto_id = filtros.producto_id;
-  if (filtros.categoria) params.categoria = filtros.categoria;
-  if (filtros.subcategoria) params.subcategoria = filtros.subcategoria;
-  if (filtros.desde) params.desde = filtros.desde;
-  if (filtros.hasta) params.hasta = filtros.hasta;
-  if (filtros.q) params.q = filtros.q;
-  const { data } = await api.get("/tratamientos", { params });
-  return data;
-};
-
-export const getFitosanitariosDisponibles = async () => {
-  const { data } = await api.get("/tratamientos/fitosanitarios-disponibles");
-  return data;
-};
-
-// lineas: [{ producto_id, cantidad }]  (mismo orden que los ficheros)
-// fichas: [File, File, ...]  (una por línea, obligatoria)
-export const crearTratamiento = async (lineas, fichas) => {
+// opts: { items:[{producto_id, tamano?, cantidad, matriculas?, ...destino}],
+//         nota, tratamiento_interno, distrito_destino, barrio_destino, direccion_destino }
+// fichas: [File, ...] una por cada línea FITOSANITARIA, en el mismo orden.
+export const crearPedidoConFichas = async (opts, fichas = []) => {
   const form = new FormData();
-  form.append("payload", JSON.stringify(lineas));
+  form.append("payload", JSON.stringify(opts));
   fichas.forEach((f) => form.append("fichas", f));
-  const { data } = await api.post("/tratamientos", form);
+  const { data } = await api.post("/pedidos/con-fichas", form);
   return data;
 };
 
-export const aprobarTratamiento = async (id) => {
-  const { data } = await api.post(`/tratamientos/${id}/aprobar`);
+// Aplica un tratamiento interno (pedido destinado al vivero): descuenta stock.
+export const aplicarPedido = async (id) => {
+  const { data } = await api.post(`/pedidos/${id}/aplicar`);
   return data;
 };
 
-export const denegarTratamiento = async (id, motivo) => {
-  const { data } = await api.post(`/tratamientos/${id}/denegar`, { motivo });
-  return data;
-};
-
-export const aplicarTratamiento = async (id) => {
-  const { data } = await api.post(`/tratamientos/${id}/aplicar`);
-  return data;
-};
-
-export const eliminarTratamiento = async (id) => {
-  const { data } = await api.delete(`/tratamientos/${id}`);
-  return data;
-};
-
-export const descargarTratamientoPdf = async (id) => {
-  const resp = await api.get(`/tratamientos/${id}/pdf`, { responseType: "blob" });
-  const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", `tratamiento_${id}.pdf`);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
-};
-
-// Abre la ficha adjunta de una línea en una pestaña nueva.
-export const verFichaTratamiento = async (itemId) => {
-  const resp = await api.get(`/tratamientos/items/${itemId}/ficha`, { responseType: "blob" });
+// Abre la ficha de tratamiento adjunta a una línea de pedido en pestaña nueva.
+export const verFichaPedido = async (itemId) => {
+  const resp = await api.get(`/pedidos/items/${itemId}/ficha`, { responseType: "blob" });
   const type = resp.data?.type || "application/octet-stream";
   const url = window.URL.createObjectURL(new Blob([resp.data], { type }));
   window.open(url, "_blank");

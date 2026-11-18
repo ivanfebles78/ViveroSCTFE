@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { clearStoredToken, getStoredToken, getMe, getProductos, getZonaItems, getPedidos, getTratamientos, marcarZonaInterna, authHeartbeat, authLogout } from "../api/api";
+import { clearStoredToken, getStoredToken, getMe, getProductos, getZonaItems, getPedidos, marcarZonaInterna, authHeartbeat, authLogout } from "../api/api";
 import mapaVivero from "../assets/mapa-vivero.png";
 import zonasDefault from "../components/vivero/zonasConfig";
 import ZoneEditor from "../components/vivero/ZoneEditor";
@@ -176,7 +176,6 @@ const NAV_ITEMS = [
   { to: "/productos", label: "Productos" },
   { to: "/movimientos", label: "Movimientos" },
   { to: "/pedidos", label: "Pedidos" },
-  { to: "/tratamiento", label: "Tratamiento" },
   { to: "/aprobaciones", label: "Aprobaciones" },
   { to: "/informes", label: "Informes" },
 ];
@@ -196,19 +195,19 @@ function getVisibleNavItems(role) {
 
   if (role === "manager") {
     return NAV_ITEMS.filter((i) =>
-      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/tratamiento", "/aprobaciones", "/informes"].includes(i.to)
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/aprobaciones", "/informes"].includes(i.to)
     );
   }
 
   if (role === "gestor_vivero") {
     return NAV_ITEMS.filter((i) =>
-      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/tratamiento", "/informes"].includes(i.to)
+      ["/dashboard", "/productos", "/movimientos", "/pedidos", "/informes"].includes(i.to)
     );
   }
 
   if (role === "empresa_externa") {
     return NAV_ITEMS.filter((i) =>
-      ["/productos", "/pedidos", "/tratamiento", "/informes"].includes(i.to)
+      ["/productos", "/pedidos", "/informes"].includes(i.to)
     );
   }
 
@@ -219,10 +218,9 @@ function getVisibleNavItems(role) {
   }
 
   // Observador: SOLO LECTURA de todo. Ve todos los módulos operativos igual
-  // que un admin, pero el backend le bloquea cualquier cambio. No ve Tratamiento
-  // (módulo reservado a admin, empresa externa, manager y gestor del vivero).
+  // que un admin, pero el backend le bloquea cualquier cambio.
   if (role === "observador") {
-    return NAV_ITEMS.filter((i) => i.to !== "/tratamiento");
+    return NAV_ITEMS;
   }
 
   return [];
@@ -250,7 +248,6 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
-      "/tratamiento",
       "/aprobaciones",
       "/informes",
       "/lotes",
@@ -293,7 +290,6 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
-      "/tratamiento",
       "/aprobaciones",
       "/informes",
       "/lotes",
@@ -307,7 +303,6 @@ function isPathAllowedForRole(pathname, role) {
       "/productos",
       "/movimientos",
       "/pedidos",
-      "/tratamiento",
       "/informes",
       "/lotes",
       "/vivero",
@@ -315,7 +310,7 @@ function isPathAllowedForRole(pathname, role) {
   }
 
   if (role === "empresa_externa") {
-    return ["/productos", "/pedidos", "/tratamiento", "/informes"].includes(pathname);
+    return ["/productos", "/pedidos", "/informes"].includes(pathname);
   }
 
   // Proveedor: solo /pedidos.
@@ -1477,9 +1472,6 @@ export default function Layout() {
   const [mapOpen, setMapOpen] = useState(false);
   const [productos, setProductos] = useState([]);
   const [pedidosUsuario, setPedidosUsuario] = useState([]);
-  // Nº de tratamientos APROBADO pendientes de aplicar (badge del menú para
-  // gestor del vivero / admin).
-  const [tratAplicarCount, setTratAplicarCount] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState(() =>
@@ -1555,16 +1547,7 @@ export default function Layout() {
       const data = await getPedidos();
       setPedidosUsuario(Array.isArray(data) ? data : []);
     } catch { /* noop */ }
-    // Tratamientos pendientes de aplicar (badge): solo para quien los aplica.
-    if (rolActual === "gestor_vivero" || rolActual === "admin") {
-      try {
-        const trat = await getTratamientos({ estado: "APROBADO" });
-        setTratAplicarCount(Array.isArray(trat) ? trat.length : 0);
-      } catch { /* noop */ }
-    } else {
-      setTratAplicarCount(0);
-    }
-  }, [me, esEmpresaExternaRol, rolActual]);
+  }, [me, esEmpresaExternaRol]);
 
   useEffect(() => {
     refreshBadgeData();
@@ -1639,12 +1622,8 @@ export default function Layout() {
   // Badge counts per nav route — recomputed whenever pedidos, role or
   // seen-map change.  Cheap (filter over an in-memory array).
   const navBadgeCounts = useMemo(() => {
-    const base = computeBadgeCounts(rolActual, pedidosUsuario, seenPedidos, me?.username);
-    if (tratAplicarCount > 0) {
-      return { ...base, "/tratamiento": tratAplicarCount };
-    }
-    return base;
-  }, [rolActual, pedidosUsuario, seenPedidos, me?.username, tratAplicarCount]);
+    return computeBadgeCounts(rolActual, pedidosUsuario, seenPedidos, me?.username);
+  }, [rolActual, pedidosUsuario, seenPedidos, me?.username]);
 
   const allNotifications = useMemo(() => {
     if (esEmpresaExternaRol) {

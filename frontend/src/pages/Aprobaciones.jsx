@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
-import { getPedidos, getProductos, updatePedido, aprobarPedido, denegarPedido, reabrirPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf, getTratamientos, aprobarTratamiento, denegarTratamiento, verFichaTratamiento } from "../api/api";
+import { getPedidos, getProductos, updatePedido, aprobarPedido, denegarPedido, reabrirPedido, decidirPedido, decidirModificacionPedido, descargarPedidoPdf, verFichaPedido } from "../api/api";
 import { formatUsername } from "../utils/format";
 import { formatCantidad } from "../utils/numero";
 
@@ -1031,7 +1031,16 @@ function DetallePedidoModal({ pedido, productos = [], onClose, canApprove = fals
                     return (
                       <tr key={it.id || `${grupo.destino}-${idx}`} style={{ borderTop: "1px solid rgba(15,23,42,0.06)", ...rowMuted }}>
                         <td style={{ ...tdStyle(), textDecoration: estIt === "DENEGADO" ? "line-through" : "none" }}>
-                          {productoLabel}
+                          <span style={{ fontStyle: "italic" }}>{productoLabel}</span>
+                          {it.producto_nombre_natural && it.producto_nombre_natural !== productoLabel ? (
+                            <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textDecoration: "none" }}>{it.producto_nombre_natural}</div>
+                          ) : null}
+                          {it.tiene_ficha ? (
+                            <button type="button" onClick={() => verFichaPedido(it.id)}
+                              style={{ marginTop: 3, padding: "2px 8px", borderRadius: 6, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 11, cursor: "pointer", textDecoration: "none" }}>
+                              📎 Ver ficha
+                            </button>
+                          ) : null}
                           {/* IDs/matrículas por unidad (árboles/palmeras UTE).
                               Solo lectura: las consulta el manager al aprobar. */}
                           {Array.isArray(it.matriculas) && it.matriculas.some((m) => m) ? (
@@ -1347,98 +1356,6 @@ function MessageBanner({ msg, onClose }) {
   );
 }
 
-// Solicitudes de tratamiento fitosanitario pendientes (estado RESERVA). El
-// manager/admin las aprueba o deniega aquí, igual que los pedidos. Componente
-// autónomo: carga sus datos y se refresca tras cada decisión.
-function TratamientosAprobacion({ onMessage }) {
-  const [solicitudes, setSolicitudes] = useState([]);
-  const [cargando, setCargando] = useState(true);
-
-  const cargar = async () => {
-    setCargando(true);
-    try {
-      const data = await getTratamientos({ estado: "RESERVA" });
-      setSolicitudes(Array.isArray(data) ? data : []);
-    } catch (e) {
-      onMessage?.(e?.response?.data?.detail || "No se pudieron cargar las solicitudes de tratamiento.");
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  useEffect(() => { cargar(); /* eslint-disable-next-line */ }, []);
-
-  const aprobar = async (id) => {
-    try {
-      await aprobarTratamiento(id);
-      onMessage?.(`Tratamiento #${id} aprobado.`);
-      cargar();
-    } catch (e) {
-      onMessage?.(e?.response?.data?.detail || "No se pudo aprobar el tratamiento.");
-    }
-  };
-
-  const denegar = async (id) => {
-    const motivo = window.prompt("Motivo de la denegación del tratamiento:");
-    if (motivo == null) return;
-    if (!motivo.trim()) { onMessage?.("Debes indicar un motivo para denegar."); return; }
-    try {
-      await denegarTratamiento(id, motivo.trim());
-      onMessage?.(`Tratamiento #${id} denegado.`);
-      cargar();
-    } catch (e) {
-      onMessage?.(e?.response?.data?.detail || "No se pudo denegar el tratamiento.");
-    }
-  };
-
-  const verFicha = async (itemId) => {
-    try { await verFichaTratamiento(itemId); }
-    catch (e) { onMessage?.(e?.response?.data?.detail || "No se pudo abrir la ficha."); }
-  };
-
-  return (
-    <div style={{ marginTop: 16, background: "white", border: "1px solid rgba(124,58,237,0.25)", borderLeft: "5px solid #7c3aed", borderRadius: 18, boxShadow: "0 10px 30px rgba(2,6,23,0.06)", padding: 16 }}>
-      <div style={{ fontSize: 18, fontWeight: 900, color: "#5b21b6", marginBottom: 12 }}>
-        🧪 Solicitudes de tratamiento pendientes
-      </div>
-      {cargando ? (
-        <div style={{ color: "#64748b" }}>Cargando…</div>
-      ) : solicitudes.length === 0 ? (
-        <div style={{ color: "#94a3b8", fontWeight: 600 }}>No hay solicitudes de tratamiento pendientes.</div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {solicitudes.map((s) => (
-            <div key={s.id} style={{ border: "1px solid rgba(15,23,42,0.1)", borderRadius: 12, padding: 12, background: "#faf9ff" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                  Solicitud #{s.id} · <span style={{ color: "#64748b", fontWeight: 600 }}>{s.creado_por || "—"}</span>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" onClick={() => aprobar(s.id)} style={{ padding: "7px 14px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontWeight: 800, cursor: "pointer" }}>✔ Aprobar</button>
-                  <button type="button" onClick={() => denegar(s.id)} style={{ padding: "7px 14px", borderRadius: 10, border: "none", background: "#DC2626", color: "#fff", fontWeight: 800, cursor: "pointer" }}>✗ Denegar</button>
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                {(s.items || []).map((it) => (
-                  <div key={it.item_id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 14, padding: "6px 8px", background: "#fff", borderRadius: 8, border: "1px solid rgba(15,23,42,0.06)" }}>
-                    <span style={{ fontStyle: "italic", fontWeight: 700, color: "#0f172a" }}>{it.nombre_cientifico}</span>
-                    <span style={{ color: "#64748b" }}>{it.nombre_natural || ""}</span>
-                    <span style={{ color: "#334155" }}>· {it.subcategoria || "—"}</span>
-                    <span style={{ fontWeight: 800, color: "#0f172a" }}>· {formatCantidad(it.cantidad)}</span>
-                    {it.tiene_ficha ? (
-                      <button type="button" onClick={() => verFicha(it.item_id)} style={{ marginLeft: "auto", padding: "4px 10px", borderRadius: 8, border: "1px solid #2563EB", background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>📎 Ver ficha</button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Aprobaciones() {
   const { me } = useOutletContext();
   const [pedidos, setPedidos] = useState([]);
@@ -1582,8 +1499,6 @@ export default function Aprobaciones() {
       </div>
 
       <MessageBanner msg={msg} onClose={closeMessage} />
-
-      {canApprove ? <TratamientosAprobacion onMessage={showTimedMessage} /> : null}
 
       <div
         style={{

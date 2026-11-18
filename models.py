@@ -139,6 +139,10 @@ class Pedido(Base):
 
     # Caducidad del propio pedido (p.ej. empresa_externa: 15 días)
     fecha_caducidad = Column(Date, nullable=True)
+    # Tratamiento interno del vivero: el pedido incluye fitosanitarios y su
+    # destino es el propio Vivero (sin dirección externa). El gestor lo "aplica"
+    # (consume el stock) en vez de "servirlo" a un destino externo.
+    tratamiento_interno = Column(Boolean, nullable=False, default=False, server_default="false")
     # "Bloqueo de materiales" (solo manager/admin): reserva con caducidad de 1 año
     # en vez de 15 días (material para una obra futura). Informativo/visual; la
     # reserva real la da fecha_caducidad.
@@ -211,6 +215,12 @@ class PedidoItem(Base):
         server_default="RESERVA",
         index=True,
     )
+
+    # Ficha de tratamiento adjunta (obligatoria a nivel de app solo en líneas de
+    # productos fitosanitarios). Se guarda en la propia BD como bytes.
+    ficha_nombre = Column(String(255), nullable=True)
+    ficha_tipo = Column(String(150), nullable=True)
+    ficha_datos = Column(LargeBinary, nullable=True)
 
     pedido = relationship("Pedido", back_populates="items")
     producto = relationship("Producto")
@@ -413,68 +423,3 @@ class ConexionUsuario(Base):
     last_seen_at = Column(DateTime, nullable=True)
     # Desconexión explícita (botón "Salir").
     logout_at = Column(DateTime, nullable=True)
-
-
-# =========================
-# SOLICITUDES DE TRATAMIENTO (FITOSANITARIO)
-# =========================
-# Flujo análogo al de un pedido, pero propio, para el consumo de productos
-# fitosanitarios. La empresa externa (o admin) solicita, el manager (o admin)
-# aprueba/deniega desde Aprobaciones, y el gestor del vivero (o admin) la
-# "aplica" descontando el stock. Lo aprobado y no aplicado en 15 días se
-# cancela automáticamente (caducidad perezosa, igual que los pedidos).
-# Mientras está en RESERVA o APROBADO, el fitosanitario queda reservado.
-class SolicitudTratamiento(Base):
-    __tablename__ = "solicitudes_tratamiento"
-
-    id = Column(Integer, primary_key=True, index=True)
-    # RESERVA | APROBADO | DENEGADO | APLICADO | CANCELADO
-    estado = Column(String(20), nullable=False, default="RESERVA", index=True)
-
-    creado_por = Column(String(150), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    aprobado_por = Column(String(150), nullable=True)
-    aprobado_at = Column(DateTime, nullable=True)
-
-    denegado_por = Column(String(150), nullable=True)
-    denegado_at = Column(DateTime, nullable=True)
-    motivo_denegacion = Column(Text, nullable=True)
-
-    aplicado_por = Column(String(150), nullable=True)
-    aplicado_at = Column(DateTime, nullable=True)
-
-    # Caducidad de la solicitud: al aprobar se fija a hoy + 15 días. Si pasa sin
-    # aplicarse, la solicitud se cancela y libera la reserva.
-    fecha_caducidad = Column(Date, nullable=True)
-
-    observaciones = Column(Text, nullable=True)
-
-    items = relationship(
-        "SolicitudTratamientoItem",
-        back_populates="solicitud",
-        cascade="all, delete-orphan",
-    )
-
-
-class SolicitudTratamientoItem(Base):
-    __tablename__ = "solicitud_tratamiento_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    solicitud_id = Column(
-        Integer,
-        ForeignKey("solicitudes_tratamiento.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False, index=True)
-    cantidad = Column(Numeric(12, 3), nullable=False)
-    cantidad_aplicada = Column(Numeric(12, 3), nullable=False, default=0)
-
-    # Ficha adjunta OBLIGATORIA por línea (se guarda en la propia BD como bytes).
-    ficha_nombre = Column(String(255), nullable=True)
-    ficha_tipo = Column(String(150), nullable=True)
-    ficha_datos = Column(LargeBinary, nullable=True)
-
-    solicitud = relationship("SolicitudTratamiento", back_populates="items")
-    producto = relationship("Producto")

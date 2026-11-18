@@ -13,7 +13,7 @@ import traceback
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from pdf_pedido import generar_pdf_pedido, generar_pdf_tratamiento
+from pdf_pedido import generar_pdf_pedido
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 from passlib.context import CryptContext
@@ -37,8 +37,6 @@ from models import (
     AccountToken,
     ZonaPolygon,
     ConexionUsuario,
-    SolicitudTratamiento,
-    SolicitudTratamientoItem,
     Base,
 )
 from schemas import PedidoActionRequest, PedidoDecidirRequest, PedidoOut
@@ -81,6 +79,12 @@ def _ensure_schema() -> None:
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS complemento_arbol VARCHAR(30)",
         # Bloqueo de materiales (manager/admin): caducidad de 1 año.
         "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS bloqueado BOOLEAN NOT NULL DEFAULT FALSE",
+        # Tratamiento interno del vivero (pedido con fitosanitario destinado al
+        # propio vivero) + ficha de tratamiento adjunta por línea de pedido.
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS tratamiento_interno BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS ficha_nombre VARCHAR(255)",
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS ficha_tipo VARCHAR(150)",
+        "ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS ficha_datos BYTEA",
     ]
     # IMPORTANTE: cada sentencia en SU PROPIA transacción. Si todas comparten
     # una, un fallo en PostgreSQL aborta la transacción entera y NINGUNA columna
@@ -966,59 +970,6 @@ def _reservado_producto_tamano(db: Session, producto_id: int, tamano: str, exclu
     return m.get((int(producto_id), _norm_tam(tamano)), 0.0)
 
 
-# Estados de solicitud de tratamiento que mantienen el fitosanitario RESERVADO
-# (comprometido, no disponible): pendiente de decidir o aprobada sin aplicar.
-TRATAMIENTO_RESERVA_STATES = ("RESERVA", "APROBADO")
-
-
-def _reservas_tratamiento_por_producto(db: Session, exclude_solicitud_id: Optional[int] = None) -> dict:
-    """Devuelve {producto_id: cantidad_reservada} por solicitudes de tratamiento
-    vivas (RESERVA o APROBADO no caducadas). La cantidad pendiente de una línea es
-    cantidad - cantidad_aplicada."""
-    hoy = datetime.utcnow().date()
-    solicitudes = (
-        db.query(SolicitudTratamiento)
-        .filter(func.upper(SolicitudTratamiento.estado).in_(TRATAMIENTO_RESERVA_STATES))
-        .filter(
-            or_(
-                SolicitudTratamiento.fecha_caducidad.is_(None),
-                SolicitudTratamiento.fecha_caducidad >= hoy,
-            )
-        )
-        .all()
-    )
-    out: dict = {}
-    for s in solicitudes:
-        if exclude_solicitud_id is not None and int(getattr(s, "id", 0) or 0) == int(exclude_solicitud_id):
-            continue
-        for it in (getattr(s, "items", None) or []):
-            pend = float(getattr(it, "cantidad", 0) or 0) - float(getattr(it, "cantidad_aplicada", 0) or 0)
-            if pend <= 0:
-                continue
-            pid = int(getattr(it, "producto_id", 0) or 0)
-            out[pid] = out.get(pid, 0.0) + pend
-    return out
-
-
-def _cancelar_tratamientos_caducados(db: Session) -> None:
-    """Caducidad perezosa: toda solicitud APROBADA cuya fecha_caducidad ya pasó y
-    que no se ha aplicado pasa a CANCELADO (libera la reserva). Se llama al listar
-    o leer tratamientos, igual que la caducidad de pedidos."""
-    hoy = datetime.utcnow().date()
-    caducadas = (
-        db.query(SolicitudTratamiento)
-        .filter(func.upper(SolicitudTratamiento.estado) == "APROBADO")
-        .filter(SolicitudTratamiento.fecha_caducidad.isnot(None))
-        .filter(SolicitudTratamiento.fecha_caducidad < hoy)
-        .all()
-    )
-    if not caducadas:
-        return
-    for s in caducadas:
-        s.estado = "CANCELADO"
-    db.commit()
-
-
 def recompute_pedido_estado(pedido: Pedido) -> str:
     """
     Derive the pedido's aggregate state from its items' `estado_item` values.
@@ -1429,6 +1380,7 @@ def _pedido_to_dict(
         "tipo": getattr(pedido, "tipo", "salida") or "salida",
         "fecha_caducidad": getattr(pedido, "fecha_caducidad", None),
         "bloqueado": bool(getattr(pedido, "bloqueado", False)),
+        "tratamiento_interno": bool(getattr(pedido, "tratamiento_interno", False)),
         "solicitante_username": getattr(pedido, "solicitante_username", None),
         "nota": getattr(pedido, "nota", None),
         "distrito_destino": getattr(pedido, "distrito_destino", None),
@@ -1485,6 +1437,10 @@ def _pedido_to_dict(
                     getattr(getattr(item, "producto", None), "nombre_cientifico", None)
                     or getattr(getattr(item, "producto", None), "nombre_natural", None)
                 ),
+                "producto_categoria": getattr(getattr(item, "producto", None), "categoria", None),
+                "producto_subcategoria": getattr(getattr(item, "producto", None), "subcategoria", None),
+                # Ficha de tratamiento adjunta a esta línea (fitosanitarios).
+                "tiene_ficha": bool(getattr(item, "ficha_datos", None)),
                 "movimientos_servicio": [
                     {
                         "movimiento_id": getattr(mov, "id", None),
@@ -1587,8 +1543,6 @@ def get_productos(
 
     # Reservas vigentes (stock comprometido por pedidos de salida vivos).
     reservas_map = _reservas_por_producto_tamano(db)
-    # Reservas por solicitudes de tratamiento (fitosanitarios comprometidos).
-    reservas_trat_map = _reservas_tratamiento_por_producto(db)
 
     # ---------- 2. Todos los inventarios en una sola query ----------
     inventarios_all = (
@@ -1719,21 +1673,6 @@ def get_productos(
             no_disponible_total += futuro
             disponible_by_size[tam] = max(qty - res - futuro, 0)
         disponible_total = sum(disponible_by_size.values())
-
-        # Reserva por solicitudes de tratamiento (solo afecta a fitosanitarios,
-        # que son los únicos que pueden entrar en un tratamiento). Se descuenta
-        # del disponible total y de los buckets de tamaño de forma voraz.
-        trat_res = float(reservas_trat_map.get(p.id, 0.0))
-        if trat_res > 0:
-            reservado_total += min(trat_res, disponible_total)
-            restante_tr = trat_res
-            for _tam in list(disponible_by_size.keys()):
-                if restante_tr <= 0:
-                    break
-                take = min(disponible_by_size[_tam], restante_tr)
-                disponible_by_size[_tam] = disponible_by_size[_tam] - take
-                restante_tr -= take
-            disponible_total = sum(disponible_by_size.values())
 
         item = {
             "id": p.id,
@@ -5381,14 +5320,10 @@ async def admin_restore(
 
 
 # =====================================================================
-# TRATAMIENTOS FITOSANITARIOS
-# Flujo tipo pedido pero propio: empresa_externa/admin SOLICITA,
-# manager/admin APRUEBA o DENIEGA (desde Aprobaciones), gestor_vivero/admin
-# APLICA (descuenta stock). Adjunto obligatorio por línea. Reserva el
-# fitosanitario mientras está en RESERVA/APROBADO. Caducidad 15 días.
+# HELPERS DE FITOSANITARIOS / STOCK (usados por el flujo de pedidos con
+# tratamiento: creación con ficha, aplicar un tratamiento interno, etc.)
 # =====================================================================
 
-TRATAMIENTO_ROLES_VER = ("admin", "empresa_externa", "manager", "gestor_vivero")
 _FICHA_MAX_BYTES = 10 * 1024 * 1024  # 10 MB por ficha
 
 
@@ -5443,347 +5378,6 @@ def _consumir_stock_producto(db: Session, producto_id: int, cantidad: float) -> 
     return usados
 
 
-def _trat_item_dict(item) -> dict:
-    prod = getattr(item, "producto", None)
-    return {
-        "item_id": item.id,
-        "producto_id": item.producto_id,
-        "nombre_cientifico": getattr(prod, "nombre_cientifico", None) if prod else None,
-        "nombre_natural": getattr(prod, "nombre_natural", None) if prod else None,
-        "nombre": (getattr(prod, "nombre_natural", None) or getattr(prod, "nombre_cientifico", None)) if prod else None,
-        "categoria": getattr(prod, "categoria", None) if prod else None,
-        "subcategoria": getattr(prod, "subcategoria", None) if prod else None,
-        "cantidad": float(item.cantidad or 0),
-        "cantidad_aplicada": float(item.cantidad_aplicada or 0),
-        "tiene_ficha": bool(item.ficha_datos),
-        "ficha_nombre": item.ficha_nombre,
-    }
-
-
-def _trat_solicitud_dict(s) -> dict:
-    return {
-        "id": s.id,
-        "estado": s.estado,
-        "creado_por": s.creado_por,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "aprobado_por": s.aprobado_por,
-        "aprobado_at": s.aprobado_at.isoformat() if s.aprobado_at else None,
-        "denegado_por": s.denegado_por,
-        "denegado_at": s.denegado_at.isoformat() if s.denegado_at else None,
-        "motivo_denegacion": s.motivo_denegacion,
-        "aplicado_por": s.aplicado_por,
-        "aplicado_at": s.aplicado_at.isoformat() if s.aplicado_at else None,
-        "fecha_caducidad": s.fecha_caducidad.isoformat() if s.fecha_caducidad else None,
-        "observaciones": s.observaciones,
-        "items": [_trat_item_dict(it) for it in (s.items or [])],
-    }
-
-
-class TratamientoDenegarBody(BaseModel):
-    motivo: str = Field(..., min_length=1)
-
-
-@app.get("/tratamientos/fitosanitarios-disponibles")
-def listar_fitosanitarios_disponibles(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(list(TRATAMIENTO_ROLES_VER))),
-):
-    """Productos fitosanitarios con su cantidad disponible (stock físico menos lo
-    reservado por tratamientos vivos). Para el modal de solicitar tratamiento."""
-    _cancelar_tratamientos_caducados(db)
-    reservas = _reservas_tratamiento_por_producto(db)
-    productos = db.query(Producto).order_by(Producto.nombre_cientifico.asc()).all()
-    out = []
-    for p in productos:
-        if not _es_fitosanitario(p):
-            continue
-        stock = _stock_fisico_producto(db, p.id)
-        disponible = max(stock - float(reservas.get(p.id, 0.0)), 0.0)
-        out.append({
-            "id": p.id,
-            "nombre_cientifico": p.nombre_cientifico,
-            "nombre_natural": p.nombre_natural,
-            "nombre": p.nombre_natural or p.nombre_cientifico,
-            "categoria": p.categoria,
-            "subcategoria": p.subcategoria,
-            "stock": stock,
-            "disponible": disponible,
-        })
-    return out
-
-
-@app.get("/tratamientos")
-def listar_tratamientos(
-    estado: Optional[str] = None,
-    producto_id: Optional[int] = None,
-    categoria: Optional[str] = None,
-    subcategoria: Optional[str] = None,
-    desde: Optional[str] = None,
-    hasta: Optional[str] = None,
-    q: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(list(TRATAMIENTO_ROLES_VER))),
-):
-    """Lista las solicitudes de tratamiento (con sus líneas) aplicando filtros.
-    La empresa externa solo ve las suyas."""
-    _cancelar_tratamientos_caducados(db)
-    rol = (current_user.rol or "").strip().lower()
-
-    query = db.query(SolicitudTratamiento)
-    if rol == "empresa_externa":
-        query = query.filter(SolicitudTratamiento.creado_por == current_user.username)
-    if estado:
-        query = query.filter(func.upper(SolicitudTratamiento.estado) == estado.strip().upper())
-
-    def _parse_date(v):
-        try:
-            return datetime.strptime(v, "%Y-%m-%d").date()
-        except Exception:
-            return None
-
-    d_desde = _parse_date(desde) if desde else None
-    d_hasta = _parse_date(hasta) if hasta else None
-
-    solicitudes = query.order_by(SolicitudTratamiento.id.desc()).all()
-
-    cat_n = _norm_txt(categoria) if categoria else None
-    sub_n = _norm_txt(subcategoria) if subcategoria else None
-    q_n = (q or "").strip().lower()
-
-    out = []
-    for s in solicitudes:
-        if s.created_at:
-            fday = s.created_at.date()
-            if d_desde and fday < d_desde:
-                continue
-            if d_hasta and fday > d_hasta:
-                continue
-
-        d = _trat_solicitud_dict(s)
-
-        items = d["items"]
-        if producto_id:
-            items = [it for it in items if it["producto_id"] == producto_id]
-        if cat_n:
-            items = [it for it in items if _norm_txt(it["categoria"]) == cat_n]
-        if sub_n:
-            items = [it for it in items if _norm_txt(it["subcategoria"]) == sub_n]
-        if q_n:
-            items = [
-                it for it in items
-                if q_n in (it.get("nombre_cientifico") or "").lower()
-                or q_n in (it.get("nombre_natural") or "").lower()
-            ]
-        if not items:
-            continue
-        d["items"] = items
-        out.append(d)
-
-    return out
-
-
-@app.post("/tratamientos")
-async def crear_tratamiento(
-    payload: str = Form(...),
-    fichas: list[UploadFile] = File(...),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["empresa_externa", "admin"])),
-):
-    """Crea una solicitud de tratamiento. `payload` es un JSON con las líneas
-    [{producto_id, cantidad}, ...] y `fichas` trae un fichero por línea, EN EL
-    MISMO ORDEN. El fitosanitario queda reservado (estado RESERVA)."""
-    try:
-        lineas = json.loads(payload)
-    except Exception:
-        raise HTTPException(status_code=400, detail="El payload no es un JSON válido.")
-    if not isinstance(lineas, list) or not lineas:
-        raise HTTPException(status_code=400, detail="La solicitud no tiene líneas.")
-    if len(fichas) != len(lineas):
-        raise HTTPException(
-            status_code=400,
-            detail="Cada línea del tratamiento debe llevar su ficha adjunta.",
-        )
-
-    reservas = _reservas_tratamiento_por_producto(db)
-    consumido_local = {}
-
-    solicitud = SolicitudTratamiento(
-        estado="RESERVA",
-        creado_por=current_user.username,
-        created_at=datetime.utcnow(),
-    )
-    db.add(solicitud)
-    db.flush()
-
-    for linea, fich in zip(lineas, fichas):
-        try:
-            pid = int(linea.get("producto_id"))
-            cant = float(linea.get("cantidad"))
-        except Exception:
-            raise HTTPException(status_code=400, detail="Línea de tratamiento inválida.")
-        if cant <= 0:
-            raise HTTPException(status_code=400, detail="La cantidad debe ser mayor que 0.")
-
-        prod = db.query(Producto).filter(Producto.id == pid).first()
-        if not prod:
-            raise HTTPException(status_code=404, detail=f"Producto {pid} no encontrado.")
-        if not _es_fitosanitario(prod):
-            raise HTTPException(
-                status_code=400,
-                detail=f"El producto {prod.nombre_cientifico} no es un fitosanitario.",
-            )
-
-        stock = _stock_fisico_producto(db, pid)
-        disponible = stock - float(reservas.get(pid, 0.0)) - float(consumido_local.get(pid, 0.0))
-        if cant > disponible + 1e-9:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No hay suficiente {prod.nombre_cientifico}. Disponible: {disponible:g}.",
-            )
-        consumido_local[pid] = consumido_local.get(pid, 0.0) + cant
-
-        data = await fich.read()
-        if not data:
-            raise HTTPException(status_code=400, detail="Una de las fichas adjuntas está vacía.")
-        if len(data) > _FICHA_MAX_BYTES:
-            raise HTTPException(status_code=400, detail="Cada ficha no puede superar los 10 MB.")
-
-        db.add(SolicitudTratamientoItem(
-            solicitud_id=solicitud.id,
-            producto_id=pid,
-            cantidad=cant,
-            cantidad_aplicada=0,
-            ficha_nombre=(fich.filename or "ficha"),
-            ficha_tipo=(fich.content_type or "application/octet-stream"),
-            ficha_datos=data,
-        ))
-
-    db.commit()
-    db.refresh(solicitud)
-    return _trat_solicitud_dict(solicitud)
-
-
-@app.post("/tratamientos/{solicitud_id}/aprobar")
-def aprobar_tratamiento(
-    solicitud_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["manager", "admin"])),
-):
-    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
-    if (s.estado or "").upper() != "RESERVA":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Solo se pueden aprobar solicitudes en RESERVA (estado actual: {s.estado}).",
-        )
-    s.estado = "APROBADO"
-    s.aprobado_por = current_user.username
-    s.aprobado_at = datetime.utcnow()
-    s.fecha_caducidad = datetime.utcnow().date() + timedelta(days=15)
-    s.denegado_por = None
-    s.denegado_at = None
-    s.motivo_denegacion = None
-    db.commit()
-    db.refresh(s)
-    return _trat_solicitud_dict(s)
-
-
-@app.post("/tratamientos/{solicitud_id}/denegar")
-def denegar_tratamiento(
-    solicitud_id: int,
-    body: TratamientoDenegarBody,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["manager", "admin"])),
-):
-    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
-    if (s.estado or "").upper() != "RESERVA":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Solo se pueden denegar solicitudes en RESERVA (estado actual: {s.estado}).",
-        )
-    motivo = (body.motivo or "").strip()
-    if not motivo:
-        raise HTTPException(status_code=400, detail="Indica el motivo de la denegación.")
-    s.estado = "DENEGADO"
-    s.denegado_por = current_user.username
-    s.denegado_at = datetime.utcnow()
-    s.motivo_denegacion = motivo
-    db.commit()
-    db.refresh(s)
-    return _trat_solicitud_dict(s)
-
-
-@app.post("/tratamientos/{solicitud_id}/aplicar")
-def aplicar_tratamiento(
-    solicitud_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["gestor_vivero", "admin"])),
-):
-    """Aplica un tratamiento aprobado: descuenta el stock de cada fitosanitario,
-    genera un movimiento de salida por línea y marca la solicitud como APLICADO."""
-    _cancelar_tratamientos_caducados(db)
-    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
-    estado = (s.estado or "").upper()
-    if estado != "APROBADO":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Solo se pueden aplicar solicitudes aprobadas (estado actual: {s.estado}).",
-        )
-
-    ahora = datetime.utcnow()
-    for item in (s.items or []):
-        pend = float(item.cantidad or 0) - float(item.cantidad_aplicada or 0)
-        if pend <= 0:
-            continue
-        uuids = _consumir_stock_producto(db, item.producto_id, pend)
-        db.add(Movimiento(
-            producto_id=item.producto_id,
-            tipo_movimiento="salida",
-            origen_tipo="vivero",
-            destino_tipo="tratamiento",
-            cantidad=pend,
-            uuid_lote=(",".join(uuids) if uuids else None),
-            observaciones=f"Aplicación de tratamiento fitosanitario (solicitud #{s.id})",
-            fecha_movimiento=ahora,
-            created_by=current_user.username,
-        ))
-        item.cantidad_aplicada = float(item.cantidad or 0)
-
-    s.estado = "APLICADO"
-    s.aplicado_por = current_user.username
-    s.aplicado_at = ahora
-    db.commit()
-    db.refresh(s)
-    return _trat_solicitud_dict(s)
-
-
-@app.get("/tratamientos/items/{item_id}/ficha")
-def descargar_ficha_tratamiento(
-    item_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(list(TRATAMIENTO_ROLES_VER))),
-):
-    item = db.query(SolicitudTratamientoItem).filter(SolicitudTratamientoItem.id == item_id).first()
-    if not item or not item.ficha_datos:
-        raise HTTPException(status_code=404, detail="Ficha no encontrada.")
-    rol = (current_user.rol or "").strip().lower()
-    if rol == "empresa_externa":
-        s = getattr(item, "solicitud", None)
-        if not s or s.creado_por != current_user.username:
-            raise HTTPException(status_code=403, detail="No tienes acceso a esta ficha.")
-    nombre = item.ficha_nombre or f"ficha_{item.id}"
-    return Response(
-        content=item.ficha_datos,
-        media_type=(item.ficha_tipo or "application/octet-stream"),
-        headers={"Content-Disposition": f'inline; filename="{nombre}"'},
-    )
-
-
 def _reponer_stock_producto(db: Session, producto_id: int, cantidad: float, uuids_hint=None) -> None:
     """Devuelve `cantidad` al stock de un producto. Si existe algún lote del
     producto (preferentemente uno de los que se consumieron), suma ahí; si no,
@@ -5822,69 +5416,238 @@ def _reponer_stock_producto(db: Session, producto_id: int, cantidad: float, uuid
         ))
 
 
-@app.delete("/tratamientos/{solicitud_id}")
-def eliminar_tratamiento(
-    solicitud_id: int,
+
+
+# =====================================================================
+# PEDIDOS CON FICHA DE TRATAMIENTO (empresa externa) + APLICAR INTERNO
+# Un pedido con fitosanitario exige ficha por línea fitosanitaria y puede ser
+# un "tratamiento interno" (destino Vivero, sin dirección) que el gestor aplica
+# consumiendo stock, o una salida externa normal.
+# =====================================================================
+
+@app.post("/pedidos/con-fichas")
+async def create_pedido_con_fichas(
+    payload: str = Form(...),
+    fichas: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["admin"])),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "empresa_externa", "gestor_vivero"])),
 ):
-    """Elimina una solicitud de tratamiento (solo admin). Si estaba APLICADA, el
-    material consumido vuelve al stock (se repone y se registra un movimiento de
-    entrada para la trazabilidad)."""
-    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
+    """Crea un pedido de salida que puede incluir fitosanitarios con ficha. Los
+    ficheros `fichas` van en el mismo orden que las líneas fitosanitarias del
+    `payload`. Si `tratamiento_interno` es True, el destino es el Vivero."""
+    try:
+        data = json.loads(payload)
+    except Exception:
+        raise HTTPException(status_code=400, detail="El payload no es un JSON válido.")
 
-    if (s.estado or "").upper() == "APLICADO":
-        ahora = datetime.utcnow()
-        for item in (s.items or []):
-            aplicada = float(item.cantidad_aplicada or 0)
-            if aplicada <= 0:
-                continue
-            _reponer_stock_producto(db, item.producto_id, aplicada)
-            db.add(Movimiento(
-                producto_id=item.producto_id,
-                tipo_movimiento="entrada",
-                origen_tipo="tratamiento",
-                destino_tipo="vivero",
-                cantidad=aplicada,
-                observaciones=f"Reposición por eliminación de tratamiento (solicitud #{s.id})",
-                fecha_movimiento=ahora,
-                created_by=current_user.username,
-            ))
+    items = data.get("items") or []
+    if not items:
+        raise HTTPException(status_code=400, detail="Debes añadir al menos una línea al pedido")
 
-    db.delete(s)
-    db.commit()
-    return {"ok": True}
+    tratamiento_interno = bool(data.get("tratamiento_interno"))
+    nota = data.get("nota")
+    p_distrito = data.get("distrito_destino")
+    p_barrio = data.get("barrio_destino")
+    p_direccion = data.get("direccion_destino")
 
+    if not tratamiento_interno:
+        if not p_distrito or not p_barrio or not p_direccion:
+            raise HTTPException(status_code=400, detail="Debes indicar distrito, barrio y dirección de destino")
 
-@app.get("/tratamientos/{solicitud_id}/pdf")
-def descargar_tratamiento_pdf(
-    solicitud_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(list(TRATAMIENTO_ROLES_VER))),
-):
-    """PDF imprimible de un tratamiento. Disponible una vez APROBADO (o aplicado).
-    La empresa externa solo puede descargar los suyos."""
-    s = db.query(SolicitudTratamiento).filter(SolicitudTratamiento.id == solicitud_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="Solicitud de tratamiento no encontrada.")
+    _transicionar_pedidos_caducados(db)
+    reservas_map = _reservas_por_producto_tamano(db)
+    solicitado_local: dict = {}
 
-    estado = (s.estado or "").upper()
-    if estado not in ("APROBADO", "APLICADO"):
+    # Validación de cada línea + detección de fitosanitarios.
+    prepared = []  # (item_dict, producto, es_fito, tamano, cantidad)
+    for it in items:
+        try:
+            pid = int(it.get("producto_id"))
+            cant = float(it.get("cantidad"))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Línea de pedido inválida.")
+        if cant <= 0:
+            raise HTTPException(status_code=400, detail="Todas las cantidades deben ser mayores que 0")
+
+        producto = db.query(Producto).filter(Producto.id == pid).first()
+        if not producto:
+            raise HTTPException(status_code=404, detail=f"Producto no encontrado: {pid}")
+
+        es_fito = _es_fitosanitario(producto)
+        tamano = (it.get("tamano") or "").strip()
+
+        if es_fito:
+            # Los fitosanitarios no usan tamaño de maceta: el stock se mide por
+            # producto (todos sus lotes) y la reserva se suma entre todos los
+            # tamaños de ese producto, para evitar descuadres por tamaño/NULL.
+            stock_total = _stock_fisico_producto(db, pid)
+            reservado = sum(v for (ppid, _t), v in reservas_map.items() if ppid == pid)
+            ya_pedido = sum(v for (ppid, _t), v in solicitado_local.items() if ppid == pid)
+        else:
+            if not tamano:
+                raise HTTPException(status_code=400, detail="Cada línea del pedido debe incluir un tamaño")
+            if not _tamano_disponible_planta(producto.categoria, producto.subcategoria, tamano):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{producto.nombre_cientifico}: el tamaño {tamano} no está "
+                        f"disponible para pedidos (semillero o tamaño insuficiente para su tipo)."
+                    ),
+                )
+            stock_total = _stock_total_producto_tamano(db, pid, tamano)
+            reservado = float(reservas_map.get((pid, _norm_tam(tamano)), 0.0))
+            ya_pedido = float(solicitado_local.get((pid, _norm_tam(tamano)), 0.0))
+
+        disponible = stock_total - float(reservado) - float(ya_pedido)
+        if cant > disponible:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Stock insuficiente para {producto.nombre_cientifico}. "
+                    f"Disponible={disponible:g}, solicitado={cant:g}"
+                ),
+            )
+        key = (pid, _norm_tam(tamano))
+        solicitado_local[key] = float(solicitado_local.get(key, 0.0)) + cant
+        prepared.append((it, producto, es_fito, tamano, cant))
+
+    # Cada línea fitosanitaria necesita su ficha (en orden).
+    n_fito = sum(1 for (_, _, ef, _, _) in prepared if ef)
+    if len(fichas) != n_fito:
         raise HTTPException(
             status_code=400,
-            detail="El PDF del tratamiento solo está disponible una vez aprobado.",
+            detail="Cada producto fitosanitario del pedido debe llevar su ficha de tratamiento adjunta.",
         )
 
-    rol = (current_user.rol or "").strip().lower()
-    if rol == "empresa_externa" and (s.creado_por or "") != (current_user.username or ""):
-        raise HTTPException(status_code=403, detail="No puedes descargar este tratamiento.")
+    ficha_data = []
+    for f in fichas:
+        b = await f.read()
+        if not b:
+            raise HTTPException(status_code=400, detail="Una de las fichas adjuntas está vacía.")
+        if len(b) > _FICHA_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="Cada ficha no puede superar los 10 MB.")
+        ficha_data.append((f.filename or "ficha", f.content_type or "application/octet-stream", b))
 
-    pdf_bytes = generar_pdf_tratamiento(s)
-    filename = f"tratamiento_{s.id}.pdf"
+    fecha_cad_pedido = datetime.utcnow().date() + timedelta(days=15)
+    pedido = Pedido(
+        solicitante_username=current_user.username,
+        estado="RESERVA",
+        tipo="salida",
+        nota=nota,
+        tratamiento_interno=tratamiento_interno,
+        distrito_destino=None if tratamiento_interno else p_distrito,
+        barrio_destino=None if tratamiento_interno else p_barrio,
+        direccion_destino=None if tratamiento_interno else p_direccion,
+        fecha_caducidad=fecha_cad_pedido,
+    )
+    db.add(pedido)
+    db.flush()
+
+    fi = 0
+    for (it, producto, es_fito, tamano, cant) in prepared:
+        fnombre = ftipo = fdatos = None
+        if es_fito:
+            fnombre, ftipo, fdatos = ficha_data[fi]
+            fi += 1
+        if tratamiento_interno:
+            it_distrito = it_barrio = it_direccion = None
+        else:
+            it_distrito = it.get("distrito_destino") or p_distrito or None
+            it_barrio = it.get("barrio_destino") or p_barrio or None
+            it_direccion = it.get("direccion_destino") or p_direccion or None
+        db.add(PedidoItem(
+            pedido_id=pedido.id,
+            producto_id=producto.id,
+            tamano=(tamano or ""),
+            cantidad=cant,
+            cantidad_servida=0,
+            distrito_destino=it_distrito,
+            barrio_destino=it_barrio,
+            direccion_destino=it_direccion,
+            matriculas=(_normalize_matriculas(it.get("matriculas")) if not tratamiento_interno else None),
+            ficha_nombre=fnombre,
+            ficha_tipo=ftipo,
+            ficha_datos=fdatos,
+        ))
+
+    db.commit()
+    db.refresh(pedido)
+    return _pedido_to_dict(pedido)
+
+
+@app.post("/pedidos/{pedido_id}/aplicar", response_model=PedidoOut)
+def aplicar_pedido(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["gestor_vivero", "admin"])),
+):
+    """Aplica un tratamiento interno (pedido destinado al Vivero): descuenta el
+    stock de cada línea por FIFO, genera un movimiento de salida por línea y deja
+    el pedido SERVIDO."""
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+    if not bool(getattr(pedido, "tratamiento_interno", False)):
+        raise HTTPException(status_code=400, detail="Este pedido no es un tratamiento interno; se sirve, no se aplica.")
+    if _modificacion_pendiente(pedido):
+        raise HTTPException(status_code=400, detail="El pedido tiene una modificación pendiente. Resuélvela antes de aplicarlo.")
+    if (pedido.estado or "").upper() != "APROBADO":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Solo se pueden aplicar tratamientos aprobados (estado actual: {pedido.estado}).",
+        )
+
+    ahora = datetime.utcnow()
+    for item in (pedido.items or []):
+        if _item_estado(item) == "DENEGADO":
+            continue
+        pend = float(item.cantidad or 0) - float(item.cantidad_servida or 0)
+        if pend <= 0:
+            continue
+        uuids = _consumir_stock_producto(db, item.producto_id, pend)
+        db.add(Movimiento(
+            pedido_id=pedido.id,
+            pedido_item_id=item.id,
+            producto_id=item.producto_id,
+            # Tratamiento interno del vivero: tipo de movimiento propio
+            # "tratamiento" (no es una salida al exterior).
+            tipo_movimiento="tratamiento",
+            origen_tipo="vivero",
+            destino_tipo="tratamiento",
+            cantidad=pend,
+            uuid_lote=(",".join(uuids) if uuids else None),
+            observaciones=f"Aplicación de tratamiento interno (pedido #{pedido.id})",
+            fecha_movimiento=ahora,
+            created_by=current_user.username,
+        ))
+        item.cantidad_servida = float(item.cantidad or 0)
+
+    pedido.estado = "SERVIDO"
+    pedido.served_at = ahora
+    pedido.served_by = current_user.username
+    db.commit()
+    db.refresh(pedido)
+    return _pedido_to_dict(pedido)
+
+
+@app.get("/pedidos/items/{item_id}/ficha")
+def descargar_ficha_pedido(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles(["admin", "manager", "tecnico", "gestor_vivero", "empresa_externa"])),
+):
+    """Descarga la ficha de tratamiento adjunta a una línea de pedido."""
+    item = db.query(PedidoItem).filter(PedidoItem.id == item_id).first()
+    if not item or not item.ficha_datos:
+        raise HTTPException(status_code=404, detail="Ficha no encontrada.")
+    rol = (current_user.rol or "").strip().lower()
+    if rol == "empresa_externa":
+        ped = getattr(item, "pedido", None)
+        if not ped or (ped.solicitante_username or "") != (current_user.username or ""):
+            raise HTTPException(status_code=403, detail="No tienes acceso a esta ficha.")
+    nombre = item.ficha_nombre or f"ficha_{item.id}"
     return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        content=item.ficha_datos,
+        media_type=(item.ficha_tipo or "application/octet-stream"),
+        headers={"Content-Disposition": f'inline; filename="{nombre}"'},
     )
