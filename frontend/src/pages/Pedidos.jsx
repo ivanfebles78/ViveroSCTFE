@@ -818,7 +818,8 @@ function PedidoModal({
   const [bloquearMateriales, setBloquearMateriales] = useState(false);
   // Pedido con fitosanitario: ¿es un tratamiento interno del vivero? (destino
   // Vivero, sin dirección) y ficha de tratamiento por línea fitosanitaria.
-  const [tratInterno, setTratInterno] = useState(true);
+  // Por defecto NO (salida externa), que es el caso más habitual.
+  const [tratInterno, setTratInterno] = useState(false);
   const [fichas, setFichas] = useState({}); // { [lineKey]: File }
 
   useEffect(() => {
@@ -837,7 +838,7 @@ function PedidoModal({
       setComplementosOffer(null);
       setComplementosAviso(null);
       setBloquearMateriales(false);
-      setTratInterno(true);
+      setTratInterno(false);
       setFichas({});
     }
   }, [open]);
