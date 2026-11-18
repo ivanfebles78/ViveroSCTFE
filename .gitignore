@@ -26,3 +26,5 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+# Ficheros de bloqueo de Office
+~$*
